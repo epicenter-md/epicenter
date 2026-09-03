@@ -1100,20 +1100,30 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		// edits, and every one of these is silent in the folder itself.
 		const data = await openMemory(shapes);
 		const { agents } = await agentsFor(data as unknown as PushableData, shapes);
-		const said: Record<DiscardReason, string> = {
-			'row-gone': 'rewrites this',
-			'kv-changed': 'Do not edit `kv.json`',
+		// Keyed by the plan's own vocabulary, so a kind added to `PlanItem` or a
+		// reason added to `DiscardReason` fails to compile until this file says
+		// what it costs. The file has twice been left behind by a wave that
+		// changed what a push does.
+		const perKind: Record<PlanItem['kind'], string> = {
+			value: 'A value in the frontmatter comes back',
+			body: 'replaces the note',
+			admission: 'becomes a row, and is RENAMED',
+			deletion: 'deletes the row, for good',
+			discard: 'rewritten from the database',
+		};
+		const perReason: Record<DiscardReason, string> = {
+			'row-gone': 'a file whose row was deleted in the application',
+			'kv-changed': '`kv.json` is read only',
 			unreadable: 'Keep the `---` block',
 			'table-undeclared': 'The tables',
-			'body-unreadable': 'text under the `---` block comes back',
+			'body-unreadable': 'cannot read is rewritten from the database',
 		};
-		for (const phrase of Object.values(said)) {
+		for (const phrase of [
+			...Object.values(perKind),
+			...Object.values(perReason),
+		]) {
 			expect(agents).toContain(phrase);
 		}
-		// The two answerable items whose consequence is not a rewrite, and the
-		// one thing that stops a send whatever else is answered.
-		expect(agents).toContain('becomes a row, and is RENAMED');
-		expect(agents).toContain('Do not delete, move, or rename a file');
 		// And the fact none of the lines states on its own.
 		expect(agents).toContain('applies all of its changes or none');
 		await data[Symbol.asyncDispose]();

@@ -1,12 +1,11 @@
 /**
  * The working copy in `~/Epicenter`, and the wire it travels on (ADR-0337).
  *
- * **This file is not the design any more.** ADR-0338 is where it is going: a
- * push applies the folder whole after one approval. What is here validates
- * nothing, deletes a row when its file is gone, and reads a removed
- * frontmatter line as `null`, and it still asks a person `file` or `store` per
- * item. Read the record before building on the shape below; its `Unbuilt:`
- * line names exactly what has not moved yet.
+ * **A push applies the folder, whole, after one approval** (ADR-0338). It
+ * validates nothing, deletes a row when its file is gone, reads a removed
+ * frontmatter line as `null`, and asks nothing per item: to change any of it,
+ * a person cancels, edits the file, and pushes again. `kv.json` is the one
+ * thing still pulled to read and never pushed.
  *
  * ```txt
  * ~/Epicenter/<data-id>/
@@ -228,6 +227,7 @@ export const CheckoutError = defineErrors({
 		rows,
 		values,
 		bodies,
+		deleted,
 		admitted,
 		cause,
 	}: PushOutcome & {
@@ -241,10 +241,16 @@ export const CheckoutError = defineErrors({
 		 */
 		cause: { readonly name: string; readonly message: string };
 	}) => ({
-		message: `${values} value(s) reached the store, and the folder could not be rewritten`,
+		message: `${values} value(s) and ${deleted} deletion(s) reached the store, and the folder could not be rewritten`,
 		rows,
 		values,
 		bodies,
+		/**
+		 * The rows this push deleted, which are the one part of it nobody can
+		 * undo. Carried for the same reason `admitted` is: a person reading a
+		 * stale folder is owed the number that does not come back.
+		 */
+		deleted,
 		/**
 		 * The files that became rows, which the folder does not yet show.
 		 *
@@ -405,11 +411,11 @@ function parseManifest(text: string | undefined): CheckoutManifest | undefined {
  * text files; what it needs told is what happens to each kind of edit, because
  * the folder cannot show it and a wasted edit is silent.
  *
- * **Consequences rather than prohibitions**, which is what changed when every
- * item of a plan became answerable. This file used to be a list of things not
- * to do, because doing any of them stopped the whole send until a person
- * opened Finder. Now a new file becomes a row, an edited body comes home if a
- * person says so, and everything else is a file the send rewrites; the honest
+ * **Consequences rather than prohibitions** (ADR-0338). This file used to be
+ * a list of things not to do, because doing any of them stopped the whole push
+ * until a person opened Finder. Now every edit lands: a new file becomes a
+ * row, an edited body replaces the note's text, a deleted file deletes the
+ * row, and a file the push cannot read is rewritten from the store. The honest
  * thing to say is what each one costs. If this file and the plan ever disagree,
  * this file is wrong, because the plan is what runs.
  *
@@ -442,39 +448,41 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'',
 		'## What happens to what you edit',
 		'',
-		'A person sends your edits back by hand, from the application. You never',
-		'do it yourself: the plan they read is what makes your work reviewable,',
-		'and they answer for every change in it that has more than one outcome.',
+		'A person pushes your edits back by hand, from the application. You never',
+		'do it yourself: the overview they read before approving it is what makes',
+		'your work reviewable, and they approve the whole list at once.',
 		'',
-		'**A send applies all of its changes or none, and then rewrites this',
-		'whole folder from the database.** So a file the send did not take is a',
-		'file the send overwrites. Nothing here is lost quietly: everything below',
-		'is in the plan a person reads first.',
+		'**A push applies all of its changes or none, and then rewrites this',
+		'whole folder from the database.** So a file the push did not take is a',
+		'file the push overwrites. Nothing here is lost quietly: everything below',
+		'is in the overview a person reads first.',
 		'',
 		'- **A value in the frontmatter comes back.** Change it in place. Some are',
 		'  written by the application from the text below and will move back at',
 		'  the next edit; the table below does not say which, so prefer editing',
 		'  the text to editing a value derived from it.',
 		'- **Keep the `---` block**, even when it is empty. Without it the file',
-		'  cannot be read at all, and the send rewrites it.',
-		'- **The text under the `---` block comes back if the person agrees.**',
-		'  They see that the text changed and choose between your version and the',
-		'  one in the application; whichever loses is overwritten. It replaces',
-		'  the whole text, so write the whole note rather than a fragment, in the',
-		'  form the file already uses.',
+		'  cannot be read at all, and the push rewrites it.',
+		'- **The text under the `---` block replaces the note.** Your version',
+		'  wins, and the text that was there is gone, including anything typed in',
+		'  the application since this folder was written. It replaces the whole',
+		'  text, so write the whole note rather than a fragment, in the form the',
+		'  file already uses.',
 		'- **A file you create becomes a row, and is RENAMED.** A row id is minted',
-		'  rather than chosen, so the send makes the row, gives it an id, and',
+		'  rather than chosen, so the push makes the row, gives it an id, and',
 		'  writes the file out under that id. Re-read the folder afterwards: the',
 		'  name you gave it is gone. Give it every field its table declares, with',
 		'  a value that fits: the row is made either way, and one missing half',
 		'  its fields is a row the application cannot read until somebody fixes',
 		'  it. Copy the frontmatter of a file beside it. A field that points at',
 		'  another row can only name one that already exists, because the id of a',
-		'  row you are creating in the same send does not exist yet.',
-		'- **Do not delete, move, or rename a file.** A file that is gone is a',
-		'  deletion, and a deletion has nowhere to go yet: it is the one thing',
-		'  that stops the whole send. Putting the file back clears it, and so',
-		'  does deleting the row in the application.',
+		'  row you are creating in the same push does not exist yet.',
+		'- **A file you delete deletes the row, for good.** It does not go to',
+		'  whatever the application calls its trash, and nothing puts it back.',
+		'  Moving or renaming a file is a delete and a create: the row is deleted',
+		'  and a new one is made under a new id, and every field pointing at the',
+		'  old id now points at nothing. To trash a note the way the application',
+		'  does, edit the frontmatter value it uses for that instead.',
 		'- **A frontmatter line you remove reads as `null`**, because that is what',
 		'  this format writes for a value that is not there. On a field the table',
 		'  below marks `or null` that is the designed no-value; on any other it',
@@ -485,8 +493,11 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'  read at all. Nothing here refuses either: the application shows the row',
 		'  as unreadable and the repair is this file. `id` and the text below the',
 		'  block are not frontmatter lines, and writing one does nothing at all.',
-		'- **Do not edit `kv.json`.** It is written for you to read, and a send',
-		'  rewrites it.',
+		'- **A file the push cannot read is rewritten from the database.** So is',
+		'  a file whose row was deleted in the application. Your edit is gone and',
+		'  nothing else in the push is affected.',
+		'- **`kv.json` is read only.** It is written for you to read, and a push',
+		'  rewrites it whatever you did to it.',
 		'',
 		'## The tables',
 		'',

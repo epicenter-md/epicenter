@@ -13,7 +13,7 @@ The package has one definition entrypoint and four runtime entrypoints:
 | `@epicenter/data/browser` | `openDatabase(definition, { appId, generation, account })`, plus `resolveGeneration`, `createGeneration`, and `eraseGenerations` |
 | `@epicenter/data/sync` | `createSyncConnection`, and the authority half a server runs |
 | `@epicenter/data/artifact` | `renderArtifact` out and `readArtifact` back in: the files a folder is made of |
-| `@epicenter/data/artifact/checkout` | `pull`, the manifest, and the wire the `~/Epicenter` working copy travels on (ADR-0337) |
+| `@epicenter/data/artifact/checkout` | `pull`, `diff`, `push`, the manifest, and the wire the `~/Epicenter` working copy travels on (ADR-0337, ADR-0338) |
 | `@epicenter/data/memory` | `openMemory(definition)` and `createMemoryRecord()`, test support |
 
 The browser opener is the only one a person's data lands in. A memory opener

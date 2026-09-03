@@ -62,24 +62,33 @@ back. Every pull replaces it, and it says so on its first line, so a person
 keeping notes to themselves keeps them under another name.
 
 `SendFolderEdits.svelte` is the other direction: `diff` shows what a push would
-do, and `push` applies it and re-renders. A push carries its plan whole or
-applies nothing, because the re-render at the end would overwrite whatever it
-left behind, and every item of the plan is answered before it runs. A person
-answers `file` or `store` per item; `store` is them saying "keep what is here
-and rewrite that file", which is the discard `pull` already takes for the whole
-folder, at the grain of one file.
+do, and `push` applies it and re-renders. **The folder wins, and a push is one
+approval** (ADR-0338). Nothing is asked per item and nothing is validated on the
+way in: a value goes in whatever it says, a body replaces the note's text, a new
+file becomes a note, and a deleted file deletes one. To change any of it, cancel,
+edit the file, and push again.
 
-One thing has no answer and stops the send: a folder nothing ever wrote.
+The dialog is the overview, ranked by what is still reachable afterwards, and it
+renders as one block of plain text so a person can paste it to the agent that
+made the mess. Two buttons, and Enter reaches Push all.
+
+A push writes rows this release cannot read, on purpose, from a text editor.
+`NoteList.svelte` is where they show up, beside the readable notes rather than
+only in the empty state.
 
 Deleting a file deletes the note, for good, without passing through Recently
-Deleted (ADR-0338). Trashing a note through the folder is the other gesture:
-set `deletedAt` in the frontmatter, which is an ordinary value edit. No table
+Deleted. Trashing a note through the folder is the other gesture: set
+`deletedAt` in the frontmatter, which is an ordinary value edit. No table
 declares a trash field and none should.
 
 A file an agent wrote becomes a note and **is renamed**, because a note's id is
-minted rather than chosen. That is in the plan before a person agrees to it, and
-in the `AGENTS.md` a pull writes, so an agent knows to re-read the folder after
-a send.
+minted rather than chosen. That is in the overview before a person approves it,
+and in the `AGENTS.md` a pull writes, so an agent knows to re-read the folder
+after a push.
+
+One thing is not a plan at all: a folder nothing ever wrote. `pull` and `push`
+both answer it with `FolderUnwritten`, and the surface says so once for the
+folder rather than once per file.
 
 ## Three builds, one store shape
 

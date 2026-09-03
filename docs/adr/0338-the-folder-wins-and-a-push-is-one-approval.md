@@ -4,8 +4,8 @@
 - **Date:** 2026-09-02
 - **Amends:** [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md) at "What a push refuses", which becomes what a push does: nothing in a folder is refused now except a folder nothing ever wrote. Its cycle, its manifest, absence as a fact, and its whole-or-nothing rule are unchanged. It also withdraws that record's "A person whose manifest is stale resolves it inside the push": a person resolves it in the folder, and the push is one yes or no. [ADR-0329](0329-frontmatter-round-trips-and-the-body-only-renders-out.md) at the body's mechanism, which was a whole-value replace and is now a rewrite of the live node, and at its per-row question, which becomes part of one approval. Its rule that a body reaches a store only when a person asked for it stands, and pushing is the asking.
 - **Relates:** [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md) and [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md) (the lens this rests on), [ADR-0309](0309-a-field-holds-a-value-or-a-node-and-the-retired-words-fail-the-build.md) (the value/node split), [ADR-0330](0330-an-agent-uses-the-surfaces-a-person-uses.md) (who edits and who pushes), [ADR-0216](0216-a-name-addressed-location-is-the-only-safe-place-for-a-write-two-devices-both-make.md) (why a row id is minted and never chosen), [ADR-0299](0299-a-row-is-its-scalars-and-one-content-node.md) (the codec's two verbs, which this adds a third to), [ADR-0281](0281-a-generation-is-a-whole-database-and-a-device-chooses-which-one-it-holds.md) (why a manifest from another generation is no base)
-- **Built:** `ContentCodec.rewrite`, in `packages/data/src/definition/declaration.ts` and the three codecs that implement it, with `packages/data/evidence/rewriting-a-body.test.ts` measuring what it costs.
-- **Unbuilt:** everything else here. `packages/data/src/artifact/checkout.ts` today refuses a name a table does not declare, a value that does not fit its field, a new file missing a value, and a removed frontmatter line; it asks a person `file` or `store` per item; and it blocks a push outright on a deleted file. `apps/honeycrisp/src/routes/components/SendFolderEdits.svelte` renders those questions. `apps/honeycrisp/src/routes/components/NoteList.svelte` shows a note this release cannot read only in its empty-state message, which this record makes load-bearing.
+- **Built:** `ContentCodec.rewrite`, in `packages/data/src/definition/declaration.ts` and the three codecs that implement it, with `packages/data/evidence/rewriting-a-body.test.ts` measuring what it costs. And the rest of it, except the one thing below. `packages/data/src/artifact/checkout.ts` validates nothing, deletes the row whose file is gone, reads a removed frontmatter line as `null`, and takes one approval: `PlanAnswers`, `PlanAnswer`, `answersFor`, `answerKey`, the `conflict` kind, `PlannedBlock`, and `BlockReason` are gone, `PushIncomplete` is `PlanStale` and fires only on a plan that stopped being true, and a folder nothing wrote is `FolderUnwritten` rather than one refusal per file. `apps/honeycrisp/src/routes/components/SendFolderEdits.svelte` renders the overview as one block of plain text with two buttons, and `Enter` reaches **Push all**. `NoteList.svelte` shows a note this release cannot read beside the readable ones.
+- **Unbuilt:** `kv.json`, which is still pulled to read, hashed in the manifest as `kvHash`, and discarded as `kv-changed` when a person edits it. Making it what it is, a row with no body under the key `kv`, needs a kv write on `PushableData` and a manifest that records its values rather than a hash, and this record does not say what a kv edit costs. Also unbuilt: the overview does not say that a value will make a note unreadable, because the plan carries no field types to predict it with.
 
 ## Context
 
@@ -129,11 +129,14 @@ text editor. The application has to surface them.
   validation first would ship a folder that makes notes disappear with nothing
   to look at.
 - **What deletes:** `PlanAnswers`, `PlanAnswer`, `answerKey`, `answersFor`, the
-  `conflict` kind, `PlannedBlock`, `BlockReason`, `PushIncomplete`'s
-  `unanswered`, `field.check` in the plan, four of nine discard reasons, and
-  every `file`/`store` string in the dialog. `samePlan` stays, for a different
-  reason: it now guards against applying a change a person did not read, because
-  an agent may still be working while the overview is open.
+  `conflict` kind, `PlannedBlock`, `BlockReason`, `field.check` in the plan,
+  four of nine discard reasons, and every `file`/`store` string in the dialog.
+  `samePlan` stays, for a different reason: it now guards against applying a
+  change a person did not read, because an agent may still be working while the
+  overview is open. `PushIncomplete` is the one that survives under another
+  name: with nothing unanswered and nothing blocked, a stale plan is all it
+  reports, so it is `PlanStale`, and the folder nothing wrote is its own
+  refusal, `FolderUnwritten`, which `pull` answers with too.
 - **`push` gains a delete pass and `PushOutcome` gains `deleted`.** The verb is
   `TableHandle.delete`, which exists.
 - **A rewrite is better than a replacement, not safe**, measured in
