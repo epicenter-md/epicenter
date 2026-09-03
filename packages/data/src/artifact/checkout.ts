@@ -471,17 +471,25 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'do it yourself: the overview they read before approving it is what makes',
 		'your work reviewable, and they approve the whole list at once.',
 		'',
-		'**A push applies all of its changes or none, and then rewrites this',
-		'whole folder from the database.** So a file the push did not take is a',
-		'file the push overwrites. Nothing here is lost quietly: everything below',
-		'is in the overview a person reads first.',
+		'**A push applies all of its changes or none, and rewrites only the files',
+		'it changed.** The files it writes are exactly the ones in the overview,',
+		'plus `.epicenter/manifest.json` and this file. Everything else in this',
+		'folder is left byte for byte as you wrote it, including a file the push',
+		'could not read, which is listed at every push until somebody fixes it.',
+		'',
+		'**This folder does not update itself.** What you are reading is the',
+		'database as of `pulledAt` in `.epicenter/manifest.json`. A push does not',
+		'refresh it: a note changed in the application since that moment is not',
+		'here until the next pull, and a value you read here may be older than',
+		'the one the application holds.',
 		'',
 		'- **A value in the frontmatter comes back.** Change it in place. Some are',
 		'  written by the application from the text below and will move back at',
 		'  the next edit; the table below does not say which, so prefer editing',
 		'  the text to editing a value derived from it.',
 		'- **Keep the `---` block**, even when it is empty. Without it the file',
-		'  cannot be read at all, and the push rewrites it.',
+		'  cannot be read at all, so the push takes nothing from it, leaves it',
+		'  exactly as you wrote it, and says so. Fix the block and push again.',
 		'- **The text under the `---` block replaces the note.** Your version',
 		'  wins, and the text that was there is gone, including anything typed in',
 		'  the application since this folder was written. It replaces the whole',
@@ -512,11 +520,15 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'  read at all. Nothing here refuses either: the application shows the row',
 		'  as unreadable and the repair is this file. `id` and the text below the',
 		'  block are not frontmatter lines, and writing one does nothing at all.',
-		'- **A file the push cannot read is rewritten from the database.** So is',
-		'  a file whose row was deleted in the application. Your edit is gone and',
-		'  nothing else in the push is affected.',
-		'- **`kv.json` is read only.** It is written for you to read, and a push',
-		'  rewrites it whatever you did to it.',
+		'- **A file the push cannot read is left alone**, and nothing else in the',
+		'  push is affected. So is a file whose row was deleted in the',
+		'  application, and there the next pull removes the file.',
+		'- **`kv.json` is read only.** A push never sends it and never rewrites',
+		'  it; an edit there is reported at every push, and the next pull',
+		'  replaces it.',
+		'- **A file the push rewrote comes back in canonical form**, with its',
+		'  keys sorted and its strings quoted. A file it did not rewrite keeps',
+		'  your bytes exactly, formatting and all.',
 		'',
 		'## The tables',
 		'',
@@ -740,14 +752,24 @@ async function writeBack({
 	}
 
 	for (const address of touched) {
+		const path = rowPath(address.table, address.rowId);
 		const row = await renderRow(data, definition, address.table, address.rowId);
 		if (row.error !== null) {
 			failures.push(row.error);
 			continue;
 		}
 		// A row this push wrote and then could not find is an invariant break,
-		// not a fact about the folder.
-		if (row.data.contents === undefined) continue;
+		// and the folder is not the place to report it: dropping the path here
+		// would have the host sweep a file the person edited. It goes back as
+		// it was, with the entry it had, exactly like an untouched one.
+		if (row.data.contents === undefined) {
+			const held0 = held.files.get(path);
+			if (held0 !== undefined) files.push({ path, contents: held0 });
+			const entry = base.rows[`${address.table}/${address.rowId}`];
+			if (entry !== undefined)
+				rows[`${address.table}/${address.rowId}`] = entry;
+			continue;
+		}
 		const parsed = parseRowFile(row.data.contents);
 		if (parsed === undefined) {
 			failures.push(
@@ -768,13 +790,9 @@ async function writeBack({
 	if (failures.length > 0) return CheckoutError.Unrenderable({ failures });
 
 	// `kv.json` holds still like everything else, and its hash with it. A folder
-	// missing it gets it back, because a checkout is complete.
-	if (!held.files.has('kv.json')) {
-		files.push({
-			path: 'kv.json',
-			contents: `${JSON.stringify(data.stored().kv, null, 2)}`,
-		});
-	}
+	// that no longer has one does not get one here: sending fresh bytes beside
+	// the base's hash would describe a file the manifest does not, and every
+	// later plan would report an edit nobody made. The next pull writes it.
 
 	const manifest: CheckoutManifest = {
 		dataId: data.dataId,
@@ -1474,8 +1492,7 @@ function samePlan(left: PushPlan, right: PushPlan): boolean {
 }
 
 /**
- * Apply the folder, whole, then re-render so it is never dirty after a
- * successful push (ADR-0338).
+ * Apply the folder, whole, then write back the files it touched (ADR-0341).
  *
  * **One approval, and the folder wins.** There is nothing to answer: a value
  * goes in whatever it says, a body replaces the text that was there, a new
@@ -1661,7 +1678,7 @@ export async function push({
 
 				for (const { item, fields, node } of admitting) {
 					// The id is minted here and the file is renamed to it by the
-					// re-render below. `create` integrates the node in the
+					// write below. `create` integrates the node in the
 					// transaction that mints the row, which is the only moment a
 					// nested type may arrive (ADR-0296).
 					const created = data.tables[item.table]?.create(
@@ -1693,22 +1710,29 @@ export async function push({
 	// because the push only writes what it touched, and a change another device
 	// made reaches this folder at the next pull rather than under the person's
 	// hands.
+	// A path the plan could not read in full is never rendered again, whatever
+	// else the push took from it. A file whose values landed and whose body the
+	// codec refuses is the case: re-rendering it would destroy the text the
+	// person typed in the same act that carried their value, which is the loss
+	// ADR-0341 exists to end.
+	const kept = new Set(
+		plan.flatMap((item) => (item.kind === 'discard' ? [item.path] : [])),
+	);
 	const touched = [
 		...new Map(
 			plan.flatMap((item) =>
-				item.kind === 'value' || item.kind === 'body'
+				(item.kind === 'value' || item.kind === 'body') && !kept.has(item.path)
 					? [[item.path, { table: item.table, rowId: item.rowId }] as const]
 					: [],
 			),
 		).values(),
 		...outcome.admitted.map(({ table, rowId }) => ({ table, rowId })),
 	];
-	// A deleted row's file and the name a person gave a file that became a row.
-	// Both are paths the push consumed, and the host sweeps what is not sent.
-	const dropped = new Set([
-		...plan.flatMap((item) => (item.kind === 'deletion' ? [item.path] : [])),
-		...outcome.admitted.map(({ path }) => path),
-	]);
+	// The name a person gave a file that became a row. The row lives at its
+	// minted id now, so the old path is not sent and the host sweeps it. A
+	// deleted row needs no entry here: its file was already gone, which is what
+	// made it a deletion.
+	const dropped = new Set(outcome.admitted.map(({ path }) => path));
 	const written = await writeBack({
 		data,
 		definition: parsed.data,

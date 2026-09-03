@@ -137,8 +137,8 @@
 			parts.push(`${made} new note${made === 1 ? '' : 's'}, renamed in the folder`);
 		}
 		return parts.length === 0
-			? 'Your folder now matches your notes.'
-			: `${parts.join(', ')}.`;
+			? 'Nothing was sent back.'
+			: `${parts.join(', ')} reached your notes.`;
 	}
 
 	function unavailable(name: string): string {
@@ -152,7 +152,7 @@
 			case 'PushUnapplied':
 				return 'Part of the push could not be applied, and part of it may have landed. Read the folder again to see what did.';
 			case 'FolderStale':
-				return 'Your edits reached your notes, and the folder could not be rewritten. Save notes as files to catch it up, and do not push again first: any file that became a note is still there under its old name and would be pushed twice.';
+				return 'Your edits reached your notes, and the folder could not be written. Save notes as files to catch it up, and do not push again first: any file that became a note is still there under its old name and would be pushed twice.';
 			default:
 				return 'Your folder could not be read.';
 		}
@@ -207,7 +207,7 @@
 			<AlertDialog.Description>
 				{stale
 					? 'The folder or your notes changed while you were reading, so nothing was pushed. This is what is true now.'
-					: 'Everything below is applied together, then the folder is rewritten from your notes. To change any of it: cancel, edit the file, push again.'}
+					: 'Everything below is applied together. Only the files listed here are rewritten; everything else in your folder stays exactly as it is. To change any of it: cancel, edit the file, push again.'}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 

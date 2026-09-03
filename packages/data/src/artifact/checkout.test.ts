@@ -1150,6 +1150,10 @@ describe('push sends the values back and re-renders', () => {
 			await push({ data, definition: exploding, plan, fetch: host.fetch }),
 		);
 		expect(data.tables.notes.get(note.id)?.title).toBe('changed by hand');
+		// And the file is LEFT ALONE, because one region of it could not be
+		// read (ADR-0341). Re-rendering it here would destroy the text the
+		// person typed in the same act that carried their value.
+		expect(host.folder.get(`notes/${note.id}.md`)).toContain('new text');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -1314,14 +1318,14 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 			body: 'replaces the note',
 			admission: 'becomes a row, and is RENAMED',
 			deletion: 'deletes the row, for good',
-			discard: 'rewritten from the database',
+			discard: 'is left alone',
 		};
 		const perReason: Record<DiscardReason, string> = {
-			'row-gone': 'a file whose row was deleted in the application',
+			'row-gone': 'a file whose row was deleted in the',
 			'kv-changed': '`kv.json` is read only',
 			unreadable: 'Keep the `---` block',
 			'table-undeclared': 'The tables',
-			'body-unreadable': 'cannot read is rewritten from the database',
+			'body-unreadable': 'cannot read is left alone',
 		};
 		for (const phrase of [
 			...Object.values(perKind),
@@ -1329,8 +1333,10 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		]) {
 			expect(agents).toContain(phrase);
 		}
-		// And the fact none of the lines states on its own.
-		expect(agents).toContain('applies all of its changes or none');
+		// And the two facts none of the lines states on its own: what a push
+		// writes, and that the folder does not update itself (ADR-0341).
+		expect(agents).toContain('rewrites only the files');
+		expect(agents).toContain('does not update itself');
 		await data[Symbol.asyncDispose]();
 	});
 
