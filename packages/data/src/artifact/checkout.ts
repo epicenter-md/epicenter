@@ -182,50 +182,19 @@ export const CheckoutError = defineErrors({
 		failures,
 	}),
 	/**
-	 * The plan a person approved is no longer the plan, so nothing was applied.
+	 * What is in the folder is not what somebody approved, so nothing happened.
 	 *
-	 * A file landed or the store moved between the overview and the click, and
-	 * an agent may well still be working while the overview is open (ADR-0330).
-	 * A push is one approval of one list, so applying a different list is
-	 * applying a change nobody read.
+	 * **The only guard either verb has**, and it is one fact rather than three:
+	 * a file landed, a note moved, or an agent removed the manifest between the
+	 * list a person read and the click. It covers a folder nothing ever wrote
+	 * too, which is not a separate refusal but the same one with `base: false`.
 	 *
-	 * `plan` is what is true now, so a surface shows that rather than an
-	 * apology.
-	 */
-	PlanStale: ({ plan }: { plan: PushPlan }) => ({
-		message: `the folder now holds ${plan.length} change(s), which is not the plan that was approved`,
-		plan,
-	}),
-	/**
-	 * The folder a person approved writing over is not the folder that is
-	 * there now, so nothing was written.
-	 *
-	 * `pull`'s half of the guard `PlanStale` is for `push`: a file landed or a
-	 * note moved between the list they read and the click, and a pull writes
-	 * over everything in that list. `state` is what is true now, so a surface
-	 * shows that rather than an apology.
+	 * `state` is what is true now, so a surface shows the next list rather than
+	 * an apology (ADR-0341).
 	 */
 	FolderChanged: ({ state }: { state: FolderState }) => ({
 		message: 'the folder changed after it was read',
 		state,
-	}),
-	/**
-	 * Nothing wrote this folder, so there is nothing to compare it against.
-	 *
-	 * Never pulled, manifest deleted, manifest mangled, or manifest written by
-	 * another account or another generation (ADR-0281). One fact about the
-	 * folder rather than one refusal per file: the repair for every one of them
-	 * is the same `pull`.
-	 *
-	 * `unwritten` is the row-shaped paths found there anyway, and every one of
-	 * them is work a pull writes over. `diff` reports this state rather than
-	 * failing on it (ADR-0341), because it is an answer about the folder; only
-	 * `push` refuses it, since nothing in such a folder can be told from what
-	 * the store already has.
-	 */
-	FolderUnwritten: ({ unwritten }: { unwritten: readonly string[] }) => ({
-		message: `nothing wrote this folder, and it holds ${unwritten.length} file(s) that look like rows`,
-		unwritten,
 	}),
 	/**
 	 * A change the plan named could not be applied, and some of the push may
@@ -628,15 +597,11 @@ export async function pull({
 	// The same reading `diff` produced for the person, made again: a pull writes
 	// over everything in it, so applying a list that moved would write over work
 	// nobody was shown.
-	const held = await readWorkingCopy(data, httpFetch);
-	if (held.error !== null) return Err(held.error);
-	const read = await planPush(data, parsedDefinition.data, held.data);
-	const found: FolderState =
-		read.base === undefined
-			? { base: false, unwritten: read.unwritten }
-			: { base: true, plan: read.plan };
-	if (JSON.stringify(found) !== JSON.stringify(confirmed)) {
-		return CheckoutError.FolderChanged({ state: found });
+	const found = await readFolder(data, parsedDefinition.data, httpFetch);
+	if (found.error !== null) return Err(found.error);
+	const approved = stateOf(found.data.read);
+	if (!sameState(approved, confirmed)) {
+		return CheckoutError.FolderChanged({ state: approved });
 	}
 
 	// The store's own set of paths: every row it holds is rendered, and a file
@@ -1112,14 +1077,8 @@ export async function diff({
 			],
 		});
 	}
-	const held = await readWorkingCopy(data, httpFetch);
-	if (held.error !== null) return Err(held.error);
-	const read = await planPush(data, parsed.data, held.data);
-	return Ok(
-		read.base === undefined
-			? { base: false, unwritten: read.unwritten }
-			: { base: true, plan: read.plan },
-	);
+	const found = await readFolder(data, parsed.data, httpFetch);
+	return found.error === null ? Ok(stateOf(found.data.read)) : Err(found.error);
 }
 
 /**
@@ -1496,8 +1455,40 @@ async function renderedRow(
 	return parseRowFile(rendered.data.contents);
 }
 
-/** Whether two plans describe the same change, item for item. */
-function samePlan(left: PushPlan, right: PushPlan): boolean {
+/**
+ * Read the folder and say what it holds that the notes do not.
+ *
+ * The one reading, so `diff` prints exactly what `pull` and `push` compare
+ * against. It was written three times, and three copies of a guard is three
+ * chances for a surface to approve one thing while a verb applies another.
+ */
+async function readFolder(
+	data: RenderableData & CheckoutAddress,
+	definition: ParsedDataDefinition,
+	httpFetch: typeof globalThis.fetch,
+): Promise<Result<{ held: WorkingCopy; read: Reading }, CheckoutError>> {
+	const held = await readWorkingCopy(data, httpFetch);
+	if (held.error !== null) return Err(held.error);
+	return Ok({
+		held: held.data,
+		read: await planPush(data, definition, held.data),
+	});
+}
+
+/** The reading, as a surface reads it: the manifest itself is nobody else's. */
+function stateOf(read: Reading): FolderState {
+	return read.base === undefined
+		? { base: false, unwritten: read.unwritten }
+		: { base: true, plan: read.plan };
+}
+
+/**
+ * Whether the folder is still the one somebody approved.
+ *
+ * Both arms are sorted where they are built, so identity is the comparison and
+ * a folder read twice is the same folder.
+ */
+function sameState(left: FolderState, right: FolderState): boolean {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -1542,17 +1533,19 @@ export async function push({
 			],
 		});
 	}
-	const held = await readWorkingCopy(data, httpFetch);
-	if (held.error !== null) return Err(held.error);
-	const read = await planPush(data, parsed.data, held.data);
-	if (read.base === undefined) {
-		return CheckoutError.FolderUnwritten({ unwritten: read.unwritten });
+	const found = await readFolder(data, parsed.data, httpFetch);
+	if (found.error !== null) return Err(found.error);
+	const { held, read } = found.data;
+	// The one guard, and it is not about consent to an item: it is that the
+	// list applied is the list somebody read. An agent may still be working
+	// while the overview is open (ADR-0330). A folder nothing ever wrote is the
+	// same refusal rather than its own: what is there is not what was approved,
+	// and the state says which.
+	const state = stateOf(read);
+	if (!sameState(state, { base: true, plan: confirmed })) {
+		return CheckoutError.FolderChanged({ state });
 	}
-	const { base, plan } = read;
-	// The one guard left, and it is not about consent to an item: it is that
-	// the list applied is the list somebody read. An agent may still be working
-	// while the overview is open (ADR-0330).
-	if (!samePlan(plan, confirmed)) return CheckoutError.PlanStale({ plan });
+	const { base, plan } = read as { base: CheckoutManifest; plan: PushPlan };
 
 	const outcome = {
 		rows: 0,
@@ -1585,7 +1578,7 @@ export async function push({
 	}[] = [];
 	for (const item of plan) {
 		if (item.kind !== 'admission') continue;
-		const file = readRowFile(held.data.files.get(item.path) ?? '');
+		const file = readRowFile(held.files.get(item.path) ?? '');
 		if (file === undefined) {
 			broke(`'${item.path}' could not be read into a row`);
 			continue;
@@ -1678,7 +1671,7 @@ export async function push({
 					// (ADR-0338). The text was decoded once at plan time to prove
 					// the codec accepts it; a live node is not JSON, so it could
 					// not travel through the plan a person read.
-					const { error } = codec.rewrite(node, bodyOf(held.data, item.path));
+					const { error } = codec.rewrite(node, bodyOf(held, item.path));
 					if (error !== null) {
 						failure ??= error;
 						continue;
@@ -1749,7 +1742,7 @@ export async function push({
 		touched.map(({ table, rowId }) => rowPath(table, rowId)),
 	);
 	const sources: FileSource[] = [];
-	for (const [path, contents] of held.data.files) {
+	for (const [path, contents] of held.files) {
 		if (path === AGENTS_PATH || path === MANIFEST_PATH || path === 'kv.json') {
 			continue;
 		}
@@ -1772,7 +1765,7 @@ export async function push({
 		// the host sweep a file the person edited, so it goes back as it was.
 		if (data.rowFile(address.table, address.rowId) === undefined) {
 			const path = rowPath(address.table, address.rowId);
-			const contents = held.data.files.get(path);
+			const contents = held.files.get(path);
 			if (contents !== undefined) {
 				sources.push({
 					keep: {
@@ -1786,7 +1779,7 @@ export async function push({
 		}
 		sources.push({ render: address });
 	}
-	const kvContents = held.data.files.get('kv.json');
+	const kvContents = held.files.get('kv.json');
 	const written = await writeFolder({
 		data,
 		definition: parsed.data,

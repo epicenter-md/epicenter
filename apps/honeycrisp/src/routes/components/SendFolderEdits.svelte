@@ -87,11 +87,19 @@
 		running = true;
 		try {
 			const { data, error } = await push({ plan: confirmed });
-			if (error !== null && error.name === 'PlanStale') {
+			if (error !== null && error.name === 'FolderChanged') {
 				// Not an outcome and not an apology: what the refusal carries IS
 				// the next overview. The folder moved while they were reading, so
 				// they read the version that is true now and approve that.
-				plan = error.plan;
+				if (!error.state.base) {
+					plan = undefined;
+					outcome = {
+						tone: 'refused',
+						message: unavailable('FolderUnwritten'),
+					};
+					return;
+				}
+				plan = error.state.plan;
 				stale = true;
 				return;
 			}
@@ -159,6 +167,8 @@
 				return 'Your Epicenter folder could not be read. It may be on a drive that is not there, or already being written.';
 			case 'FolderUnwritten':
 				return 'Nothing here wrote this folder, so nothing in it can be told apart from what you already have. Save notes as files first.';
+			case 'FolderChanged':
+				return 'The folder or your notes changed while you were looking. Read it again.';
 			case 'PushUnapplied':
 				return 'Part of the push could not be applied, and part of it may have landed. Read the folder again to see what did.';
 			case 'FolderStale':

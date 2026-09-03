@@ -851,7 +851,7 @@ describe('push sends the values back and re-renders', () => {
 		);
 
 		const refused = expectErr(await sendBack(host, data, plan));
-		expect(refused.name).toBe('PlanStale');
+		expect(refused.name).toBe('FolderChanged');
 		expect(data.tables.notes.get(noteId)?.title).toBe('Groceries');
 		await data[Symbol.asyncDispose]();
 	});
@@ -872,7 +872,7 @@ describe('push sends the values back and re-renders', () => {
 		);
 
 		const refused = expectErr(await sendBack(host, data, plan));
-		expect(refused.name).toBe('PlanStale');
+		expect(refused.name).toBe('FolderChanged');
 		expect(
 			(data.rowFile('notes', noteId)?.content as Y.Type).toString(),
 		).toContain('buy milk');
@@ -894,7 +894,7 @@ describe('push sends the values back and re-renders', () => {
 		);
 
 		const refused = expectErr(await sendBack(host, data, plan));
-		expect(refused.name).toBe('PlanStale');
+		expect(refused.name).toBe('FolderChanged');
 		expect(data.tables.notes.ids()).toHaveLength(1);
 		await data[Symbol.asyncDispose]();
 	});
@@ -957,10 +957,12 @@ describe('push sends the values back and re-renders', () => {
 		data.tables.notes.update(noteId, { title: 'Moved underneath' });
 
 		const refused = expectErr(await sendBack(host, data, plan));
-		expect(refused.name).toBe('PlanStale');
-		if (refused.name !== 'PlanStale') throw new Error('unreachable');
+		expect(refused.name).toBe('FolderChanged');
+		if (refused.name !== 'FolderChanged') throw new Error('unreachable');
 		// The refusal carries what is TRUE NOW, not the list they read.
-		expect(only(refused.plan, 'value')).toMatchObject({
+		expect(
+			only(refused.state.base ? refused.state.plan : [], 'value'),
+		).toMatchObject({
 			name: 'title',
 			file: 'Shopping',
 			store: 'Moved underneath',

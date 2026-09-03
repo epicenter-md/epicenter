@@ -4,8 +4,7 @@
 - **Date:** 2026-09-02
 - **Amends:** [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md) at its verb table, where `push` no longer ends in a re-render, and at `pull`'s refusal, which becomes an approval. Its cycle, its manifest, its completeness rule, and absence as a fact are unchanged. [ADR-0338](0338-the-folder-wins-and-a-push-is-one-approval.md) at "a file that cannot be read: rewritten from the store", which becomes kept as the person left it, and at its Consequences claim that a push ends by re-rendering the whole folder. Its one approval, its refusal to validate, and its ranking of the overview are unchanged, and this record gives the second verb the same shape.
 - **Relates:** [ADR-0330](0330-an-agent-uses-the-surfaces-a-person-uses.md) (who edits and who pushes), [ADR-0216](0216-a-name-addressed-location-is-the-only-safe-place-for-a-write-two-devices-both-make.md) (why an admitted file is renamed, which is the one write a push owes the folder), [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md) (why there is no remote in this picture), [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md) and [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md) (the lens)
-- **Built:** the writer both verbs share (`writeFolder`, whose one parameter is whose set of paths the checkout is), a push that sends the folder back with only what it touched replaced, `pull`'s approval, `FolderState` from `diff`, `FolderChanged`, and the deletion of `discardEdits` and `WorkingCopyDirty`.
-- **Unbuilt:** `PlannedDiscard` is still called a discard rather than a keep, and `row-gone` is still one of its reasons rather than an admission, so an edited file whose note was deleted in the application does not yet come back as a note.
+- **Built:** all of it. One writer both verbs share (`writeFolder`, whose one parameter is whose set of paths the checkout is), one reader all three share (`readFolder`), a push that sends the folder back with only what it touched replaced, `pull`'s approval, `FolderState` from `diff`, `PlannedKeep`, an edited file whose note is gone coming back as an admission, and one refusal, `FolderChanged`, in place of `PlanStale`, `FolderUnwritten`, `WorkingCopyDirty`, and `discardEdits`.
 
 ## Context
 
@@ -97,8 +96,10 @@ and only one of them is unreadable.
 - **"The folder is never dirty after a successful push" is withdrawn.** It is
   never dirty except at the files the overview named as kept, which is a promise
   a person can check by reading the list they approved.
-- **What deletes:** `discardEdits`, `WorkingCopyDirty`, the `row-gone` reason,
-  and `push`'s call to `pull`.
+- **What deletes:** `discardEdits`, `WorkingCopyDirty`, `PlanStale`,
+  `FolderUnwritten`, the `row-gone` reason, and `push`'s call to `pull`. What
+  is left is one reading, one writer, and one refusal, because both verbs ask
+  one question and both fail the same way.
 - **A person who never breaks a file never meets any of this.** Every new
   concept here is reachable only by editing a file into a state the folder's own
   `AGENTS.md` documents as wrong.
