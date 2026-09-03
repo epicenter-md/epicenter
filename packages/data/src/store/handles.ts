@@ -16,6 +16,7 @@ import type {
 	JsonObject,
 	JsonValue,
 	KvOf,
+	ParsedDataDefinition,
 	RowOf,
 	TableDeclaration,
 } from '@epicenter/data/definition';
@@ -571,6 +572,19 @@ export type DataDocument = {
 	 * package.
 	 */
 	readonly sync: SyncCapability;
+	/**
+	 * The declaration this store was opened from, compiled.
+	 *
+	 * An opener compiles the definition to build the view and used to throw the
+	 * compiled copy away, so everything downstream that needed it was handed the
+	 * declaration again and compiled it again: the folder verbs did it three
+	 * times, on every call. It is the same fact as `dataId`, which is literally
+	 * `definition.id`, one layer down (ADR-0340).
+	 *
+	 * A store carrying it also means a definition reaching those verbs cannot be
+	 * malformed: this one compiled, or there would be no store.
+	 */
+	readonly definition: ParsedDataDefinition;
 };
 
 /**

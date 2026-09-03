@@ -2,11 +2,11 @@
  * The `~/Epicenter/so.epicenter.honeycrisp/` working copy, bound to one store.
  *
  * Three verbs over the folder (ADR-0337), each one the library's with this
- * application's definition supplied. That is all this is: `pull`, `diff`, and
- * `push` take the store and the declaration, the store states its own address
- * (ADR-0340), and the declaration is an import. A component that offers a
- * person the button gets these rather than the library, so nothing in the UI
- * names the definition or the store.
+ * store bound in. That is all that is left of it: the verbs used to take the
+ * declaration beside the data and compile it again on every call, and the
+ * store carries its own compiled declaration now, along with its own address
+ * (ADR-0340). What this still buys is the boundary: a component that offers a
+ * person the button gets three functions rather than the store.
  *
  * They used to hang off the object the route's opener returned, beside the
  * data and the sync status. There is no route-owned opener any more
@@ -23,7 +23,7 @@ import type {
 } from '@epicenter/data/artifact/checkout';
 import { diff, pull, push } from '@epicenter/data/artifact/checkout';
 import type { Result } from 'wellcrafted/result';
-import { type HoneycrispData, honeycrispDefinition } from './data/index.js';
+import type { HoneycrispData } from './data/index.js';
 
 export type FolderVerbs = {
 	/**
@@ -57,9 +57,8 @@ export type FolderVerbs = {
 
 export function folderVerbs(data: HoneycrispData): FolderVerbs {
 	return {
-		pull: ({ state }) =>
-			pull({ data, definition: honeycrispDefinition, state }),
-		diff: () => diff({ data, definition: honeycrispDefinition }),
-		push: ({ plan }) => push({ data, definition: honeycrispDefinition, plan }),
+		pull: ({ state }) => pull({ data, state }),
+		diff: () => diff({ data }),
+		push: ({ plan }) => push({ data, plan }),
 	};
 }

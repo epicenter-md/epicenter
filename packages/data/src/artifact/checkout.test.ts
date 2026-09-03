@@ -22,6 +22,7 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import { openMemory } from '../store/memory.js';
 import {
 	AGENTS_PATH,
+	type CheckoutAddress,
 	type CheckoutFile,
 	type CheckoutManifest,
 	checkoutLine,
@@ -175,7 +176,7 @@ async function stateOf(
 	host: ReturnType<typeof fakeHost>,
 	data: Awaited<ReturnType<typeof notebook>>['data'],
 ) {
-	return expectOk(await diff({ data, definition, fetch: host.fetch }));
+	return expectOk(await diff({ data, fetch: host.fetch }));
 }
 
 /** The plan `diff` says, where the folder has a base to plan against. */
@@ -199,10 +200,9 @@ async function pullInto(
 	data: Awaited<ReturnType<typeof notebook>>['data'],
 	state?: FolderState,
 ) {
-	const read = await diff({ data, definition, fetch: host.fetch });
+	const read = await diff({ data, fetch: host.fetch });
 	return pull({
 		data,
-		definition,
 		// A host that cannot be read has no state to approve, and the pull is
 		// what reports that rather than the helper.
 		state: state ?? read.data ?? { base: false, unwritten: [] },
@@ -556,7 +556,6 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		expectOk(
 			await push({
 				data,
-				definition,
 				plan,
 				fetch: host.fetch,
 			}),
@@ -622,7 +621,6 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		expectOk(
 			await pull({
 				data,
-				definition: refusing,
 				state: { base: false, unwritten: [] },
 				fetch: host.fetch,
 			}),
@@ -634,7 +632,6 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		const plan = planIn(
 			await diff({
 				data,
-				definition: refusing,
 				fetch: host.fetch,
 			}),
 		);
@@ -683,9 +680,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		data.tables.notes.delete(noteId);
 		const plan = await planOf(host, data);
 
-		const done = expectOk(
-			await push({ data, definition, plan, fetch: host.fetch }),
-		);
+		const done = expectOk(await push({ data, plan, fetch: host.fetch }));
 		const minted = done.admitted[0]?.rowId as string;
 		expect(minted).not.toBe(noteId);
 		expect(data.tables.notes.get(minted)?.title).toBe('Shopping');
@@ -789,9 +784,9 @@ describe('push sends the values back and re-renders', () => {
 
 	const sendBack = (
 		host: ReturnType<typeof fakeHost>,
-		data: PushableData & typeof STORE,
+		data: PushableData & CheckoutAddress,
 		plan: PushPlan,
-	) => push({ data, definition, plan, fetch: host.fetch });
+	) => push({ data, plan, fetch: host.fetch });
 
 	test('an applied value reaches the store, and its file is rewritten', async () => {
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
@@ -1147,7 +1142,6 @@ describe('push sends the values back and re-renders', () => {
 		expectOk(
 			await pull({
 				data,
-				definition: exploding,
 				state: { base: false, unwritten: [] },
 				fetch: host.fetch,
 			}),
@@ -1159,7 +1153,6 @@ describe('push sends the values back and re-renders', () => {
 		const plan = planIn(
 			await diff({
 				data,
-				definition: exploding,
 				fetch: host.fetch,
 			}),
 		);
@@ -1195,7 +1188,6 @@ describe('push sends the values back and re-renders', () => {
 		expectOk(
 			await pull({
 				data,
-				definition: exploding,
 				state: { base: false, unwritten: [] },
 				fetch: host.fetch,
 			}),
@@ -1205,18 +1197,14 @@ describe('push sends the values back and re-renders', () => {
 			`notes/${note.id}.md`,
 			'---\ntitle: "changed by hand"\npinned: false\n---\n\nnew text\n',
 		);
-		const plan = planIn(
-			await diff({ data, definition: exploding, fetch: host.fetch }),
-		);
+		const plan = planIn(await diff({ data, fetch: host.fetch }));
 		expect(only(plan, 'kept').reason).toBe('body-unreadable');
 		expect(only(plan, 'value')).toMatchObject({
 			name: 'title',
 			file: 'changed by hand',
 		});
 
-		expectOk(
-			await push({ data, definition: exploding, plan, fetch: host.fetch }),
-		);
+		expectOk(await push({ data, plan, fetch: host.fetch }));
 		expect(data.tables.notes.get(note.id)?.title).toBe('changed by hand');
 		// And the file is LEFT ALONE, because one region of it could not be
 		// read (ADR-0341). Re-rendering it here would destroy the text the
@@ -1268,7 +1256,6 @@ describe('push sends the values back and re-renders', () => {
 		const state = expectOk(
 			await diff({
 				data: addressed(data, { generation: STORE.generation + 1 }),
-				definition,
 				fetch: host.fetch,
 			}),
 		);
@@ -1340,15 +1327,11 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		},
 	});
 
-	async function agentsFor(
-		data: PushableData & typeof STORE,
-		of: typeof definition | typeof shapes = definition,
-	) {
+	async function agentsFor(data: PushableData & CheckoutAddress) {
 		const host = fakeHost();
 		expectOk(
 			await pull({
 				data,
-				definition: of,
 				state: { base: false, unwritten: [] },
 				fetch: host.fetch,
 			}),
@@ -1362,8 +1345,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		// pinning today's markdown.
 		const data = addressed(await openMemory(shapes), { dataId: shapes.id });
 		const { agents } = await agentsFor(
-			data as unknown as PushableData & typeof STORE,
-			shapes,
+			data as unknown as PushableData & CheckoutAddress,
 		);
 		for (const [name, table] of Object.entries(shapes.tables)) {
 			expect(agents).toContain(`### ${name}/`);
@@ -1383,8 +1365,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		// edits, and every one of these is silent in the folder itself.
 		const data = addressed(await openMemory(shapes), { dataId: shapes.id });
 		const { agents } = await agentsFor(
-			data as unknown as PushableData & typeof STORE,
-			shapes,
+			data as unknown as PushableData & CheckoutAddress,
 		);
 		// Keyed by the plan's own vocabulary, so a kind added to `PlanItem` or a
 		// reason added to `KeepReason` fails to compile until this file says
@@ -1424,12 +1405,10 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		// every folder, every time.
 		const data = addressed(await openMemory(shapes), { dataId: shapes.id });
 		const first = await agentsFor(
-			data as unknown as PushableData & typeof STORE,
-			shapes,
+			data as unknown as PushableData & CheckoutAddress,
 		);
 		const second = await agentsFor(
-			data as unknown as PushableData & typeof STORE,
-			shapes,
+			data as unknown as PushableData & CheckoutAddress,
 		);
 		expect(second.agents).toBe(first.agents);
 		await data[Symbol.asyncDispose]();
@@ -1504,9 +1483,7 @@ describe('the whole cycle, as a person walks it (ADR-0341)', () => {
 			'deletion',
 			'value',
 		]);
-		const done = expectOk(
-			await push({ data, definition, plan, fetch: host.fetch }),
-		);
+		const done = expectOk(await push({ data, plan, fetch: host.fetch }));
 		expect(done).toMatchObject({ values: 1, bodies: 1, deleted: 1 });
 		expect(data.tables.notes.get(noteId)?.title).toBe('Budget 2026');
 		expect(data.tables.notes.get(trashed.id)).toBeUndefined();
@@ -1520,7 +1497,7 @@ describe('the whole cycle, as a person walks it (ADR-0341)', () => {
 		// 5. The push keeps it, byte for byte, and says so again.
 		const kept = await planOf(host, data);
 		expect(only(kept, 'kept').reason).toBe('unreadable');
-		expectOk(await push({ data, definition, plan: kept, fetch: host.fetch }));
+		expectOk(await push({ data, plan: kept, fetch: host.fetch }));
 		expect(host.folder.get(`notes/${noteId}.md`)).toBe(broken);
 		expect(only(await planOf(host, data), 'kept').reason).toBe('unreadable');
 

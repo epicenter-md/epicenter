@@ -49,8 +49,6 @@ import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import {
 	CONTENT_FIELD,
-	compileData,
-	type DataDefinition,
 	type JsonObject,
 	type JsonValue,
 	type ParsedDataDefinition,
@@ -83,6 +81,9 @@ export {
 /**
  * Which store a folder is a working copy of, and which history of it.
  *
+ * Exported because the three verbs take it: a caller could satisfy this shape
+ * and had no way to name it.
+ *
  * The four facts the manifest records and every later comparison is against.
  * They used to arrive as their own argument, assembled by the caller out of a
  * store and a generation kept beside it, and that is how a folder came to be
@@ -91,11 +92,21 @@ export {
  * a second description of it, and there is nothing left for a caller to get
  * half right.
  */
-type CheckoutAddress = {
+export type CheckoutAddress = {
 	readonly dataId: string;
 	readonly generation: number;
 	readonly baseURL: string;
 	readonly principalId: string;
+	/**
+	 * What this store holds, compiled, which the opener stamped on it.
+	 *
+	 * It used to arrive beside the data as a declaration, and each of the three
+	 * verbs compiled it again on every call. It is the same fact as `dataId` one
+	 * layer down, and taking it from the store is also what makes a malformed
+	 * declaration unreachable here: this one compiled, or there would be no
+	 * store to hand over (ADR-0340).
+	 */
+	readonly definition: ParsedDataDefinition;
 };
 
 /**
@@ -568,13 +579,11 @@ function agentsFile(definition: ParsedDataDefinition): string {
  */
 export async function pull({
 	data,
-	definition,
 	state: confirmed,
 	fetch: httpFetch = globalThis.fetch,
 	now = () => new Date(),
 }: {
 	data: RenderableData & CheckoutAddress;
-	definition: DataDefinition;
 	/**
 	 * What `diff` said and a person approved, whole.
 	 *
@@ -587,20 +596,10 @@ export async function pull({
 	fetch?: typeof globalThis.fetch;
 	now?: () => Date;
 }): Promise<Result<{ files: number }, CheckoutError>> {
-	const parsedDefinition = compileData(definition);
-	if (parsedDefinition.error !== null) {
-		return CheckoutError.Unrenderable({
-			failures: [
-				RenderError.MalformedDefinition({
-					reason: parsedDefinition.error.message,
-				}).error,
-			],
-		});
-	}
 	// The same reading `diff` produced for the person, made again: a pull writes
 	// over everything in it, so applying a list that moved would write over work
 	// nobody was shown.
-	const found = await readFolder(data, parsedDefinition.data, httpFetch);
+	const found = await readFolder(data, data.definition, httpFetch);
 	if (found.error !== null) return Err(found.error);
 	const approved = stateOf(found.data.read);
 	if (!sameState(approved, confirmed)) {
@@ -618,7 +617,7 @@ export async function pull({
 	const kvContents = JSON.stringify(state.kv, null, 2);
 	return writeFolder({
 		data,
-		definition: parsedDefinition.data,
+		definition: data.definition,
 		sources,
 		kv: { contents: kvContents, hash: await contentHash(kvContents) },
 		pulledAt: now().toISOString(),
@@ -1098,22 +1097,12 @@ function planKey(item: PlanItem): string {
  */
 export async function diff({
 	data,
-	definition,
 	fetch: httpFetch = globalThis.fetch,
 }: {
 	data: RenderableData & CheckoutAddress;
-	definition: DataDefinition;
 	fetch?: typeof globalThis.fetch;
 }): Promise<Result<FolderState, CheckoutError>> {
-	const parsed = compileData(definition);
-	if (parsed.error !== null) {
-		return CheckoutError.Unrenderable({
-			failures: [
-				RenderError.MalformedDefinition({ reason: parsed.error.message }).error,
-			],
-		});
-	}
-	const found = await readFolder(data, parsed.data, httpFetch);
+	const found = await readFolder(data, data.definition, httpFetch);
 	return found.error === null ? Ok(stateOf(found.data.read)) : Err(found.error);
 }
 
@@ -1551,25 +1540,15 @@ function sameState(left: FolderState, right: FolderState): boolean {
  */
 export async function push({
 	data,
-	definition,
 	plan: confirmed,
 	fetch: httpFetch = globalThis.fetch,
 }: {
 	data: PushableData & CheckoutAddress;
-	definition: DataDefinition;
 	/** What `diff` said and a person approved, whole. */
 	plan: PushPlan;
 	fetch?: typeof globalThis.fetch;
 }): Promise<Result<PushOutcome, CheckoutError>> {
-	const parsed = compileData(definition);
-	if (parsed.error !== null) {
-		return CheckoutError.Unrenderable({
-			failures: [
-				RenderError.MalformedDefinition({ reason: parsed.error.message }).error,
-			],
-		});
-	}
-	const found = await readFolder(data, parsed.data, httpFetch);
+	const found = await readFolder(data, data.definition, httpFetch);
 	if (found.error !== null) return Err(found.error);
 	const { held, read } = found.data;
 	// The one guard, and it is not about consent to an item: it is that the
@@ -1619,7 +1598,7 @@ export async function push({
 			broke(`'${item.path}' could not be read into a row`);
 			continue;
 		}
-		const codec = parsed.data.tables.get(item.table)?.content;
+		const codec = data.definition.tables.get(item.table)?.content;
 		// No codec and an empty body is a row whose file IS its frontmatter,
 		// and `create` mints the empty node for it. A body with no codec was
 		// already kept at plan time.
@@ -1694,7 +1673,7 @@ export async function push({
 				for (const item of plan) {
 					if (item.kind !== 'body') continue;
 					const node = data.rowFile(item.table, item.rowId)?.[CONTENT_FIELD];
-					const codec = parsed.data.tables.get(item.table)?.content;
+					const codec = data.definition.tables.get(item.table)?.content;
 					// Both are defensive: a row with no live node renders as
 					// `MalformedRow`, so `planPush` already kept it,
 					// and a body item is only made where a codec read the text.
@@ -1825,7 +1804,7 @@ export async function push({
 	const kvContents = held.files.get('kv.json');
 	const written = await writeFolder({
 		data,
-		definition: parsed.data,
+		definition: data.definition,
 		sources,
 		// `kv.json` holds still like everything else, hash and all. A folder
 		// that no longer has one does not get one here: fresh bytes beside the

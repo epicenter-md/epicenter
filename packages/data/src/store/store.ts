@@ -850,7 +850,7 @@ function createStoreEngine({
 	// after hydration.
 	const view = buildView();
 
-	const base: Omit<DataDocument, 'sync'> = {
+	const base: Omit<DataDocument, 'sync' | 'definition'> = {
 		/**
 		 * Everything this application has stored, before its declaration reads
 		 * it (ADR-0267).
@@ -956,7 +956,14 @@ function createStoreEngine({
 		status: () => attachedStatus.get(sync)?.(),
 	});
 	syncEngines.set(sync, Object.freeze(syncEngine));
-	return { store: Object.freeze({ ...base, sync }), close, view, definition };
+	return {
+		// The compiled declaration rides on the store, so nothing downstream
+		// compiles it a second time (ADR-0340).
+		store: Object.freeze({ ...base, sync, definition }),
+		close,
+		view,
+		definition,
+	};
 
 	function createClientLog(): ClientLog {
 		// Typed where it is WRITTEN, not where it is returned. `Object.freeze(literal)`
