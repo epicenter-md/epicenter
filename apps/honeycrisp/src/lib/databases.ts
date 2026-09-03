@@ -168,7 +168,7 @@ async function openAccountReplica({
 	if (error !== null) throw error;
 
 	const connectionResult = trySync({
-		try: () => attachHoneycrispSync({ store: data, generation, auth }),
+		try: () => attachHoneycrispSync({ store: data, auth }),
 		catch: (cause) => Err(cause),
 	});
 	if (!isOk(connectionResult)) {

@@ -18,7 +18,6 @@
 import type { AuthClient } from '@epicenter/auth';
 import type { ReplicaDocument } from '@epicenter/data/browser';
 import { attachStoreSync, type SyncConnection } from '@epicenter/data/sync';
-import { honeycrispDefinition } from '@epicenter/honeycrisp';
 import { reportBackgroundError } from './report.js';
 
 /**
@@ -32,21 +31,17 @@ import { reportBackgroundError } from './report.js';
  */
 export function attachHoneycrispSync({
 	store,
-	generation,
 	auth,
 	onDenied,
 }: {
-	store: ReplicaDocument;
 	/**
-	 * The generation this replica holds, which addresses its authority with the
-	 * database id (ADR-0292).
+	 * The open replica, which is also the address the socket dials (ADR-0340).
 	 *
-	 * It arrives from the route rather than being discovered here, and that is
-	 * what deleted supersession: a generation is created once and never mutated
-	 * in place, so a socket addressed at one cannot be told it belongs to
-	 * another.
+	 * The data id and the generation used to arrive beside it, from the route.
+	 * They are on the store now, which is what deleted the last way a caller
+	 * could address a socket at a generation the store is not.
 	 */
-	generation: number;
+	store: ReplicaDocument;
 	auth: AuthClient;
 	/**
 	 * No dial in this app generation can ever succeed (reauth required, a
@@ -57,8 +52,6 @@ export function attachHoneycrispSync({
 }): SyncConnection {
 	return attachStoreSync({
 		store,
-		dataId: honeycrispDefinition.id,
-		generation,
 		transport: {
 			openWebSocket: (url) => auth.openWebSocket(url),
 		},

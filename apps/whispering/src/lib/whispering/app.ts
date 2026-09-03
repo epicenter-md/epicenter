@@ -270,8 +270,6 @@ async function openAccountRuntime({
 		signal?.throwIfAborted();
 		const connection = attachStoreSync({
 			store: data,
-			dataId: whisperingDefinition.id,
-			generation,
 			transport: {
 				openWebSocket: (url) => auth.openWebSocket(url),
 			},

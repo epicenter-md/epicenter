@@ -42,7 +42,12 @@ function openStore(): AddressedTestStore {
 		dispose: () => live.close(),
 	});
 	const addressed = Object.create(db) as AddressedTestStore;
+	// The whole address, the way an opener stamps it (ADR-0340). The dial reads
+	// the data id and the generation off the store rather than beside it.
 	Object.defineProperties(addressed, {
+		appId: { value: database.id },
+		dataId: { value: database.id },
+		generation: { value: 1 },
 		baseURL: { value: 'https://api.epicenter.test' },
 		principalId: { value: asPrincipalId('alice') },
 	});
@@ -69,8 +74,6 @@ test('the first dial names the dataId and a cursor of zero', async () => {
 	);
 	const connection = attachStoreSync({
 		store,
-		dataId: database.id,
-		generation: 1,
 		transport,
 		onTransportError: (cause) => {
 			throw cause;
@@ -89,6 +92,27 @@ test('the first dial names the dataId and a cursor of zero', async () => {
 	expect(url.searchParams.has('document')).toBe(false);
 });
 
+test('the store answers for the connection driving it, and stops when it goes', async () => {
+	const store = openStore();
+	await using _store = store;
+	// Nothing attached, so there is nothing to report. A surface renders that
+	// the same way it renders a denial: no status line (ADR-0340).
+	expect(store.sync.status()).toBeUndefined();
+
+	const { transport } = createTransport(() => new Promise<WebSocket>(() => {}));
+	const connection = attachStoreSync({
+		store,
+		transport,
+		onTransportError: (cause) => {
+			throw cause;
+		},
+	});
+
+	expect(store.sync.status()).toEqual(connection.status());
+	connection[Symbol.dispose]();
+	expect(store.sync.status()).toBeUndefined();
+});
+
 test('a permanent denial stops the driver and is not a transport error', async () => {
 	const store = openStore();
 	await using _store = store;
@@ -103,8 +127,6 @@ test('a permanent denial stops the driver and is not a transport error', async (
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		dataId: database.id,
-		generation: 1,
 		transport,
 		onDenied: () => denials++,
 		onTransportError: (cause) => transportErrors.push(cause),
@@ -133,8 +155,6 @@ test('a transient denial is reported and left to the backoff', async () => {
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		dataId: database.id,
-		generation: 1,
 		transport,
 		onDenied: () => denials++,
 		onTransportError: (cause) => transportErrors.push(cause),
@@ -156,8 +176,6 @@ test('an unrecognised rejection is a close, never a denial', async () => {
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
-		dataId: database.id,
-		generation: 1,
 		transport,
 		onDenied: () => denials++,
 		onTransportError: (error) => transportErrors.push(error),
@@ -183,8 +201,6 @@ test('abandoning an attempt closes a socket that arrives late', async () => {
 	const { transport } = createTransport(() => arrival.promise);
 	const connection = attachStoreSync({
 		store,
-		dataId: database.id,
-		generation: 1,
 		transport,
 		onTransportError: (cause) => {
 			throw cause;

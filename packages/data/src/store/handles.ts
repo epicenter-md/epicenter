@@ -23,6 +23,7 @@ import type { PrincipalId } from '@epicenter/principal';
 import type * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
+import type { SyncConnectionStatus } from '../sync/connection.js';
 import type { RowInput } from './document.js';
 import type { NonconformingRow, RowAbsentError } from './errors.js';
 import type { PersistenceCapability } from './persistence.js';
@@ -569,6 +570,23 @@ export type DataDocument = {
  * device store.
  */
 export type ReplicaDocument = DataDocument & {
+	/**
+	 * The application that opened this store, which is not the data id
+	 * (ADR-0324, ADR-0304).
+	 */
+	readonly appId: string;
+	/** What this store holds, as its definition declares it. */
+	readonly dataId: string;
+	/**
+	 * The exact generation this store is (ADR-0292).
+	 *
+	 * Stamped by the opener, which is the one party that knows it. It used to
+	 * be kept beside the store by whoever opened it, and handed back to every
+	 * verb that needed an address: a socket, a manifest, a bug report. A caller
+	 * that assembles an address can assemble a wrong one, and nothing type-checks
+	 * the pair because both halves are the same primitive (ADR-0340).
+	 */
+	readonly generation: number;
 	/** The canonical server identity this replica belongs to. */
 	readonly baseURL: string;
 	/** The principal asserted by that server for this replica. */
@@ -588,7 +606,22 @@ export type ReplicaDocument = DataDocument & {
  * Connection health, attempts, and in-flight submissions belong to the
  * connection driving the socket and were never here.
  */
-export type SyncCapability = { readonly replicates: true };
+export type SyncCapability = {
+	readonly replicates: true;
+	/**
+	 * What the attached connection reports, or `undefined` when none is
+	 * attached or the host denied it permanently.
+	 *
+	 * Pull-only, and polled rather than subscribed. Connection health changes on
+	 * a socket's schedule, so a reactive adapter holding it would be polling
+	 * underneath and calling the result state; `from-data.svelte.ts` refuses
+	 * that boundary by name. The store holds the connection so a status has one
+	 * owner, not so a reader can dial: there is no `connect`, no `disconnect`,
+	 * and no `retry` here, because the driver owns its backoff and a permanent
+	 * denial is a fact about this auth generation rather than a button.
+	 */
+	status(): SyncConnectionStatus | undefined;
+};
 
 /**
  * The account half of an address, and how this device reaches its authority.

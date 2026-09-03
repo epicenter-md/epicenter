@@ -828,10 +828,16 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 		return StoreError.StorageFailed({ cause });
 	}
 
+	// The whole address, stamped by the one party that knows it (ADR-0340).
+	// Four of these five facts arrived as arguments and were thrown away after
+	// they resolved a document name; keeping them is not new state.
 	return Ok(
 		Object.freeze({
 			...(parts.view as DataView<TDatabase>),
 			...parts.store,
+			appId,
+			dataId: parsed.id,
+			generation,
 			baseURL: opening.data.baseURL,
 			principalId: opening.data.principalId,
 		}),
@@ -1040,8 +1046,8 @@ async function postGeneration(
  *
  * A `Result` rather than a throw, because every arm is a boot outcome an
  * application renders: the copy is elsewhere, the account cannot be reached, or
- * this device names nothing. `packages/app`'s `openData` and every application
- * that opens its own store go through this one answer.
+ * this device names nothing. `epicenter.data` and every application that opens
+ * its own store go through this one answer.
  */
 export async function resolveGeneration(
 	definition: DataDefinition,

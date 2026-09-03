@@ -44,15 +44,16 @@ export type {
 	RowAbsentError,
 } from './errors.js';
 
+// The declaration half of this module lives beside it: `errors.ts` is what a
+// store refuses with, `handles.ts` is what an application holds. Re-exported
+// here rather than moved out of reach, because `@epicenter/data`'s barrel and
+// every caller already name them through this path.
+import type { SyncConnectionStatus } from '../sync/connection.js';
 import type {
 	ApplyFailedError,
 	NonconformingRow,
 	RowAbsentError,
 } from './errors.js';
-// The declaration half of this module lives beside it: `errors.ts` is what a
-// store refuses with, `handles.ts` is what an application holds. Re-exported
-// here rather than moved out of reach, because `@epicenter/data`'s barrel and
-// every caller already name them through this path.
 import { StoreError, StoreUnusableError } from './errors.js';
 import type {
 	Data,
@@ -221,6 +222,36 @@ type SyncEngine = ClientLog & {
  * by reference, so it is the one key every wrapper preserves.
  */
 const syncEngines = new WeakMap<SyncCapability, SyncEngine>();
+
+/**
+ * What the connection driving each store reports, if one is attached.
+ *
+ * Registered against the capability for the same reason the engine is: a
+ * wrapper that spreads the store keeps the door reachable. One connection per
+ * store, because a second one dialling the same generation would be two
+ * writers on one cursor.
+ */
+const attachedStatus = new WeakMap<
+	SyncCapability,
+	() => SyncConnectionStatus
+>();
+
+/**
+ * Hand this store the connection now driving it, and take it back on disposal.
+ *
+ * Called by `attachStoreSync` and nothing else, which is why it is not on the
+ * package's public surface: what leaves the package is a status, not a driver
+ * (ADR-0340).
+ */
+export function registerSyncConnection(
+	sync: SyncCapability,
+	status: () => SyncConnectionStatus,
+): () => void {
+	attachedStatus.set(sync, status);
+	return () => {
+		if (attachedStatus.get(sync) === status) attachedStatus.delete(sync);
+	};
+}
 
 /**
  * The delivery machinery behind one replica's `sync` capability.
@@ -905,7 +936,10 @@ function createStoreEngine({
 	// The delivery machinery is registered against the capability rather than
 	// the store, so a wrapper that spreads the store (a `discard()` opener)
 	// keeps the door reachable.
-	const sync: SyncCapability = Object.freeze({ replicates: true as const });
+	const sync: SyncCapability = Object.freeze({
+		replicates: true as const,
+		status: () => attachedStatus.get(sync)?.(),
+	});
 	syncEngines.set(sync, Object.freeze(syncEngine));
 	return { store: Object.freeze({ ...base, sync }), view, definition };
 

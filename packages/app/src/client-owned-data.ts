@@ -141,8 +141,6 @@ export async function openReplica<TDefinition extends DataDefinition>({
 	// `AuthClient` satisfies the port structurally with no adapter.
 	attachStoreSync({
 		store: opened.data,
-		dataId: definition.id,
-		generation: resolved.data.generation,
 		transport: account,
 		onTransportError: (cause) =>
 			log.warn(EpicenterDataBackgroundError.SyncTransportFailed({ cause })),

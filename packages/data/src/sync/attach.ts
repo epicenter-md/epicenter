@@ -20,7 +20,10 @@
 
 import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
-import type { ReplicaDocument } from '../store/store.js';
+import {
+	type ReplicaDocument,
+	registerSyncConnection,
+} from '../store/store.js';
 import { createSyncConnection, type SyncConnection } from './connection.js';
 
 /**
@@ -43,19 +46,19 @@ export type StoreSocketTransport = {
 };
 
 export type AttachStoreSyncOptions = {
-	/** The open account replica this connection carries. */
-	store: ReplicaDocument;
-	/** The data id being synced, which addresses the authority. */
-	dataId: string;
 	/**
-	 * The exact generation being synced, which addresses it with the id.
+	 * The open account replica this connection carries, which is also the
+	 * address it dials.
 	 *
-	 * The whole of membership (ADR-0292). A generation is created once and
-	 * never mutated in place, so a socket addressed here can only be carrying
-	 * this history's bytes; there is nothing to announce, nothing to compare,
-	 * and no supersession to conclude.
+	 * The data id and the generation used to arrive beside it, read off the
+	 * same open the caller passed here. A connection is opened against the
+	 * store it drives, so there was never a second address to describe
+	 * (ADR-0340). The generation is the whole of membership (ADR-0292): it is
+	 * created once and never mutated in place, so a socket addressed from the
+	 * store can only be carrying this history's bytes, and there is nothing to
+	 * announce, nothing to compare, and no supersession to conclude.
 	 */
-	generation: number;
+	store: ReplicaDocument;
 	transport: StoreSocketTransport;
 	/**
 	 * No dial in this app generation can ever succeed (reauth required, a
@@ -87,8 +90,6 @@ export type AttachStoreSyncOptions = {
  */
 export function attachStoreSync({
 	store,
-	dataId,
-	generation,
 	transport,
 	onDenied,
 	onTransportError,
@@ -101,8 +102,8 @@ export function attachStoreSync({
 			void transport
 				.openWebSocket(
 					STORE_SYNC_ROUTE.url(store.baseURL, {
-						dataId,
-						generation,
+						dataId: store.dataId,
+						generation: store.generation,
 						cursor,
 					}),
 				)
@@ -148,6 +149,16 @@ export function attachStoreSync({
 			};
 		},
 	});
+	// The store answers `sync.status()` from here for as long as this connection
+	// is the one driving it (ADR-0340). A consumer polls that rather than
+	// holding this object, which is why disposal takes the registration back.
+	const forget = registerSyncConnection(store.sync, () => connection.status());
 	connection.start();
-	return connection;
+	return {
+		...connection,
+		[Symbol.dispose]() {
+			forget();
+			connection[Symbol.dispose]();
+		},
+	};
 }
