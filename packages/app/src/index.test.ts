@@ -33,7 +33,7 @@ test('creates a handle scoped to one application', async () => {
 	const calls: string[] = [];
 	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
-		binding: bindingFor(calls),
+		binding: () => bindingFor(calls),
 	});
 
 	expect(epicenter.appId).toBe('so.epicenter.test');
@@ -49,7 +49,7 @@ test('deleting takes the same name as opening', async () => {
 	const calls: string[] = [];
 	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
-		binding: bindingFor(calls),
+		binding: () => bindingFor(calls),
 	});
 
 	const deleted = await epicenter.sqlite.delete(databaseName('mail'));
@@ -60,7 +60,7 @@ test('deleting takes the same name as opening', async () => {
 test('a handle with no definition has no store and no account', () => {
 	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
-		binding: bindingFor([]),
+		binding: () => bindingFor([]),
 	});
 
 	// The type says this already: `[TDefinition] extends [never]` fails
@@ -84,8 +84,37 @@ test('a name is checked where it is minted, not on every call', () => {
 	expect(String(secretLabel('sub-one'))).toBe('sub-one');
 });
 
+test('the application id comes from the definition, and is not written twice', () => {
+	// Every data id is a legal application id, so the default is always valid.
+	// Stating it is for one case and nothing does it yet: an application that
+	// opens ANOTHER application's data keeps its own local copy, because the
+	// first segment of a store's address is the OPENING application (ADR-0324).
+	const definition = { id: 'so.epicenter.notes' } as never;
+	const account = {} as never;
+	expect(
+		createEpicenter({ binding: () => bindingFor([]), definition, account })
+			.appId,
+	).toBe('so.epicenter.notes');
+	expect(
+		createEpicenter({
+			appId: 'so.epicenter.reader',
+			binding: () => bindingFor([]),
+			definition,
+			account,
+		}).appId,
+	).toBe('so.epicenter.reader');
+});
+
+test('a handle with neither an id nor a definition has nothing to be', () => {
+	expect(() =>
+		// @ts-expect-error the type already refuses this; the throw is for a
+		// caller that arrived without one.
+		createEpicenter({ binding: () => bindingFor([]) }),
+	).toThrow('needs an application id');
+});
+
 test('an application id this platform cannot file refuses at construction', () => {
 	expect(() =>
-		createEpicenter({ appId: 'not an app id', binding: bindingFor([]) }),
+		createEpicenter({ appId: 'not an app id', binding: () => bindingFor([]) }),
 	).toThrow('is not valid');
 });

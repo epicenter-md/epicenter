@@ -19,11 +19,14 @@ async function hostHandle() {
 		storage,
 		epicenter: createEpicenter({
 			appId: APP,
-			binding: createHostBinding({
-				appId: APP,
-				storage,
-				secrets: createProcessMemoryAppSecrets(),
-			}),
+			// The binding is built for the id the handle resolved, so the two
+			// cannot be scoped to different applications (ADR-0339).
+			binding: (appId) =>
+				createHostBinding({
+					appId,
+					storage,
+					secrets: createProcessMemoryAppSecrets(),
+				}),
 		}),
 	};
 }

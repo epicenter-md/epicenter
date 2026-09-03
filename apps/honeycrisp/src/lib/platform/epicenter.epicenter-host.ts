@@ -8,7 +8,8 @@
  * `definition` and `account` arrive together, which is the store: an authority
  * mints every generation (ADR-0336), so there is no accountless notebook. The
  * account is the client this build composed, and passing it here is what
- * attaches sync.
+ * attaches sync. There is no application id, because the definition is one:
+ * this application holds its own notes and nobody else's.
  *
  * Nothing opens yet. `epicenter.data` is a lazy getter, so a signed-out person
  * meeting the gate pays no Web Lock, no IndexedDB, and no round trip.
@@ -16,10 +17,9 @@
 
 import { createEpicenter } from '@epicenter/app/desktop';
 import { auth } from '#platform/auth';
-import { HONEYCRISP_APP_ID, honeycrispDefinition } from '$lib/data/index.js';
+import { honeycrispDefinition } from '$lib/data/index.js';
 
 export const epicenter = createEpicenter({
-	appId: HONEYCRISP_APP_ID,
 	definition: honeycrispDefinition,
 	account: auth,
 });

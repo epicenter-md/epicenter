@@ -32,7 +32,7 @@ to fails to resolve rather than quietly running the wrong owner.
 | --- | --- |
 | `@epicenter/app/browser` | `createEpicenter`, over this origin's OPFS and tab memory |
 | `@epicenter/app/desktop` | `createEpicenter`, over the trusted owner's files and the OS keychain |
-| `@epicenter/app` | the types, `AppError`, `SecretError`, the two name mints and their guards, and the binding-taking `createEpicenter` the Bun host's leaf is built on |
+| `@epicenter/app` | the types, `AppError`, `SecretError`, the two name mints and their guards, and the `(appId) => binding` form of `createEpicenter` the Bun host's leaf is built on |
 | `@epicenter/app/protocol` | the request and response shapes both ends of the desktop seam read |
 
 | Leaf | `sqlite` | `secrets` |
@@ -46,7 +46,7 @@ ADR-0227), so `data` is composed above the seam rather than through it.
 ## The surface
 
 ```ts
-const epicenter = createEpicenter({ appId, definition, account });
+const epicenter = createEpicenter({ definition, account });
 
 epicenter.appId              // string, frozen
 epicenter.sqlite.open(name)  // Promise<Result<AppSqliteDatabase, AppError>>
@@ -61,6 +61,12 @@ epicenter.eraseReplica()     // Promise<Result<void, StoreError>>
 every generation (ADR-0336), so there is no accountless store and no store
 without sync. Pass neither and the handle has no `data` and no `account`, in the
 type as well as at runtime; pass both and it has the superset.
+
+**There is no `appId` to write.** It defaults to `definition.id`, and a data id
+is always a legal application id. State it only when this application opens
+another application's data, which nothing does; an application with no
+definition states it because there is nothing to default from. An application
+holds one store, and ADR-0339 says what changes on the day one holds two.
 
 **`data` is a lazy getter that memoizes.** Reading it starts the open, so an
 application that never reads it pays no Web Lock, no IndexedDB, and no round

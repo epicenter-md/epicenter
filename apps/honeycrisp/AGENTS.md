@@ -13,7 +13,7 @@ Design authority: [ADR-0339](../../docs/adr/0339-an-application-creates-one-epic
 (ADR-0339). Its two leaves differ in one line, the runtime subpath:
 
 ```ts
-createEpicenter({ appId: HONEYCRISP_APP_ID, definition: honeycrispDefinition, account: auth })
+createEpicenter({ definition: honeycrispDefinition, account: auth })
 ```
 
 `definition` and `account` arrive together, which IS the store: an authority
@@ -27,10 +27,11 @@ epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>
 ```
 
 The first segment after the version is the OPENING application and the second
-is the data id (ADR-0324). They are the same string here because Honeycrisp
-names its notes after itself, which is a coincidence and not an identity.
-`HONEYCRISP_APP_ID` in `src/lib/data/index.ts` is that first segment,
-self-claimed, because a deployed app is a trusted app (ADR-0334).
+is the data id (ADR-0324). They are the same string here and nothing writes the
+first one down: it defaults to `honeycrispDefinition.id`, because this
+application holds its own notes and nobody else's. An application that opened
+another's data would state it, and would then hold two stores, which ADR-0339
+refuses until something needs it.
 
 **The generation is not in the URL and there is no picker.** `data` takes the
 newest copy this device holds, else the account's newest, else mints, and

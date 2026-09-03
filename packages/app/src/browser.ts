@@ -21,6 +21,7 @@ import { createBrowserSqliteOwner } from './browser-sqlite.js';
 import {
 	AppError,
 	type AppSqliteDatabase,
+	type CreateEpicenterOptions,
 	createEpicenter as createEpicenterWith,
 	type Epicenter,
 	type EpicenterBinding,
@@ -34,13 +35,14 @@ type BrowserSqliteOwner = {
 };
 
 export type CreateBrowserEpicenterOptions = {
-	appId: string;
+	/** Defaults to `definition.id`. See {@link CreateEpicenterOptions.appId}. */
+	appId?: string;
 	/** The SQLite owner, which only this package's own test replaces. */
 	sqlite?: BrowserSqliteOwner;
 };
 
 export function createEpicenter(
-	options: CreateBrowserEpicenterOptions,
+	options: CreateBrowserEpicenterOptions & { appId: string },
 ): Epicenter;
 export function createEpicenter<const TDefinition extends DataDefinition>(
 	options: CreateBrowserEpicenterOptions & EpicenterDataOptions<TDefinition>,
@@ -55,24 +57,23 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 	// signatures above are what a caller sees, and they are exact.
 	return createEpicenterWith({
 		...options,
-		binding: createBrowserBinding(options),
+		binding: (appId: string) => createBrowserBinding(appId, options.sqlite),
 	} as never) as Epicenter<TDefinition>;
 }
 
-function createBrowserBinding(options: {
-	appId: string;
-	sqlite?: BrowserSqliteOwner;
-}): EpicenterBinding {
-	const sqlite = options.sqlite ?? createBrowserSqliteOwner();
+function createBrowserBinding(
+	appId: string,
+	owner: BrowserSqliteOwner = createBrowserSqliteOwner(),
+): EpicenterBinding {
 	return {
 		open: (name) =>
 			tryAsync({
-				try: () => sqlite.open(options.appId, name),
+				try: () => owner.open(appId, name),
 				catch: (cause) => AppError.StorageFailed({ cause }),
 			}),
 		delete: (name) =>
 			tryAsync({
-				try: () => sqlite.delete(options.appId, name),
+				try: () => owner.delete(appId, name),
 				catch: (cause) => AppError.StorageFailed({ cause }),
 			}),
 		secrets: createTabMemorySecrets(),

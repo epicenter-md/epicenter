@@ -208,9 +208,32 @@ export type EpicenterDataOptions<TDefinition extends DataDefinition> = {
 };
 
 export type CreateEpicenterOptions = {
-	appId: string;
-	/** The runtime leaf. An application reaches one through its import path. */
-	binding: EpicenterBinding;
+	/**
+	 * What this application owns ON THIS DEVICE: its IndexedDB prefix, its
+	 * SQLite files, and its keychain scope.
+	 *
+	 * **Leave it out.** It defaults to `definition.id`, and every data id is a
+	 * legal application id, so the default is always valid. State it only when
+	 * this application opens ANOTHER application's data: the first segment of a
+	 * store's address is the OPENING application (ADR-0324), which is what lets
+	 * two applications hold their own replicas of one data id instead of taking
+	 * one Web Lock away from each other on a shared origin. Nothing does that
+	 * yet, and an application holds one store until something does (ADR-0339).
+	 *
+	 * An application with no definition has nothing to default from and states
+	 * it. Local Mail is that application.
+	 */
+	appId?: string;
+	/**
+	 * The runtime leaf, built for the id this handle resolved.
+	 *
+	 * A function rather than a value, so the two cannot disagree. It used to be
+	 * a built binding beside an `appId`, which is the mismatched pair ADR-0339
+	 * is named for surviving in the one place the binding is still public: the
+	 * handle scoped its store to one application and the binding scoped the
+	 * files and the keychain to another, and it compiled.
+	 */
+	binding: (appId: string) => EpicenterBinding;
 };
 
 /**
@@ -279,18 +302,27 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 			eraseReplica(): Promise<Result<void, StoreError>>;
 		});
 
-export function createEpicenter(options: CreateEpicenterOptions): Epicenter;
+export function createEpicenter(
+	options: CreateEpicenterOptions & { appId: string },
+): Epicenter;
 export function createEpicenter<const TDefinition extends DataDefinition>(
 	options: CreateEpicenterOptions & EpicenterDataOptions<TDefinition>,
 ): Epicenter<TDefinition>;
-/** Create one handle whose every capability is scoped to `appId`. */
+/** Create one handle whose every capability is scoped to one application. */
 export function createEpicenter<const TDefinition extends DataDefinition>(
 	options: CreateEpicenterOptions & Partial<EpicenterDataOptions<TDefinition>>,
 ): Epicenter<TDefinition> {
-	const { appId, binding, definition, account } = options;
+	const { definition, account } = options;
+	const appId = options.appId ?? definition?.id;
+	if (appId === undefined) {
+		throw new Error(
+			'An epicenter needs an application id, or a definition to take one from.',
+		);
+	}
 	if (!isProtocolAppId(appId)) {
 		throw new Error(AppError.InvalidAppId({ appId }).error.message);
 	}
+	const binding = options.binding(appId);
 
 	const capabilities = {
 		appId,

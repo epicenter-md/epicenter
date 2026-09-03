@@ -49,7 +49,7 @@ The runtime is the import path. The name never carries it.
 import { createEpicenter } from '@epicenter/app/browser';   // or '@epicenter/app/desktop'
 
 createEpicenter({ appId }): Epicenter
-createEpicenter({ appId, definition, account }): Epicenter<typeof definition>
+createEpicenter({ definition, account }): Epicenter<typeof definition>
 ```
 
 ```ts
@@ -81,6 +81,48 @@ no store without sync. The overload is that sentence in the type: an application
 that passes neither gets a handle with no `data` and no `account`, and one that
 passes both gets the superset. `[TDefinition] extends [never]` fails downward,
 so omitting the argument yields the smaller type rather than the larger.
+
+**An application holds one store, and states its id once.** `appId` defaults
+to `definition.id`, so an application that holds data writes neither the id nor
+a binding: it writes what it holds and who it acts as. The default is always
+valid, because a data id is a stricter grammar than an application id (two or
+more dot-separated labels, against any label at all). An application with no
+definition has nothing to default from and states the id; Local Mail is that
+application, and it is the documented exception (ADR-0319).
+
+Holding one store is a DECISION here rather than an observation about the
+applications that exist. The two-segment address (ADR-0324) is built for a
+second application holding a replica of another's data id, and it is not
+theatre: on the desktop every window is one origin (ADR-0118), a Web Lock is
+per origin, and the address is the lock's name (`claims.ts`), so without the
+opening application in it the second window to want your notes takes the lock
+away from the first instead of keeping its own copy. What has no caller is not
+the mechanism but the case: no application opens another's data, and
+`packages/chat` is the one library that arrived at the question and answered it
+by publishing a reusable TABLE an application splices into its own definition
+rather than a data id applications share.
+
+**When a real second live replica arrives, this is the shape it takes, and it
+is one change made at once.** `data` becomes a record keyed by the
+application's own words rather than by data ids:
+
+```ts
+createEpicenter({
+	appId: VOCAB_APP_ID,          // stated again: two definitions, no single default
+	account,
+	data: { own: vocabDefinition, notes: honeycrispDefinition },
+})
+epicenter.data.own
+epicenter.data.notes
+```
+
+Every member that names a store is revisited in that same change, `eraseReplica`
+first, because it stops having one store to mean. It is deliberately not an
+overload: a handle that is sometimes one store and sometimes a set makes every
+store-shaped member fork forever, to save one word at one call site. Until then,
+two `createEpicenter` calls sharing one application id is not the way to do it,
+because the two handles would each carry a `sqlite` and a `secrets` that are one
+scope.
 
 **Five nouns at one altitude:** `appId`, `sqlite`, `secrets`, `account`, `data`.
 Verbs live under the noun they belong to. `openSqlite` and `deleteSqlite` were
@@ -215,8 +257,9 @@ it. That record is
 
 ## Consequences
 
-- An application states its id once and its definition once. The mismatched pair
-  stops being representable, so nothing has to check for it.
+- An application that holds data states neither an id nor a binding. It states
+  what it holds and who it acts as, and every mismatched pair this record was
+  named for stops being representable.
 - A handle with no type argument has no `data` and no `account`. Local Mail's
   three-line platform leaf is the whole surface it needs, and adding Epicenter
   Data later is one changed constructor call with every existing `sqlite` and
@@ -286,3 +329,18 @@ it. That record is
 - **`data` as a method taking the definition.** Refused. An application has one
   definition and it is an import, so the argument is a build-time constant
   arriving at call time, which is the same shape as the app id arriving twice.
+  A second store does not weaken this: it makes the constant two constants, both
+  still known when the bundle is built, which is why the future shape above is a
+  record at construction and not `epicenter.open(definition)`.
+- **`data` overloaded to take either one definition or a record of them.**
+  Refused. TypeScript can discriminate the two, so the cost is not the signature:
+  it is that `data` is not the only member naming a store, so `eraseReplica` and
+  everything after it forks into two shapes permanently, and a reader of the type
+  holds two pictures of what an epicenter is. The saving is one word at one call
+  site.
+- **A binding built beside the application id rather than for it.** Refused, and
+  this record is named for the reason. `createEpicenter({ appId: 'a', binding:
+  createHostBinding({ appId: 'b' }) })` compiled: the handle scoped its store to
+  one application and the binding scoped the files and the keychain to another.
+  The binding is `(appId) => EpicenterBinding` so there is nothing to disagree
+  with.

@@ -30,6 +30,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import {
 	AppError,
 	type AppSqliteDatabase,
+	type CreateEpicenterOptions,
 	createEpicenter as createEpicenterWith,
 	type Epicenter,
 	type EpicenterBinding,
@@ -45,14 +46,15 @@ import {
 } from './protocol.js';
 
 export type CreateDesktopEpicenterOptions = {
-	appId: string;
+	/** Defaults to `definition.id`. See {@link CreateEpicenterOptions.appId}. */
+	appId?: string;
 	/** The trusted origin that owns the files and the keychain entries. */
 	baseURL?: string;
 	fetch?: typeof globalThis.fetch;
 };
 
 export function createEpicenter(
-	options: CreateDesktopEpicenterOptions,
+	options: CreateDesktopEpicenterOptions & { appId: string },
 ): Epicenter;
 export function createEpicenter<const TDefinition extends DataDefinition>(
 	options: CreateDesktopEpicenterOptions & EpicenterDataOptions<TDefinition>,
@@ -67,15 +69,15 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 	// signatures above are what a caller sees, and they are exact.
 	return createEpicenterWith({
 		...options,
-		binding: createDesktopBinding(options),
+		binding: (appId: string) => createDesktopBinding(appId, options),
 	} as never) as Epicenter<TDefinition>;
 }
 
 function createDesktopBinding(
+	appId: string,
 	options: CreateDesktopEpicenterOptions,
 ): EpicenterBinding {
 	const request = createOwnerRequest(options);
-	const { appId } = options;
 	return {
 		open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 		delete: (name) =>

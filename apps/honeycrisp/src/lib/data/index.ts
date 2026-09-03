@@ -93,16 +93,6 @@ const noteMarkdown: ContentCodec = {
 	},
 };
 
-/**
- * The application this opens its store as, self-claimed (ADR-0324, ADR-0334).
- *
- * The first segment of a store's address is the OPENING application and the
- * second is the data id. They are the same string here because Honeycrisp
- * names its notes after itself, which is a coincidence rather than an
- * identity.
- */
-export const HONEYCRISP_APP_ID = 'so.epicenter.honeycrisp';
-
 export const honeycrispDefinition = defineData({
 	id: 'so.epicenter.honeycrisp',
 	title: 'Honeycrisp',
