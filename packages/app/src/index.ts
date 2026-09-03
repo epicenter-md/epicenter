@@ -33,7 +33,7 @@
 
 import type { AuthClient } from '@epicenter/auth';
 import type { ReplicaData } from '@epicenter/data';
-import type { StoreError } from '@epicenter/data/browser';
+import type { OpenedDatabase, StoreError } from '@epicenter/data/browser';
 import type {
 	DataDefinition,
 	DataDefinitionParseError,
@@ -42,7 +42,6 @@ import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import { eraseReplicaOf, openReplica } from './client-owned-data.js';
-import type { OpenedDatabase } from '@epicenter/data/browser';
 import {
 	type DatabaseName,
 	isDatabaseName,
@@ -382,6 +381,15 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 		  >
 		| undefined;
 	let closing: Promise<void> | undefined;
+	/**
+	 * Set by `close`, read by the open it may have raced.
+	 *
+	 * A close before anything was read has nothing to await, and without this a
+	 * later read would start an open the handle could never end. An open that
+	 * lands after a close closes itself, which is what makes `close` terminal
+	 * for the handle rather than for one open.
+	 */
+	let closed = false;
 	return Object.freeze({
 		...capabilities,
 		account,
@@ -389,7 +397,10 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 			// Memoized here rather than in the opener, because the memo is what
 			// makes a second reader join the first open instead of claiming a Web
 			// Lock somebody already holds.
-			opened ??= openReplica({ appId, definition, account });
+			opened ??= openReplica({ appId, definition, account }).then((open) => {
+				if (closed && open.error === null) void open.data.close();
+				return open;
+			});
 			exposed ??= opened.then((open) =>
 				open.error !== null ? open : Ok(open.data.store),
 			);
@@ -398,6 +409,7 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 		eraseReplica: () => eraseReplicaOf({ appId, definition }),
 		close: () =>
 			(closing ??= (async () => {
+				closed = true;
 				if (opened === undefined) return;
 				const open = await opened;
 				if (open.error === null) await open.data.close();

@@ -218,6 +218,26 @@ test('closing is terminal, and the claim it held is free for the next handle', a
 	await reopened.close();
 });
 
+test('a close before anything was read still ends what opens after it', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	// Nothing has read `data`, so there is no open to await. A later read must
+	// not start one this handle can never end: the open closes itself on
+	// arrival, and the claim it took is free for the next handle.
+	const epicenter = handleFor(account);
+	await epicenter.close();
+	const opened = await epicenter.data;
+	if (opened.error !== null) throw opened.error;
+	await Bun.sleep(1);
+	expect(() => opened.data.tables.notes.rows).toThrow();
+
+	const next = await openedBy(account);
+	expect(titles(next.data)).toEqual([]);
+	await next.close();
+});
+
 test('a held copy opens from local storage before sync is available', async () => {
 	await resetStorage();
 	{

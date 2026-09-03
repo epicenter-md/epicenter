@@ -32,11 +32,19 @@ const epicenter = createEpicenter({
 
 export const honeycrisp = fromEpicenter(epicenter);
 
-// A hot swap of this module builds a second handle, and the first one still
-// holds the Web Lock its store claimed, so the replacement would open into
-// `AlreadyOpen` until the page was reloaded by hand. Closing is terminal and
-// releases all three things opening took; the new module opens fresh. The auth
-// leaf next door disposes for the same reason.
+// A hot swap of this module builds a second handle while the first still holds
+// the Web Lock its store claimed, so the replacement opens into `AlreadyOpen`
+// until the page is reloaded by hand. Closing is terminal and releases all
+// three things opening took, so the new module opens fresh.
+//
+// `accept` is what makes the `dispose` run. Vite disposes only the module an
+// update was ACCEPTED at (`fetchUpdate` in its client), and a module with no
+// `accept` is never one: the update walks up to the nearest self-accepting
+// importer, which is the page component, and the page's disposer runs instead
+// of this one. Accepting makes this its own boundary; invalidating immediately
+// says it cannot really handle the swap, so the update goes on up to the page
+// exactly as it did before, with the old handle now closed.
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => void epicenter.close());
+	import.meta.hot.accept(() => import.meta.hot?.invalidate());
 }

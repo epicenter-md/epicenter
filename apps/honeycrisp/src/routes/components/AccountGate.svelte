@@ -35,9 +35,9 @@
 	let eraseFailure = $state<string | undefined>(undefined);
 
 	async function erase() {
+		if (eraseReplica === undefined) return;
 		erasing = true;
 		eraseFailure = undefined;
-		if (eraseReplica === undefined) return;
 		const { error } = await eraseReplica();
 		erasing = false;
 		if (error !== null) {
