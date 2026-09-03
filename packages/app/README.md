@@ -32,7 +32,7 @@ to fails to resolve rather than quietly running the wrong owner.
 | --- | --- |
 | `@epicenter/app/browser` | `createEpicenter`, over this origin's OPFS and tab memory |
 | `@epicenter/app/desktop` | `createEpicenter`, over the trusted owner's files and the OS keychain |
-| `@epicenter/app` | the types, `AppError`, `SecretError`, the two name mints, and the binding-taking `createEpicenter` the Bun host composes |
+| `@epicenter/app` | the types, `AppError`, `SecretError`, the two name mints and their guards, and the binding-taking `createEpicenter` the Bun host's leaf is built on |
 | `@epicenter/app/protocol` | the request and response shapes both ends of the desktop seam read |
 
 | Leaf | `sqlite` | `secrets` |
