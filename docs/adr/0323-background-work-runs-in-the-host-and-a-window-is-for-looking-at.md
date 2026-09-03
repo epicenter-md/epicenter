@@ -56,7 +56,7 @@ every credential. It already imports first-party application TypeScript
 changes here is duration, not the boundary.
 
 **The application's code does not change, because the seam already carries the
-difference.** `createEpicenter({ binding })` has a browser leaf and a desktop
+difference.** `createEpicenter({ appId, binding })` has a browser leaf and a desktop
 leaf. This adds a third, where `openSqlite` is the host's own storage owner and
 `secrets` is the native keychain. The same Local Mail package runs in a browser
 tab, in a window, or inside the host, and only the binding differs. ADR-0273

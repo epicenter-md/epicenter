@@ -5,20 +5,21 @@
 - **Unbuilt:** nothing. Built with two corrections this record now carries: the two names an application mints are branded, and the root is not types only.
 - **Amends:** [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md) at "the composition is `openData`, `openSqlite`, and `secrets`" and at the handle's argument list. The scoped handle, its one name, and its refusal of `createAppRuntime` stand.
 - **Relates:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) (account and store are one yes/no), [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md), [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md), [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md), [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md)
+- **2026-09-02, amended in place:** every handle now states its opening `appId` explicitly, including when it matches `definition.id`. The one-handle and one-store decisions stand; only the constructor convenience default is withdrawn.
 
 ## Context
 
-The handle asks an application to state its identity twice. Every construction
-in the repository writes the app id into `createEpicenter` and again into the
-binding it passes:
+The original handle asked an application to state its identity twice. Every
+construction wrote the app id into `createEpicenter` and again into the binding
+it passed:
 
 ```ts
 createEpicenter({ appId: LOCAL_MAIL_APP_ID, binding: createBrowserBinding({ appId: LOCAL_MAIL_APP_ID }) })
 ```
 
-Nothing checks that the two agree. `createEpicenter` validates its id with
+Nothing checked that the two agreed. `createEpicenter` validated its id with
 `isProtocolAppId` and throws; `createBrowserBinding` validates nothing. A
-mismatched pair compiles and scopes the two halves to different applications,
+mismatched pair compiled and scoped the two halves to different applications,
 and no type can forbid it, because TypeScript cannot say "this string and that
 string are the same string."
 
@@ -50,7 +51,7 @@ import path that carries it is the binding's, not the handle's.)
 import { createEpicenter } from '@epicenter/app/browser';   // or '@epicenter/app/desktop'
 
 createEpicenter({ appId }): Epicenter
-createEpicenter({ definition, account }): Epicenter<typeof definition>
+createEpicenter({ appId, definition, account }): Epicenter<typeof definition>
 ```
 
 ```ts
@@ -83,13 +84,13 @@ that passes neither gets a handle with no `data` and no `account`, and one that
 passes both gets the superset. `[TDefinition] extends [never]` fails downward,
 so omitting the argument yields the smaller type rather than the larger.
 
-**An application holds one store, and states its id once.** `appId` defaults
-to `definition.id`, so an application that holds data writes neither the id nor
-a binding: it writes what it holds and who it acts as. The default is always
-valid, because a data id is a stricter grammar than an application id (two or
-more dot-separated labels, against any label at all). An application with no
-definition has nothing to default from and states the id; Local Mail is that
-application, and it is the documented exception (ADR-0319).
+**An application holds one store, and states its opening id explicitly.**
+`appId` normally matches `definition.id`, but the two names remain independent:
+the definition identifies the data, while `appId` identifies the application
+opening and owning the local replica. This keeps the constructor honest about
+the address it will open and leaves foreign-data use possible without another
+API shape. An application with no definition also states the id, as Local Mail
+does (ADR-0319).
 
 Holding one store is a DECISION here rather than an observation about the
 applications that exist. The two-segment address (ADR-0324) is built for a
@@ -301,7 +302,7 @@ import { createBrowserBinding } from '@epicenter/app/browser';   // OPFS, tab me
 import { createDesktopBinding } from '@epicenter/app/desktop';   // Bun file, keychain
 import { createEpicenter } from '@epicenter/app';                // every build
 
-createEpicenter({ definition, account, binding }): Epicenter<typeof definition>
+createEpicenter({ appId, definition, account, binding }): Epicenter<typeof definition>
 ```
 
 The cost of the old shape was paid by the application that needs it least.
@@ -317,7 +318,7 @@ composed from it lives in one file for every build:
 
 ```ts
 // apps/honeycrisp/src/lib/epicenter.svelte.ts
-const handle = createEpicenter({ definition, account: auth, binding });
+const handle = createEpicenter({ appId, definition, account: auth, binding });
 export const epicenter = fromEpicenter(handle);
 if (import.meta.hot) import.meta.hot.dispose(() => void handle.close());
 ```

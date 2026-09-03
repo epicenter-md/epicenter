@@ -46,7 +46,7 @@ ADR-0227), so `data` is composed above the seam rather than through it.
 ## The surface
 
 ```ts
-const epicenter = createEpicenter({ definition, account });
+const epicenter = createEpicenter({ appId, definition, account });
 
 epicenter.appId              // string, frozen
 epicenter.sqlite.open(name)  // Promise<Result<AppSqliteDatabase, AppError>>
@@ -62,11 +62,10 @@ every generation (ADR-0336), so there is no accountless store and no store
 without sync. Pass neither and the handle has no `data` and no `account`, in the
 type as well as at runtime; pass both and it has the superset.
 
-**There is no `appId` to write.** It defaults to `definition.id`, and a data id
-is always a legal application id. State it only when this application opens
-another application's data, which nothing does; an application with no
-definition states it because there is nothing to default from. An application
-holds one store, and ADR-0339 says what changes on the day one holds two.
+**`appId` is explicit.** It normally matches `definition.id`, but the opening
+application is an independent part of the store address. Keeping it explicit
+means every handle states the scope it opens, including when it opens another
+application's data.
 
 **`data` is a lazy getter that memoizes.** Reading it starts the open, so an
 application that never reads it pays no Web Lock, no IndexedDB, and no round

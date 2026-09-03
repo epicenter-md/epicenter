@@ -14,9 +14,9 @@
  * cannot drift between two leaves that differ on an import line.
  *
  * `definition` and `account` arrive together, which is the store: an authority
- * mints every generation (ADR-0336), so there is no accountless notebook. There
- * is no application id, because the definition is one: this application holds
- * its own notes and nobody else's.
+ * mints every generation (ADR-0336), so there is no accountless notebook. The
+ * explicit application id matches the definition here, but remains the
+ * opening application's independent storage scope (ADR-0324).
  *
  * **Nothing opens when this module is evaluated.** Both halves are lazy, so a
  * route that never renders the notes never claims a Web Lock, touches
@@ -39,6 +39,7 @@ import { honeycrispDefinition } from '$lib/data/index.js';
  * application imports is the boot, which has no close on it at all.
  */
 const handle = createEpicenter({
+	appId: honeycrispDefinition.id,
 	definition: honeycrispDefinition,
 	account: auth,
 	binding,

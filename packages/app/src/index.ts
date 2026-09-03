@@ -319,7 +319,7 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 		});
 
 export function createEpicenter(
-	options: CreateEpicenterOptions & { appId: string },
+	options: CreateEpicenterOptions,
 ): Epicenter;
 export function createEpicenter<const TDefinition extends DataDefinition>(
 	options: CreateEpicenterOptions & EpicenterDataOptions<TDefinition>,
@@ -334,13 +334,18 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 	}
 	const binding = options.binding(appId);
 
-	// The binding's own verbs, not five closures that forward to them. `sqlite`
-	// names two of the binding's three members rather than being the binding,
-	// so `secrets` is reachable at one name and `sqlite.secrets` is not a thing.
 	const capabilities = {
 		appId,
-		sqlite: Object.freeze({ open: binding.open, delete: binding.delete }),
-		secrets: binding.secrets,
+		sqlite: Object.freeze({
+			open: (name: DatabaseName) => binding.open(name),
+			delete: (name: DatabaseName) => binding.delete(name),
+		}),
+		secrets: Object.freeze({
+			put: (label: SecretLabel, value: string) =>
+				binding.secrets.put(label, value),
+			get: (label: SecretLabel) => binding.secrets.get(label),
+			delete: (label: SecretLabel) => binding.secrets.delete(label),
+		}),
 	};
 
 	if (definition === undefined || account === undefined) {

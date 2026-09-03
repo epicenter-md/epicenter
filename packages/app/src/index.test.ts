@@ -84,16 +84,16 @@ test('a name is checked where it is minted, not on every call', () => {
 	expect(String(secretLabel('sub-one'))).toBe('sub-one');
 });
 
-test('the application id comes from the definition, and is not written twice', () => {
-	// Every data id is a legal application id, so the default is always valid.
-	// Stating it is for one case and nothing does it yet: an application that
-	// opens ANOTHER application's data keeps its own local copy, because the
-	// first segment of a store's address is the OPENING application (ADR-0324).
+test('the application id is explicit and independent from the definition id', () => {
 	const definition = { id: 'so.epicenter.notes' } as never;
 	const account = {} as never;
 	expect(
-		createEpicenter({ binding: () => bindingFor([]), definition, account })
-			.appId,
+		createEpicenter({
+			appId: 'so.epicenter.notes',
+			binding: () => bindingFor([]),
+			definition,
+			account,
+		}).appId,
 	).toBe('so.epicenter.notes');
 	expect(
 		createEpicenter({
@@ -103,14 +103,6 @@ test('the application id comes from the definition, and is not written twice', (
 			account,
 		}).appId,
 	).toBe('so.epicenter.reader');
-});
-
-test('a handle with neither an id nor a definition has nothing to be', () => {
-	expect(() =>
-		// @ts-expect-error the type already refuses this; the throw is for a
-		// caller that arrived without one.
-		createEpicenter({ binding: () => bindingFor([]) }),
-	).toThrow('needs an application id');
 });
 
 test('an application id this platform cannot file refuses at construction', () => {

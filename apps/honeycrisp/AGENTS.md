@@ -14,7 +14,11 @@ Design authority: [ADR-0339](../../docs/adr/0339-an-application-creates-one-epic
 
 ```ts
 export const honeycrisp = fromEpicenter(
-	createEpicenter({ definition: honeycrispDefinition, account: auth }),
+	createEpicenter({
+		appId: honeycrispDefinition.id,
+		definition: honeycrispDefinition,
+		account: auth,
+	}),
 );
 ```
 
@@ -30,10 +34,9 @@ epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>
 
 The first segment after the version is the OPENING application and the second
 is the data id (ADR-0324). They are the same string here and nothing writes the
-first one down: it defaults to `honeycrispDefinition.id`, because this
-application holds its own notes and nobody else's. An application that opened
-another's data would state it, and would then hold two stores, which ADR-0339
-refuses until something needs it.
+first one down: the constructor states the opening application explicitly.
+An application that opened another's data would state its different id, and
+would then hold two stores, which ADR-0339 refuses until something needs it.
 
 **The generation is not in the URL and there is no picker.** `data` takes the
 newest copy this device holds, else the account's newest, else mints, and
