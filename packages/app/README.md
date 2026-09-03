@@ -102,7 +102,7 @@ an erase.
 
 A failure is memoized with everything else, so the repair for a failed open is
 a document reload rather than a second read of `data`. That is what a boot gate
-already does: `AlreadyOpen` and `GenerationUnavailable` both repair by
+already does: `AlreadyOpen` and `GenerationUnreachable` both repair by
 reloading, and an erase leaves the page.
 
 Every method answers a `Result`. Runtime differences are typed failures, never

@@ -23,7 +23,7 @@ import { createSqliteDurablePort } from './log.js';
 import { createPersistenceController, type DurableOp } from './persistence.js';
 import {
 	createAccountStoreOverPort,
-	type DataView,
+	type DeclaredData,
 	syncEngineOf,
 } from './store.js';
 
@@ -99,7 +99,7 @@ function openFailable() {
 	return {
 		store,
 		close,
-		db: view as unknown as DataView<typeof database>,
+		db: view as unknown as DeclaredData<typeof database>,
 		sqlite,
 		gate,
 		batches,
@@ -128,7 +128,7 @@ function reopen(sqlite: ReturnType<typeof createBunSqliteAdapter>) {
 		loaded: port.load(),
 		log: silent,
 	});
-	return { store, db: view as unknown as DataView<typeof database> };
+	return { store, db: view as unknown as DeclaredData<typeof database> };
 }
 
 function titles(db: ReturnType<typeof openFailable>['db']): string[] {
@@ -268,7 +268,7 @@ describe('acceptance is live, durability is a visible debt', () => {
 			loaded: inner.load(),
 			log: silent,
 		});
-		const db = view as unknown as DataView<typeof database>;
+		const db = view as unknown as DeclaredData<typeof database>;
 
 		expectOk(db.tables.notes.create({ title: 'a' }));
 		expect(store.persistence.get()).toBe('pending');

@@ -84,7 +84,7 @@ export function bootFailure(error: unknown): BootFailure {
 						'Your notes could not be opened. Check your connection and try again.',
 					repair: 'retry',
 				};
-			case 'GenerationUnavailable':
+			case 'GenerationUnreachable':
 				// Reachability, not absence, and the difference is the whole
 				// reason it is a separate arm: this one a retry can fix.
 				return {

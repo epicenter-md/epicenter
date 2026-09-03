@@ -27,7 +27,7 @@ import { field } from '@epicenter/data/definition';
  * which a read applies and a write never stores.
  */
 
-import type { DataView } from '@epicenter/data';
+import type { DeclaredData } from '@epicenter/data';
 import {
 	defineData,
 	defineTable,
@@ -193,7 +193,7 @@ export const whisperingDefinition = defineData({
 });
 
 /** The typed view of one store through Whispering's workspace. */
-export type WhisperingData = DataView<typeof whisperingDefinition>;
+export type WhisperingData = DeclaredData<typeof whisperingDefinition>;
 
 export type Recording = RowOf<typeof recordingsTable>;
 /** The recipe values the picker and editor read. */

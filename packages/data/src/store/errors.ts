@@ -127,10 +127,11 @@ export const StoreError = defineErrors({
 	 * inside it. Guessing any of them would open bytes that belong to something
 	 * else, or take edits into a record nothing can claim afterwards.
 	 *
-	 * A route hands over `Number(params.generation)`, so a truncated link
-	 * arrives here rather than as `GenerationNotFound`; conflating them would
-	 * tell a person a generation is missing when what they typed was never a
-	 * generation at all.
+	 * A signed-out account states no principal, which is the live path here:
+	 * `@epicenter/app` hands the opener the account it has and lets this refuse
+	 * it rather than guessing one. Conflating that with `GenerationNotFound`
+	 * would tell a person their data is missing when nothing was ever asked
+	 * for.
 	 */
 	Unaddressable: ({ reason }: { reason: string }) => ({
 		message: `This database cannot be named: ${reason}`,
@@ -184,7 +185,7 @@ export const StoreError = defineErrors({
 		generation,
 	}),
 	/**
-	 * The authority could not be asked for a generation this device lacks.
+	 * The authority could not be reached for a generation this device lacks.
 	 *
 	 * Distinct from `GenerationNotFound`, and the distinction is the whole
 	 * point: not-found is a fact about the generation and this is a fact about
@@ -192,7 +193,7 @@ export const StoreError = defineErrors({
 	 * that conflates them tells a person their data is gone when their wifi is
 	 * off.
 	 */
-	GenerationUnavailable: ({
+	GenerationUnreachable: ({
 		dataId,
 		generation,
 		status,

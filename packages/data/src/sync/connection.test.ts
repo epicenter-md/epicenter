@@ -20,7 +20,7 @@ import { defineData, defineTable } from '@epicenter/data/definition';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
 import type { Result } from 'wellcrafted/result';
 
-import { createAccountStore, type DataView } from '../store/store.js';
+import { createAccountStore, type DeclaredData } from '../store/store.js';
 import { openSyncAuthority } from './authority.js';
 import { createSyncConnection, type SyncDial } from './connection.js';
 import { createSyncHub, type HubConnection } from './hub.js';
@@ -149,7 +149,7 @@ function openDriven({
 		sqlite: createBunSqliteAdapter(new Database(':memory:')),
 	});
 	const store = data;
-	const db = data as DataView<typeof database>;
+	const db = data as DeclaredData<typeof database>;
 
 	/** Cursor each dial asked the authority to start after, oldest first. */
 	const dialledFrom: number[] = [];
@@ -489,7 +489,7 @@ describe('a dial that can never succeed stops the driver for good', () => {
 			sqlite: createBunSqliteAdapter(new Database(':memory:')),
 		});
 		const store = data;
-		const db = data as DataView<typeof database>;
+		const db = data as DeclaredData<typeof database>;
 		let dials = 0;
 		const connection = createSyncConnection({
 			store,

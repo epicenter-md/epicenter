@@ -342,7 +342,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 		// Unavailable, never not-found: a retry can fix one and never the
 		// other, and a boot surface that conflates them tells a person their
 		// data is gone when their wifi is off.
-		expect(refused.name).toBe('GenerationUnavailable');
+		expect(refused.name).toBe('GenerationUnreachable');
 		expect(await databaseNames()).toEqual(before);
 	});
 
@@ -466,7 +466,7 @@ describe('which generation to open (ADR-0292, ADR-0293)', () => {
 			const refused = expectErr(
 				await resolveGeneration(database, { appId: APP, account }),
 			);
-			expect(refused.name).toBe('GenerationUnavailable');
+			expect(refused.name).toBe('GenerationUnreachable');
 		}
 		expect(minted).toBe(false);
 		expect(await databaseNames()).not.toContain(storeAddress(database.id));

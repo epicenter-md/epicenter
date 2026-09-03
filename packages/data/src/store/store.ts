@@ -58,7 +58,7 @@ import { StoreError, StoreUnusableError } from './errors.js';
 import type {
 	Data,
 	DataDocument,
-	DataView,
+	DeclaredData,
 	DocumentPressure,
 	KvHandle,
 	Row,
@@ -66,7 +66,7 @@ import type {
 	SyncCapability,
 	TableHandle,
 	TableListener,
-	UntypedDataView,
+	UntypedDeclaredData,
 } from './handles.js';
 
 export { StoreError, StoreUnusableError } from './errors.js';
@@ -74,7 +74,7 @@ export type {
 	Data,
 	DatabaseAccount,
 	DataDocument,
-	DataView,
+	DeclaredData,
 	DocumentPressure,
 	KvHandle,
 	ReplicaData,
@@ -84,7 +84,7 @@ export type {
 	SyncCapability,
 	TableHandle,
 	TypedTableHandle,
-	UntypedDataView,
+	UntypedDeclaredData,
 } from './handles.js';
 
 /** ADR-0206's minted id: 24 characters, so a collision never happens. */
@@ -357,7 +357,7 @@ export function createAccountStore<const TDatabase extends DataDefinition>(
 	// test's `await using` is exactly right. A replica acquires three (ADR-0340),
 	// which is why its opener hands the closer back separately.
 	return Object.freeze({
-		...(view as DataView<TDatabase>),
+		...(view as DeclaredData<TDatabase>),
 		...store,
 		[Symbol.asyncDispose]: close,
 	});
@@ -378,7 +378,7 @@ export function createAccountStoreOverPort(options: StoreEngineOptions): {
 	store: DataDocument;
 	/** Flush what is queued, destroy the document, and release what it held. */
 	close: () => Promise<void>;
-	view: UntypedDataView;
+	view: UntypedDeclaredData;
 	definition: ParsedDataDefinition;
 } {
 	return createStoreEngine(options);
@@ -393,7 +393,7 @@ function createStoreEngine({
 }: StoreEngineOptions): {
 	store: DataDocument;
 	close: () => Promise<void>;
-	view: UntypedDataView;
+	view: UntypedDeclaredData;
 	definition: ParsedDataDefinition;
 } {
 	const database = createDatabaseDocument();
@@ -1036,7 +1036,7 @@ function createStoreEngine({
 	 * SQL is deliberately not built here: an index is a follower an application
 	 * composes over this surface, not a verb the store owes.
 	 */
-	function buildView(): UntypedDataView {
+	function buildView(): UntypedDeclaredData {
 		const kv = createKvHandle();
 
 		const tables: Record<string, TableHandle> = {};
@@ -1049,7 +1049,7 @@ function createStoreEngine({
 		// the return type it is no longer a FRESH literal and an extra member is
 		// not an error. Annotating here is what makes a phantom impossible: one
 		// was implemented and unreachable for a release because a cast hid it.
-		const handle: UntypedDataView = {
+		const handle: UntypedDeclaredData = {
 			tables: Object.freeze(tables),
 			kv,
 			// Beside the writes it groups. Grouping is what an application does,

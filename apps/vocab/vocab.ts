@@ -16,7 +16,7 @@ import { field } from '@epicenter/data/definition';
 import type { AgentMessage } from '@epicenter/agent';
 import { conversationsTable } from '@epicenter/chat';
 import type { ServableModel } from '@epicenter/constants/ai-providers';
-import type { DataView } from '@epicenter/data';
+import type { DeclaredData } from '@epicenter/data';
 import {
 	defineData,
 	defineTable,
@@ -129,7 +129,7 @@ export const vocabDefinition = defineData({
 });
 
 /** The typed view of one store through Vocab's workspace. */
-export type VocabData = DataView<typeof vocabDefinition>;
+export type VocabData = DeclaredData<typeof vocabDefinition>;
 
 /** One entry row. Row ids are runtime-minted, so the runtime owns `id`. */
 export type Entry = RowOf<typeof entriesTable>;

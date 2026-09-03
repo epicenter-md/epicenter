@@ -291,7 +291,7 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 			 *
 			 * A failure is memoized with everything else, so the repair for one is
 			 * a document reload rather than a second read. That is what a boot gate
-			 * already does: `AlreadyOpen` and `GenerationUnavailable` both repair
+			 * already does: `AlreadyOpen` and `GenerationUnreachable` both repair
 			 * with `location.reload()`, and an erase leaves the page. Re-reading
 			 * this after a failure joins the same failure.
 			 */

@@ -61,7 +61,7 @@ export type {
 	ApplyFailedError,
 	DatabaseAccount,
 	DataDocument,
-	DataView,
+	DeclaredData,
 	NonconformingRow,
 	ReplicaData,
 	ReplicaDocument,

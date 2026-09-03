@@ -68,10 +68,10 @@ import type {
 import {
 	createAccountStoreOverPort,
 	type DataDocument,
-	type DataView,
+	type DeclaredData,
 	type ReplicaData,
 	StoreError,
-	type UntypedDataView,
+	type UntypedDeclaredData,
 } from './store.js';
 
 /**
@@ -609,10 +609,10 @@ function generationPrefix(
  * A generation number, admitted or refused at the boundary (ADR-0292).
  *
  * `Number.isSafeInteger(n) && n >= 1`, checked inline like any other bad
- * input, because that is what it is: a route parses a URL segment and may hand
- * over `NaN`. The answer to that is `Unaddressable`, not `GenerationNotFound`;
- * conflating them would tell a person a generation is missing when what they
- * typed was never a generation at all.
+ * input, because that is what it is: a number arrives from a caller that
+ * computed it. The answer to a bad one is `Unaddressable`, not
+ * `GenerationNotFound`; conflating them would tell a person a generation is
+ * missing when the value was never a generation at all.
  */
 function isGeneration(value: number): boolean {
 	return Number.isSafeInteger(value) && value >= 1;
@@ -669,7 +669,7 @@ async function fetchGeneration(
 	try {
 		response = await account.fetch(url);
 	} catch (cause) {
-		return StoreError.GenerationUnavailable({ dataId, generation, cause });
+		return StoreError.GenerationUnreachable({ dataId, generation, cause });
 	}
 	// 404 is the one answer that is a fact about the generation rather than
 	// about the moment. Everything else, including 401, is retryable: a token
@@ -678,7 +678,7 @@ async function fetchGeneration(
 		return StoreError.GenerationNotFound({ dataId, generation });
 	}
 	if (!response.ok) {
-		return StoreError.GenerationUnavailable({
+		return StoreError.GenerationUnreachable({
 			dataId,
 			generation,
 			status: response.status,
@@ -693,7 +693,7 @@ async function fetchGeneration(
 			position: Number.isSafeInteger(position) && position >= 0 ? position : 0,
 		});
 	} catch (cause) {
-		return StoreError.GenerationUnavailable({ dataId, generation, cause });
+		return StoreError.GenerationUnreachable({ dataId, generation, cause });
 	}
 }
 
@@ -823,7 +823,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	let parts: {
 		store: DataDocument;
 		close: () => Promise<void>;
-		view: UntypedDataView;
+		view: UntypedDeclaredData;
 		definition: ParsedDataDefinition;
 	};
 	try {
@@ -853,7 +853,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	// whose every verb throws.
 	return Ok({
 		store: Object.freeze({
-			...(parts.view as DataView<TDatabase>),
+			...(parts.view as DeclaredData<TDatabase>),
 			...parts.store,
 			appId,
 			dataId: parsed.id,
@@ -1018,10 +1018,10 @@ async function postGeneration(
 			},
 		);
 	} catch (cause) {
-		return StoreError.GenerationUnavailable({ dataId, generation: 0, cause });
+		return StoreError.GenerationUnreachable({ dataId, generation: 0, cause });
 	}
 	if (!response.ok) {
-		return StoreError.GenerationUnavailable({
+		return StoreError.GenerationUnreachable({
 			dataId,
 			generation: 0,
 			status: response.status,
@@ -1033,7 +1033,7 @@ async function postGeneration(
 			position?: number;
 		};
 		if (!Number.isSafeInteger(body.generation) || (body.generation ?? 0) < 1) {
-			return StoreError.GenerationUnavailable({
+			return StoreError.GenerationUnreachable({
 				dataId,
 				generation: 0,
 				status: response.status,
@@ -1046,7 +1046,7 @@ async function postGeneration(
 				: 0,
 		});
 	} catch (cause) {
-		return StoreError.GenerationUnavailable({ dataId, generation: 0, cause });
+		return StoreError.GenerationUnreachable({ dataId, generation: 0, cause });
 	}
 }
 
@@ -1062,7 +1062,7 @@ async function postGeneration(
  * hand-rolled four times before it lived here: a device that could not SEE what
  * the account has must not invent a generation, because the authority mints the
  * next number and two devices doing that separately fork one notebook into two
- * histories that never meet. A failed listing is `GenerationUnavailable` and a
+ * histories that never meet. A failed listing is `GenerationUnreachable` and a
  * retry fixes it; an empty listing is a fact and a first run.
  *
  * A `Result` rather than a throw, because every arm is a boot outcome an
@@ -1099,7 +1099,7 @@ async function listGenerations(
 	dataId: string,
 ): Promise<Result<number[], StoreError>> {
 	const unavailable = (extra: { status?: number; cause?: unknown }) =>
-		StoreError.GenerationUnavailable({ dataId, generation: 0, ...extra });
+		StoreError.GenerationUnreachable({ dataId, generation: 0, ...extra });
 	let response: Response;
 	try {
 		response = await account.fetch(

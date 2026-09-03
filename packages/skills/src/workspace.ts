@@ -13,7 +13,7 @@
  * a later import, and it never becomes record identity.
  */
 
-import type { DataView } from '@epicenter/data';
+import type { DeclaredData } from '@epicenter/data';
 import {
 	defineData,
 	defineTable,
@@ -79,7 +79,7 @@ export const skillsDefinition = defineData({
 });
 
 /** The typed view of one store through the Skills workspace. */
-export type SkillsData = DataView<typeof skillsDefinition>;
+export type SkillsData = DeclaredData<typeof skillsDefinition>;
 
 export type Skill = RowOf<typeof skillsTable>;
 export type Reference = RowOf<typeof referencesTable>;

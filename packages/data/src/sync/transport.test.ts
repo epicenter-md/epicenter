@@ -29,10 +29,10 @@ import * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 import {
 	createAccountStore,
-	type DataView,
+	type DeclaredData,
 	syncEngineOf,
 	type TableHandle,
-	type UntypedDataView,
+	type UntypedDeclaredData,
 } from '../store/store.js';
 import {
 	AuthorityError,
@@ -168,8 +168,8 @@ function openReplica(
 	// One runtime, two static views of it: the typed view costs nothing and is
 	// honest for every replica running the default database; a replica running
 	// another one reads through `bound`.
-	const bound = data as unknown as UntypedDataView;
-	const db = data as unknown as DataView<typeof database>;
+	const bound = data as unknown as UntypedDeclaredData;
+	const db = data as unknown as DeclaredData<typeof database>;
 	const client = createSyncClient({
 		store: data,
 		idleMs: 0,
@@ -245,8 +245,8 @@ type Replica = {
 	sqlite: ReturnType<typeof createBunSqliteAdapter>;
 	/** The whole opened handle: one object since the store stopped nesting. */
 	data: ReturnType<typeof createAccountStore>;
-	db: DataView<typeof database>;
-	bound: UntypedDataView;
+	db: DeclaredData<typeof database>;
+	bound: UntypedDeclaredData;
 	client: ReturnType<typeof createSyncClient>;
 	connection: HubConnection;
 	socket: { send: (bytes: Uint8Array) => void };

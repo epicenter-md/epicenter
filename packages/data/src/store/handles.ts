@@ -235,7 +235,12 @@ export type TypedTableHandle<TFields extends TableDeclaration> = TableHandle<
 >;
 
 /**
- * The typed view of one store through its data definition.
+ * What this release's data definition can see of one store.
+ *
+ * Named for the declaration rather than for the word `view`, because
+ * `DataView` is a global: the ArrayBuffer one, which this package's own
+ * `frames.ts` constructs. A file that used the type and forgot the import
+ * typechecked against the wrong `DataView` and said nothing.
  *
  * `tables` is a container rather than a spread, and that is the whole reason
  * the application has no reserved table names. A definition declares `tables`
@@ -245,7 +250,7 @@ export type TypedTableHandle<TFields extends TableDeclaration> = TableHandle<
  * value `notes` beside a table called `notes`, `query` reserved as a table name
  * (ADR-0213), and a `$store` sigil invented to hold nine more (ADR-0229).
  */
-export type DataView<TDatabase extends DataDefinition> = {
+export type DeclaredData<TDatabase extends DataDefinition> = {
 	readonly tables: {
 		readonly [K in keyof TDatabase['tables']]: TypedTableHandle<
 			TDatabase['tables'][K]
@@ -313,7 +318,7 @@ export type StoredData = {
  * What carries it instead is the narrowing type an application already writes:
  *
  * ```ts
- * type HoneycrispData = DataView<typeof honeycrispDefinition>;
+ * type HoneycrispData = DeclaredData<typeof honeycrispDefinition>;
  * ```
  *
  * That is per-app, costs nothing at runtime, and is where this repository
@@ -330,7 +335,7 @@ export type StoredData = {
  * copies own enumerable SYMBOL keys, which is what carries `asyncDispose`
  * across without anyone forwarding it by hand.
  */
-export type Data<TDatabase extends DataDefinition> = DataView<TDatabase> &
+export type Data<TDatabase extends DataDefinition> = DeclaredData<TDatabase> &
 	DataDocument &
 	AsyncDisposable;
 
@@ -356,7 +361,7 @@ export type Data<TDatabase extends DataDefinition> = DataView<TDatabase> &
  * one thing and a test disposes exactly that.
  */
 export type ReplicaData<TDatabase extends DataDefinition> =
-	DataView<TDatabase> & ReplicaDocument;
+	DeclaredData<TDatabase> & ReplicaDocument;
 
 /**
  * One application's KV: the values it keeps exactly one of.
@@ -446,11 +451,11 @@ export type KvHandle<TValues = JsonObject> = {
  * builds.
  *
  * Internal. It exists because the engine constructs one object and the
- * factories cast it to the caller's `DataView<TDatabase>`; comparing the
+ * factories cast it to the caller's `DeclaredData<TDatabase>`; comparing the
  * two structurally re-enters the per-field descriptor instantiation and exceeds
  * TypeScript's depth limit.
  */
-export type UntypedDataView = {
+export type UntypedDeclaredData = {
 	readonly tables: Readonly<Record<string, TableHandle>>;
 	readonly kv: KvHandle;
 	transact<TResult>(run: () => TResult): TResult;

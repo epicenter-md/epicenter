@@ -55,7 +55,7 @@ describe('bootFailure', () => {
 			{ name: 'Unaddressable' },
 			{ name: 'BoundElsewhere' },
 			{ name: 'GenerationNotFound' },
-			{ name: 'GenerationUnavailable' },
+			{ name: 'GenerationUnreachable' },
 			{ name: 'UnknownFailure' },
 			new Error('boom'),
 			'not an object',
