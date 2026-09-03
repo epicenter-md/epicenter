@@ -11,7 +11,7 @@
  * the convention had to take the framework wrapper with it, and an app that
  * wanted the wrapper on a differently composed client had nothing to call.
  *
- * A Svelte app wraps the result: `reactive(createHostedBrowserRedirectAuth(…))`.
+ * A Svelte app wraps the result: `fromAuth(createHostedBrowserRedirectAuth(…))`.
  */
 
 import { createOAuthAppAuth } from './create-oauth-app-auth.js';

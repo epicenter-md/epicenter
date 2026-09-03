@@ -28,6 +28,11 @@ export type ReactiveAuthClient = AuthClient & Brand<'ReactiveAuthClient'>;
 /**
  * Bridge an auth client's two external facts into Svelte's graph.
  *
+ * `from*` because that is what every Svelte adapter in this repository is
+ * called: `fromData` wraps a store and `fromEpicenter` wraps a handle. It was
+ * `reactive` while it was the only one, which read as a property of the thing
+ * rather than as the verb that builds one.
+ *
  * The whole of what this module does, and the whole of what it should: a
  * client is composed somewhere that has no framework, and this adapts one.
  * There used to be three exported constructors here, one per composition an
@@ -58,7 +63,7 @@ export type ReactiveAuthClient = AuthClient & Brand<'ReactiveAuthClient'>;
  * promises that reads track IF the underlying client ever changes, which is a
  * promise every client can keep.
  */
-export function reactive(auth: AuthClient): ReactiveAuthClient {
+export function fromAuth(auth: AuthClient): ReactiveAuthClient {
 	const subscribeState = createSubscriber((update) =>
 		auth.onStateChange(update),
 	);

@@ -1,5 +1,5 @@
 import { createDesktopBrokerAuth } from '@epicenter/auth/desktop';
-import { reactive } from '@epicenter/auth/svelte';
+import { fromAuth } from '@epicenter/auth/svelte';
 import { desktopAuthBootstrap } from './desktop-auth-bootstrap.epicenter-host';
 
 /**
@@ -8,7 +8,7 @@ import { desktopAuthBootstrap } from './desktop-auth-bootstrap.epicenter-host';
  * It holds no credential, so `openWebSocket` denies permanently: desktop sync
  * belongs to the host process, not a window.
  */
-export const auth = reactive(
+export const auth = fromAuth(
 	createDesktopBrokerAuth({
 		bootstrap: desktopAuthBootstrap,
 		brokerBaseURL: window.location.origin,
