@@ -61,13 +61,6 @@ export type AttachStoreSyncOptions = {
 	store: ReplicaDocument;
 	transport: StoreSocketTransport;
 	/**
-	 * No dial in this app generation can ever succeed (reauth required, a
-	 * refused credential). Fired from the same classification that stops the
-	 * driver, so a boot gate can reject an unbound replica as unavailable
-	 * rather than waiting on a bootstrap that will never come.
-	 */
-	onDenied?: () => void;
-	/**
 	 * A dial failed for a reason time might repair: verification unreachable,
 	 * plain network trouble. Reported rather than raised, because the driver's
 	 * own backoff owns the retry and nobody is holding a promise for it.
@@ -91,7 +84,6 @@ export type AttachStoreSyncOptions = {
 export function attachStoreSync({
 	store,
 	transport,
-	onDenied,
 	onTransportError,
 }: AttachStoreSyncOptions): SyncConnection {
 	const connection = createSyncConnection({
@@ -135,8 +127,12 @@ export function attachStoreSync({
 							isOpenWebSocketDenial(cause) &&
 							cause.permanence === 'permanent'
 						) {
+							// No callback beside it. A denial is readable from
+							// `store.sync.status().denied` for as long as this
+							// connection is attached, and the one surface that renders
+							// it polls that (ADR-0340); a second channel saying the same
+							// thing had no caller in this repository.
 							denied();
-							onDenied?.();
 							return;
 						}
 						onTransportError(cause);

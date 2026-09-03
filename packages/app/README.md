@@ -66,8 +66,8 @@ type as well as at runtime; pass both and it has the superset.
 application that never reads it pays no Web Lock, no IndexedDB, and no round
 trip, and reading it twice joins one open. Sync attaches inside. It resolves a
 `Result`, and the error is the store's own rather than an `AppError` wrapping
-it: a boot gate switches on the failure's `name` to choose between a retry, an
-erase, and a sign-in.
+it: a boot gate switches on the failure's `name` to choose between a retry and
+an erase.
 
 A failure is memoized with everything else, so the repair for a failed open is
 a document reload rather than a second read of `data`. That is what a boot gate

@@ -123,20 +123,19 @@ test('a permanent denial stops the driver and is not a transport error', async (
 		code: 'SignedOut',
 	};
 	const { transport, urls } = createTransport(() => Promise.reject(denial));
-	let denials = 0;
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
 		transport,
-		onDenied: () => denials++,
 		onTransportError: (cause) => transportErrors.push(cause),
 	});
 	using _ = connection;
 
 	await Bun.sleep(1);
-	expect(denials).toBe(1);
+	// Not a transport error, and readable off the store: a denial is what a
+	// status line renders as nothing, and there is no second channel for it.
 	expect(transportErrors).toEqual([]);
-	expect(connection.status().denied).toBe(true);
+	expect(store.sync.status()?.denied).toBe(true);
 	// Stopped for good: no backoff can produce a second dial.
 	expect(urls).toHaveLength(1);
 });
@@ -151,18 +150,15 @@ test('a transient denial is reported and left to the backoff', async () => {
 		code: 'Unreachable',
 	};
 	const { transport } = createTransport(() => Promise.reject(denial));
-	let denials = 0;
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
 		transport,
-		onDenied: () => denials++,
 		onTransportError: (cause) => transportErrors.push(cause),
 	});
 	using _ = connection;
 
 	await Bun.sleep(1);
-	expect(denials).toBe(0);
 	expect(transportErrors).toEqual([denial]);
 	expect(connection.status().denied).toBe(false);
 });
@@ -172,18 +168,15 @@ test('an unrecognised rejection is a close, never a denial', async () => {
 	await using _store = store;
 	const cause = new TypeError('Failed to fetch');
 	const { transport } = createTransport(() => Promise.reject(cause));
-	let denials = 0;
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
 		transport,
-		onDenied: () => denials++,
 		onTransportError: (error) => transportErrors.push(error),
 	});
 	using _ = connection;
 
 	await Bun.sleep(1);
-	expect(denials).toBe(0);
 	expect(transportErrors).toEqual([cause]);
 	expect(connection.status().denied).toBe(false);
 });

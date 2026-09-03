@@ -93,10 +93,12 @@ the account is on the handle.
 
 **The error is the store's own, not `AppError.StorageFailed` wrapping it.** An
 application's boot gate switches on the failure's `name` to choose between a
-retry, an erase, and a sign-in; `apps/honeycrisp/src/lib/boot-failure.ts` has
-arms for `AlreadyOpen`, `Unaddressable`, and `BoundElsewhere`. Today
-`openClientOwnedData` flattens all of them into `AppError.StorageFailed({ cause })`,
-so every arm falls through to "Something went wrong" and both repairs disappear.
+retry and an erase; `apps/honeycrisp/src/lib/boot-failure.ts` had arms for
+`AlreadyOpen`, `Unaddressable`, and `BoundElsewhere`, and `openClientOwnedData`
+flattened all of them into `AppError.StorageFailed({ cause })`, so every arm
+fell through to "Something went wrong" and both repairs disappeared. The
+`Unaddressable` arm went for a different reason, below: the wrapper answers its
+one remaining producer.
 `data` resolves `Result<…, StoreError | DataDefinitionParseError>`, which is what
 `openDatabase` and `resolveGeneration` already return. `AppError` was minted for
 the SQLite and secrets owners and is the wrong error for a store `packages/data`
@@ -182,13 +184,20 @@ it into the failure channel makes the gate sniff an error to choose between "sig
 in" and "something broke", and a signed-out open refuses with `Unaddressable`,
 which the boot gate reads as a bad link.
 
+It is the wrapper and not the handle that makes that read, and the layout's
+reload gate is its precondition: an application that mounts no
+`reloadOnAuthChange` signs a person in and leaves them on the sign-in screen
+until they reload by hand.
+
 The settled value is held in a `$state.raw` written from the promise's `.then`,
 not a `createSubscriber`. A subscriber is for a source with a live read and a
 subscribe pair, and its start function re-runs if every reader goes away and
 returns; a promise settles once, cannot be unsubscribed, and must not be
 forgotten because the last reader navigated away. The auth half of the same
 wrapper does use `createSubscriber`, because an auth client is that kind of
-source, so the two halves differ on purpose.
+source, so the two halves differ on purpose. That auth half is `reactive(auth)`
+in `@epicenter/auth/svelte`, beside this wrapper rather than inside it:
+`fromEpicenter` reads `account.state` once and tracks nothing.
 
 There is no `app.data`. The opened store is a field on the `ready` variant, so a
 read before the store is open does not compile. A top-level `data` accessor could
@@ -214,8 +223,11 @@ it. That record is
   `secrets` call site untouched.
 - `resolveGeneration`, `attachStoreSync`, and the hand-built `DatabaseAccount`
   leave application code. Honeycrisp's `resolveAccountGeneration`,
-  `honeycrispAccount`, and `sync.ts` are deleted, along with the copies of the
-  first two in Vocab and Whispering.
+  `honeycrispAccount`, and `sync.ts` are deleted. Vocab and Whispering still
+  hold copies of the first two, because neither is on the store yet (ADR-0227
+  left both broken on purpose); they go when those applications are rebuilt
+  against the handle, and until then they are the only callers of
+  `attachStoreSync` outside `packages/app`.
 - The generation stops being a route parameter. `data` resolves it, so
   `/account/[generation]` and the `/account` page that only redirects into it
   both go. Nobody chose that number and no link carries it.

@@ -52,10 +52,12 @@ type ReplicaDocument = DataDocument & {
 away after resolving a document name from them. Keeping them is not new state;
 it is the state that was already there, written down.
 
-**`attachStoreSync` takes `{ store, transport, onDenied?, onTransportError }`.**
+**`attachStoreSync` takes `{ store, transport, onTransportError }`.**
 The two arguments it loses are the two the store now states, and it read them
 from the same open the caller passed. Nothing else can be addressed: a
-connection is opened against the store it drives.
+connection is opened against the store it drives. `onDenied` goes with them: a
+denial is readable from `store.sync.status().denied`, the one surface that
+renders it polls that, and the callback had no caller in this repository.
 
 **`pull`, `diff`, and `push` take the store and no second description of it.**
 `CheckoutStore` is deleted. The manifest still records the same four facts,
@@ -72,10 +74,17 @@ this about the boundary it already refuses to cross). The store holds the
 connection so that a status has one owner, not so that a reader can dial.
 
 **An application still does not drive sync.** Attaching is
-`@epicenter/app`'s (ADR-0339), disposal is the page's, and what an application
-reads is `status()`. There is no `connect`, no `disconnect`, and no `retry`: the
-driver owns its backoff, and a permanent denial is a fact about this auth
-generation rather than a button.
+`@epicenter/app`'s (ADR-0339) and what an application reads is `status()`. There
+is no `connect`, no `disconnect`, and no `retry`: the driver owns its backoff,
+and a permanent denial is a fact about this auth generation rather than a
+button.
+
+**Nothing disposes the connection, and that is the page unloading.** The opener
+drops the `SyncConnection` it gets back, so no application can reach one; the
+store and its socket both end when the document does, which is one auth
+generation (ADR-0088). The registration is taken back on disposal for the
+callers that still hold a driver, which are the two applications ADR-0227 left
+broken and which have not moved onto the handle yet.
 
 ## Consequences
 
@@ -86,8 +95,11 @@ generation rather than a button.
   is. A test that opens a store gets an object it can hand to `pull` directly.
 - The generation becomes readable by anything holding a store, which is what
   ADR-0339's Svelte wrapper, the folder verbs, and a bug report all needed.
-- `SyncConnection` stays internal to the transport. What leaves the package is a
-  status, not a driver.
+- What a STORE exposes is a status, not a driver. `attachStoreSync` still
+  returns a `SyncConnection` and `@epicenter/data/sync` still exports the type,
+  because Vocab and Whispering call it directly and hold what it returns. When
+  they move onto the handle that return value has no consumer, and `attach.ts`
+  can refuse a second registration instead of overwriting the first.
 
 ## Considered alternatives
 

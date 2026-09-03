@@ -255,20 +255,19 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 			 *
 			 * It resolves a `Result`, and the error is the store's own rather than
 			 * `AppError.StorageFailed` wrapping it. An application's boot gate
-			 * switches on the failure's `name` to choose between a retry, an erase,
-			 * and a sign-in; wrapping hid that name under `cause`, so every arm
-			 * became the fallback and both repairs disappeared.
+			 * switches on the failure's `name` to choose between a retry and an
+			 * erase; wrapping hid that name under `cause`, so every arm became the
+			 * fallback and both repairs disappeared.
+			 *
+			 * A failure is memoized with everything else, so the repair for one is
+			 * a document reload rather than a second read. That is what a boot gate
+			 * already does: `AlreadyOpen` and `GenerationUnavailable` both repair
+			 * with `location.reload()`, and an erase leaves the page. Re-reading
+			 * this after a failure joins the same failure.
 			 */
 			readonly data: Promise<
 				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
 			>;
-			/**
-			 * A failure is memoized with everything else, so the repair for one is
-			 * a document reload rather than a second read. That is what a boot
-			 * gate already does: `AlreadyOpen` and `GenerationUnavailable` both
-			 * repair with `location.reload()`, and an erase leaves the page.
-			 * Re-reading this after a failure joins the same failure.
-			 */
 			/**
 			 * Erase this device's copy, whoever it belongs to (ADR-0325).
 			 *

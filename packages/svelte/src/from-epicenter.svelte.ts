@@ -13,7 +13,10 @@
  * generation (ADR-0088): `reloadOnAuthChange` replaces the document on every
  * transition that invalidates this page, so a second, competing answer to auth
  * underneath it would be dead for the transitions that reload and wrong for the
- * one that deliberately does not.
+ * one that deliberately does not. **That gate is this wrapper's precondition.**
+ * An application whose layout does not mount it signs a person in and leaves
+ * them looking at the sign-in screen until they reload by hand, and nothing
+ * here can tell.
  *
  * **Signed-out is its own state rather than a failure.** Folding it into the
  * failure channel would make a route sniff an error to choose between "sign in"
@@ -109,11 +112,10 @@ export function fromEpicenter<TData, TError>(
 				? { status: 'ready', data: opened.data }
 				: { status: 'failed', error: opened.error };
 		},
-		// The handle resolves a `Result`, so a rejection here is the opener
-		// throwing rather than failing, which is a bug in the opener. It is not
-		// swallowed: an unhandled rejection is how it stays visible, and the
-		// route keeps rendering `opening` rather than claiming a failure it
-		// cannot type.
+		// No rejection arm, because the handle resolves a `Result`: a promise
+		// that rejects here is an opener that threw, and one that does leaves
+		// this rendering `opening` forever, which is why the opener contains its
+		// own throws rather than passing them on.
 	);
 
 	return Object.freeze({

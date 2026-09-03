@@ -141,15 +141,16 @@ export async function openReplica<TDefinition extends DataDefinition>({
 	// subprotocol, because a browser upgrade cannot set `Authorization`, and an
 	// `AuthClient` satisfies the port structurally with no adapter.
 	//
-	// The store is let go if attaching throws, and the throw goes on. Nothing
-	// here can mint a `StoreError`, and inventing one would be this package
-	// answering a question the store owns; what it can do is not leave an open
-	// store behind. That store holds a Web Lock, and the handle has no `close`,
-	// so a leaked one is held until the document unloads.
+	// A throw here costs sync and not the notes, which is the same answer a
+	// permanent denial already gets (ADR-0292): the store opened from local
+	// state before any of this was attempted and works offline without it. It
+	// is contained rather than raised because raising it would reject a promise
+	// this package promised would resolve a `Result`, and the error it would
+	// carry is not one this package can mint. `sync.status()` answers
+	// `undefined`, which is what a surface renders as a quiet status line.
 	//
 	// Nothing is known to reach this: every input `attachStoreSync` reads was
-	// canonicalized by the open above. It is here because the cost of being
-	// wrong is a lock nobody can release.
+	// canonicalized by the open above.
 	try {
 		attachStoreSync({
 			store: opened.data,
@@ -158,13 +159,9 @@ export async function openReplica<TDefinition extends DataDefinition>({
 				log.warn(EpicenterDataBackgroundError.SyncTransportFailed({ cause })),
 		});
 	} catch (cause) {
-		await opened.data[Symbol.asyncDispose]().catch((disposal) =>
-			log.warn(
-				EpicenterDataBackgroundError.SyncTransportFailed({ cause: disposal }),
-			),
-		);
-		throw cause;
+		log.warn(EpicenterDataBackgroundError.SyncTransportFailed({ cause }));
 	}
+
 	// Durable work is what a reconnect offers the authority, so a flush that
 	// never happened is work the account never hears about either. The page
 	// telling us it is going is the last chance to ask for one, and it is asked

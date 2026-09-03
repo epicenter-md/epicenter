@@ -162,17 +162,22 @@ test('the store opens as a replica of the account that was passed in', async () 
 	await data[Symbol.asyncDispose]();
 });
 
-test('reading it twice joins one open', async () => {
+test('one handle memoizes its open, and a second handle is refused', async () => {
 	await resetStorage();
 	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 	await importEmptyGeneration(account);
 
-	// The memo is what makes the second reader join rather than claim a Web
-	// Lock the first one holds.
+	// Two reads of one handle are one promise, which is what makes a second
+	// reader join rather than claim a Web Lock the first one holds.
 	const epicenter = handleFor(account);
 	expect(epicenter.data).toBe(epicenter.data);
-	const data = await openedBy(account).catch(() => undefined);
-	expect(data).toBeUndefined();
+
+	// A SECOND handle is a second claim, and the store refuses it. That is the
+	// dev-time shape of this: an application constructs one handle per page,
+	// and hot-reloading the module that constructs it meets this until the
+	// document is replaced.
+	const second = await handleFor(account).data;
+	expect(second.error?.name).toBe('AlreadyOpen');
 
 	const opened = await epicenter.data;
 	if (opened.error !== null) throw opened.error;

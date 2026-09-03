@@ -116,10 +116,11 @@ folder rather than once per file.
 | Standalone desktop | `bun run tauri build` |
 | Epicenter-hosted | `bun run build:epicenter` |
 
-**They differ in nothing that concerns data.** Every build calls
-`openDatabase` from `@epicenter/data/browser` and owns its databases; the
-desktop host serves the bundle and brokers the credential and owns none of it
-(ADR-0226).
+**They differ in nothing that concerns data.** Every build opens the same
+client-owned store through the same handle and owns it; the desktop host serves
+the bundle and brokers the credential and owns none of it (ADR-0226). What
+`#platform/epicenter` selects is the runtime the handle's SQLite and secrets are
+built over, which Honeycrisp uses neither of.
 There used to be a platform seam where the hosted build reached the host's
 shared `epicenter.sqlite3`, and ADR-0226 refused it.
 
