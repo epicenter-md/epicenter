@@ -227,7 +227,13 @@ export type CreateEpicenterOptions = {
 	 *
 	 * An application with no definition has nothing to default from and states
 	 * it. Local Mail is that application.
-	 *Can you please explain me why is app ID optional here in this file, but for some reason then it's required l/
+	 *
+	 * It is optional HERE and required in the first overload, because those are
+	 * two different questions. This type is the half every handle takes, and a
+	 * handle that also takes a definition can read the id off it. A handle with
+	 * no definition has nothing to read, so the accountless overload asks for it
+	 * outright: `createEpicenter({ appId, binding })`.
+	 */
 	appId?: string;
 	/**
 	 * The runtime leaf, built for the id this handle resolved.
