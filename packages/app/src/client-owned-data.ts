@@ -3,12 +3,12 @@
 /**
  * Opening a person's Epicenter Data, in every runtime.
  *
- * Its own module because the handle is not the place for it, and because the
- * two window leaves used to reach it separately. It lived in `browser.ts`
- * while that was the only caller, which left the desktop leaf importing an
- * opener from a file named for the other runtime: a reader would fairly
- * conclude the desktop build falls back to the browser one, and it does not.
- * There is one opener because there is one answer.
+ * Its own module because the handle composes it rather than contains it. It
+ * lived in `browser.ts` while a browser was the only caller, which left the
+ * desktop leaf importing an opener from a file named for the other runtime: a
+ * reader would fairly conclude the desktop build falls back to the browser
+ * one, and it does not. Neither leaf reaches it now; the handle does, once,
+ * because there is one opener for the same reason there was one answer.
  *
  * **The store is client-owned everywhere.** The host serves bundles and brokers
  * credentials and owns no application data (ADR-0226, ADR-0227). The desktop
@@ -139,12 +139,31 @@ export async function openReplica<TDefinition extends DataDefinition>({
 	// The account is the transport: `openWebSocket` carries the bearer as a
 	// subprotocol, because a browser upgrade cannot set `Authorization`, and an
 	// `AuthClient` satisfies the port structurally with no adapter.
-	attachStoreSync({
-		store: opened.data,
-		transport: account,
-		onTransportError: (cause) =>
-			log.warn(EpicenterDataBackgroundError.SyncTransportFailed({ cause })),
-	});
+	//
+	// The store is let go if attaching throws, and the throw goes on. Nothing
+	// here can mint a `StoreError`, and inventing one would be this package
+	// answering a question the store owns; what it can do is not leave an open
+	// store behind. That store holds a Web Lock, and the handle has no `close`,
+	// so a leaked one is held until the document unloads.
+	//
+	// Nothing is known to reach this: every input `attachStoreSync` reads was
+	// canonicalized by the open above. It is here because the cost of being
+	// wrong is a lock nobody can release.
+	try {
+		attachStoreSync({
+			store: opened.data,
+			transport: account,
+			onTransportError: (cause) =>
+				log.warn(EpicenterDataBackgroundError.SyncTransportFailed({ cause })),
+		});
+	} catch (cause) {
+		await opened.data[Symbol.asyncDispose]().catch((disposal) =>
+			log.warn(
+				EpicenterDataBackgroundError.SyncTransportFailed({ cause: disposal }),
+			),
+		);
+		throw cause;
+	}
 	return Ok(opened.data);
 }
 

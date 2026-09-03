@@ -69,12 +69,18 @@ trip, and reading it twice joins one open. Sync attaches inside. It resolves a
 it: a boot gate switches on the failure's `name` to choose between a retry, an
 erase, and a sign-in.
 
+A failure is memoized with everything else, so the repair for a failed open is
+a document reload rather than a second read of `data`. That is what a boot gate
+already does: `AlreadyOpen` and `GenerationUnavailable` both repair by
+reloading, and an erase leaves the page.
+
 Every method answers a `Result`. Runtime differences are typed failures, never
 branches: a browser build has no keychain, and the application handles that
 because the type obliges it to.
 
-`createEpicenter` throws on an invalid `appId`, because that is a build mistake
-rather than a runtime condition. Everything else that can fail returns.
+What throws is what a build got wrong: `createEpicenter` on an application id
+this platform cannot file, and the two name mints below. Everything that can
+fail at runtime returns.
 
 ### The SQLite handle
 
@@ -117,10 +123,15 @@ constant and a wrong one is a bug. A name derived from something that arrived at
 runtime is narrowed with `isDatabaseName` or `isSecretLabel` where it is born, so
 the application can say what the person did rather than what the grammar is.
 
-The desktop owner still validates on arrival: a brand is a compile-time fact, and
-a request crossing the sidecar carries no types. `@epicenter/app/protocol` owns
-the grammar both ends read, plus `APP_STORAGE_PATH` and the message types. The
-application id reuses `isAppId` from `@epicenter/constants/app-id`.
+The desktop owner validates again on arrival: a brand is a compile-time fact, and
+a request crossing the sidecar carries no types. The browser leaf has no second
+line, because there is no owner on the other side of it; what a bad name reaches
+there is OPFS, whose names are flat, so the blast radius of a JS caller casting
+past the brand is one oddly named file in this origin.
+
+`@epicenter/app/protocol` owns the grammar both ends read, plus
+`APP_STORAGE_PATH` and the message types. The application id reuses `isAppId`
+from `@epicenter/constants/app-id`.
 
 ## Why it is shaped this way
 

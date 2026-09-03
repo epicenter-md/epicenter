@@ -1,8 +1,8 @@
 /// <reference lib="dom" />
 
 /**
- * The standalone browser leaf: IndexedDB data, origin-owned SQLite, and
- * secrets that live exactly as long as the tab (ADR-0310).
+ * The standalone browser leaf: origin-owned SQLite over OPFS, and secrets that
+ * live exactly as long as the tab (ADR-0310).
  *
  * This is the reduced build. It has no keychain and no host, so it holds no
  * credential across a reload, deliberately and permanently: not `localStorage`,

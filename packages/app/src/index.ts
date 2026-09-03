@@ -16,11 +16,14 @@
  * (a keychain, a Bun-owned file). A build that forgot to declare the condition
  * fails to resolve rather than silently running the wrong owner.
  *
- * This module is what both leaves are made of: the types, the errors, and the
- * one constructor that still takes a binding. An application does not call
- * that constructor. The Bun host does (`apps/epicenter/src/app-binding.ts`),
- * because it composes a storage root and a secrets owner its own test swaps,
- * which is what a real extension point looks like.
+ * This module is what both leaves are made of: the types, the errors, the two
+ * name mints, and the one constructor that still takes a binding. An
+ * application does not call that constructor. The binding stays public for the
+ * Bun host's leaf (`apps/epicenter/src/app-binding.ts`), which composes a
+ * storage root and a secrets owner its own test swaps: that is what a real
+ * extension point looks like. Nothing in `main.ts` composes it yet, so the
+ * host's background half (ADR-0323) is a leaf and a test rather than a running
+ * process.
  *
  * Runtime differences are typed failures, never branches (ADR-0181). A browser
  * build has no keychain, so its secret leaf answers from tab memory and forgets
@@ -259,6 +262,13 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 			readonly data: Promise<
 				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
 			>;
+			/**
+			 * A failure is memoized with everything else, so the repair for one is
+			 * a document reload rather than a second read. That is what a boot
+			 * gate already does: `AlreadyOpen` and `GenerationUnavailable` both
+			 * repair with `location.reload()`, and an erase leaves the page.
+			 * Re-reading this after a failure joins the same failure.
+			 */
 			/**
 			 * Erase this device's copy, whoever it belongs to (ADR-0325).
 			 *
