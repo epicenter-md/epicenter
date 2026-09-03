@@ -10,6 +10,11 @@ export {
 	type ReactiveTable,
 } from './from-data.svelte.js';
 export {
+	type EpicenterState,
+	type EpicenterStore,
+	fromEpicenter,
+} from './from-epicenter.svelte.js';
+export {
 	fromSubscription,
 	type Tracked,
 } from './from-subscription.svelte.js';

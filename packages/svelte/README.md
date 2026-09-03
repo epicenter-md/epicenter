@@ -43,6 +43,37 @@ const note = app.tables.notes.get(id);   // wakes only when THAT row moves
 app.persistence.get() === 'blocked';     // this device stopped saving
 ```
 
+### `fromEpicenter`
+
+Adapts one `@epicenter/app` handle's store into four states a route renders
+from: `signed-out`, `opening`, `ready` (carrying the data), and `failed`
+(carrying the error). The store is a field on the `ready` variant, so a read
+before it is open does not compile.
+
+Signed-out is answered from one read of `account.state` BEFORE anything opens,
+so a person who cannot open anything pays no Web Lock, no IndexedDB, and no
+round trip. It is its own state rather than a failure: folding it into the
+error channel would make the gate sniff an error to choose between "sign in"
+and "something broke".
+
+The handle is taken structurally, the way `fromData` takes opened data, so this
+package does not depend on `@epicenter/app`.
+
+```svelte
+<script lang="ts">
+  const store = fromEpicenter(epicenter);
+</script>
+{#if store.state.status === 'signed-out'}
+  <SignInGate />
+{:else if store.state.status === 'opening'}
+  <Loading />
+{:else if store.state.status === 'ready'}
+  <Notes data={store.state.data} />
+{:else}
+  <BootFailure error={store.state.error} />
+{/if}
+```
+
 ### `fromSubscription`
 
 One value read through a subscription, kept fresh. The four lines every
