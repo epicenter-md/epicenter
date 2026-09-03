@@ -415,7 +415,7 @@ describe('pull refuses a folder holding unpushed edits', () => {
 		const refused = expectErr(await pullInto(host, data));
 		if (refused.name !== 'WorkingCopyDirty') throw new Error('unreachable');
 		expect(refused.plan).toEqual([
-			{ kind: 'discard', path: 'kv.json', notes: [{ reason: 'kv-changed' }] },
+			{ kind: 'discard', path: 'kv.json', reason: 'kv-changed' },
 		]);
 		await data[Symbol.asyncDispose]();
 	});
@@ -594,9 +594,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 				fetch: host.fetch,
 			}),
 		);
-		expect(only(plan, 'discard').notes).toEqual([
-			{ reason: 'body-unreadable' },
-		]);
+		expect(only(plan, 'discard').reason).toBe('body-unreadable');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -629,7 +627,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		expect(only(expectOk(await planOf(host, data)), 'discard')).toEqual({
 			kind: 'discard',
 			path: `notes/${noteId}.md`,
-			notes: [{ reason: 'row-gone', name: undefined }],
+			reason: 'row-gone',
 		});
 		await data[Symbol.asyncDispose]();
 	});
@@ -1056,9 +1054,54 @@ describe('push sends the values back and re-renders', () => {
 				fetch: host.fetch,
 			}),
 		);
-		expect(only(plan, 'discard').notes).toEqual([
-			{ reason: 'body-unreadable' },
-		]);
+		expect(only(plan, 'discard').reason).toBe('body-unreadable');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a body the codec refuses does not take the values beside it', async () => {
+		// A discard is not always the whole file. The body is one region, and
+		// the values in the same frontmatter are ordinary values: everything the
+		// folder can express lands, and only what cannot be read is written
+		// over (ADR-0338).
+		const exploding = defineData({
+			id: 'so.epicenter.honeycrisp',
+			kv: { theme: field.string() },
+			tables: {
+				notes: defineTable({
+					title: field.string(),
+					pinned: field.boolean(),
+					content: {
+						encode: (node) => node.toString(),
+						decode: () => {
+							throw new Error('the codec exploded');
+						},
+						rewrite: () => Ok(undefined),
+					},
+				}),
+			},
+		});
+		const host = fakeHost();
+		const data = addressed(await openMemory(exploding));
+		const note = data.tables.notes.create({ title: 'x', pinned: false });
+		expectOk(await pull({ data, definition: exploding, fetch: host.fetch }));
+		// One file, two edits: a value it can carry and a body it cannot.
+		host.folder.set(
+			`notes/${note.id}.md`,
+			'---\ntitle: "changed by hand"\npinned: false\n---\n\nnew text\n',
+		);
+		const plan = expectOk(
+			await diff({ data, definition: exploding, fetch: host.fetch }),
+		);
+		expect(only(plan, 'discard').reason).toBe('body-unreadable');
+		expect(only(plan, 'value')).toMatchObject({
+			name: 'title',
+			file: 'changed by hand',
+		});
+
+		expectOk(
+			await push({ data, definition: exploding, plan, fetch: host.fetch }),
+		);
+		expect(data.tables.notes.get(note.id)?.title).toBe('changed by hand');
 		await data[Symbol.asyncDispose]();
 	});
 

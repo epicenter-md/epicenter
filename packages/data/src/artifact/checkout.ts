@@ -899,23 +899,27 @@ export type PlannedDeletion = {
 };
 
 /**
- * A file the push cannot carry as it stands, and the re-render will overwrite.
+ * Something in this file the push cannot carry, so the re-render overwrites it.
  *
- * One per path rather than one per problem, because they all resolve the same
- * way: the file is rewritten from the store, whatever is wrong with it. What
- * is wrong is listed so a person can cancel, fix it, and read the folder
+ * **One reason, and it is not always the whole file.** Four of the five stop
+ * the file dead, and `body-unreadable` does not: a body this table's codec
+ * refuses is one region, and the values in the same frontmatter are ordinary
+ * values that go in beside it. That is ADR-0338's rule rather than an
+ * exception to it, because everything the folder can express lands and only
+ * what cannot be read is written over.
+ *
+ * It carried a LIST of reasons, each with an optional field name, for a file
+ * that might have several things wrong with it. Nothing ever wrote the second
+ * one: every site passes a reason alone and then stops looking, so the list
+ * was always one long and the name was never set.
+ *
+ * What is wrong is said so a person can cancel, fix it, and read the folder
  * again, which costs nothing.
  */
 export type PlannedDiscard = {
 	readonly kind: 'discard';
 	readonly path: string;
-	readonly notes: readonly DiscardNote[];
-};
-
-/** One thing wrong with a file, and the field it is about where it has one. */
-export type DiscardNote = {
 	readonly reason: DiscardReason;
-	readonly name?: string;
 };
 
 export type DiscardReason =
@@ -1046,26 +1050,15 @@ async function planPush(
 
 	const onDisk = held.files.get('kv.json');
 	if (onDisk !== undefined && (await contentHash(onDisk)) !== base.kvHash) {
-		items.push({
-			kind: 'discard',
-			path: 'kv.json',
-			notes: [{ reason: 'kv-changed' }],
-		});
+		items.push({ kind: 'discard', path: 'kv.json', reason: 'kv-changed' });
 	}
 
 	for (const [key, handed] of Object.entries(base.rows)) {
 		const address = parseRowPath(`${key}${ROW_FILE_EXTENSION}`);
 		if (address === undefined) continue;
 		const path = rowPath(address.table, address.rowId);
-		// Collected rather than pushed, because everything wrong with one file
-		// resolves the same way and the overview should say it about the file
-		// once.
-		const notes: DiscardNote[] = [];
-		const discard = (reason: DiscardReason, name?: string) =>
-			notes.push({ reason, name });
-		const flush = () => {
-			if (notes.length > 0) items.push({ kind: 'discard', path, notes });
-		};
+		const discard = (reason: DiscardReason) =>
+			items.push({ kind: 'discard', path, reason });
 
 		const contents = held.files.get(path);
 		if (contents === undefined) {
@@ -1079,7 +1072,6 @@ async function planPush(
 				// discard is, and it is the honest thing to say about a table this
 				// release no longer declares.
 				discard('table-undeclared');
-				flush();
 				continue;
 			}
 			// `rowFile` rather than `renderedRow`: what is asked here is whether
@@ -1098,7 +1090,6 @@ async function planPush(
 		const file = readRowFile(contents);
 		if (file === undefined) {
 			discard('unreadable');
-			flush();
 			continue;
 		}
 		// **A file nobody touched says nothing, whatever the store did.** The
@@ -1116,13 +1107,11 @@ async function planPush(
 		const table = definition.tables.get(address.table);
 		if (table === undefined) {
 			discard('table-undeclared');
-			flush();
 			continue;
 		}
 		const stored = await renderedRow(data, definition, address);
 		if (stored === undefined) {
 			discard('row-gone');
-			flush();
 			continue;
 		}
 
@@ -1175,7 +1164,6 @@ async function planPush(
 				storeChanged: !same(inStore, wasHandedOver),
 			});
 		}
-		flush();
 	}
 
 	for (const [path, contents] of held.files) {
@@ -1275,16 +1263,16 @@ async function admission(
 ): Promise<PlannedAdmission | PlannedDiscard> {
 	const table = definition.tables.get(tableName);
 	if (table === undefined) {
-		return { kind: 'discard', path, notes: [{ reason: 'table-undeclared' }] };
+		return { kind: 'discard', path, reason: 'table-undeclared' };
 	}
 	const file = readRowFile(contents);
 	if (file === undefined) {
-		return { kind: 'discard', path, notes: [{ reason: 'unreadable' }] };
+		return { kind: 'discard', path, reason: 'unreadable' };
 	}
 	// Defensive on the codec, which `compileData` refuses a table without: an
 	// empty body needs none, because `create` mints an empty node.
 	if (file.body !== '' && !readsBack(table, file.body)) {
-		return { kind: 'discard', path, notes: [{ reason: 'body-unreadable' }] };
+		return { kind: 'discard', path, reason: 'body-unreadable' };
 	}
 	return {
 		kind: 'admission',
