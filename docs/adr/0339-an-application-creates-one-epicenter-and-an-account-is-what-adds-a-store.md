@@ -43,7 +43,8 @@ declares none, has no `@epicenter/auth` dependency, and uses `openSqlite` and
 
 **An application creates one epicenter, and an account is what adds a store.**
 
-The runtime is the import path. The name never carries it.
+The runtime is the import path. The name never carries it. (Amended below: the
+import path that carries it is the binding's, not the handle's.)
 
 ```ts
 import { createEpicenter } from '@epicenter/app/browser';   // or '@epicenter/app/desktop'
@@ -283,6 +284,67 @@ it. That record is
   ADR-0323's background half is a leaf and a test).
 - ADR-0337's folder verbs stay functions over an opened store rather than
   methods on the handle, because they belong to the store's address.
+
+## Amendment, 2026-09-02: the runtime is the binding's import path, not the handle's
+
+The decision above is unchanged. An application still creates one epicenter, an
+account is still what adds a store, one id still scopes every capability, and
+the runtime is still a build fact rather than a `typeof window` test. What moved
+is which module the build selects.
+
+**`@epicenter/app/browser` and `@epicenter/app/desktop` export a binding.** They
+each used to export a `createEpicenter` that supplied their own, which made the
+runtime a property of the whole handle:
+
+```ts
+import { createBrowserBinding } from '@epicenter/app/browser';   // OPFS, tab memory
+import { createDesktopBinding } from '@epicenter/app/desktop';   // Bun file, keychain
+import { createEpicenter } from '@epicenter/app';                // every build
+
+createEpicenter({ definition, account, binding }): Epicenter<typeof definition>
+```
+
+The cost of the old shape was paid by the application that needs it least.
+Honeycrisp owns no SQLite file and keeps no secret: grep its source for either
+and there is nothing. It carried `#platform/epicenter` and two leaf files that
+were identical except for one import line, because the only way to obtain a
+handle was through a runtime subpath. Its store never varied by runtime, and it
+inherited a platform axis to reach a keychain it does not use.
+
+So the seam holds the thing that actually varies. `#platform/binding` exports a
+built `binding` value, the way `#platform/auth` exports `auth`, and everything
+composed from it lives in one file for every build:
+
+```ts
+// apps/honeycrisp/src/lib/epicenter.svelte.ts
+const handle = createEpicenter({ definition, account: auth, binding });
+export const epicenter = fromEpicenter(handle);
+if (import.meta.hot) import.meta.hot.dispose(() => void handle.close());
+```
+
+**`binding` stays required.** It is three closures and a `Map`; nothing it holds
+opens a file, dials the host, or names a keyring entry until a verb is called,
+so requiring one costs an allocation. An optional binding would have bought one
+import line at the price of a second conditional in `Epicenter`, and a default
+one would have been worse: an application that forgot the seam would hold tab
+memory on the desktop, which is a durability difference nothing can observe.
+
+**The leaves are duplicated values, not duplicated singletons.** Two files that
+each composed the handle would each define the application's one `epicenter`,
+and the invariant "there is exactly one" would rest on nobody importing a leaf
+directly. Two files that export a binding cannot drift into two of anything.
+
+Three lines in this record are corrected by the amendment:
+
+- "The runtime is the import path" now reads as the binding's import path. The
+  name still never carries the runtime, and `createBrowserEpicenter` is still
+  refused, for the reason under Considered alternatives and now also because a
+  handle is not the thing that varies.
+- "Every `createEpicenter` an application calls lives under a runtime subpath"
+  is false. There is one `createEpicenter`, at the root, and every application
+  calls it.
+- The root's contents were already more than types; they are now also the only
+  constructor, which is what the two leaves compose into rather than around.
 
 ## Considered alternatives
 
