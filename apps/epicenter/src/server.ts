@@ -327,12 +327,12 @@ export function createHomeServer({
 		try {
 			if (request.kind === 'secret-put') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
-				await appSecrets.put(request.appId, request.accountId, request.value);
+				await appSecrets.put(request.appId, request.label, request.value);
 				return c.json({ kind: request.kind } satisfies AppStorageResponse);
 			}
 			if (request.kind === 'secret-get') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
-				const value = await appSecrets.get(request.appId, request.accountId);
+				const value = await appSecrets.get(request.appId, request.label);
 				return c.json({
 					kind: request.kind,
 					value,
@@ -340,7 +340,7 @@ export function createHomeServer({
 			}
 			if (request.kind === 'secret-delete') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
-				await appSecrets.delete(request.appId, request.accountId);
+				await appSecrets.delete(request.appId, request.label);
 				return c.json({ kind: request.kind } satisfies AppStorageResponse);
 			}
 			if (appStorage === undefined) return c.text('Unavailable', 503);
@@ -754,19 +754,19 @@ function parseAppStorageRequest(
 		(kind === 'secret-put' ||
 			kind === 'secret-get' ||
 			kind === 'secret-delete') &&
-		typeof input.accountId === 'string'
+		typeof input.label === 'string'
 	) {
-		if (!isSecretLabel(input.accountId)) return undefined;
+		if (!isSecretLabel(input.label)) return undefined;
 		if (kind === 'secret-put' && typeof input.value !== 'string')
 			return undefined;
 		return kind === 'secret-put'
 			? {
 					kind,
 					appId: input.appId,
-					accountId: input.accountId,
+					label: input.label,
 					value: input.value as string,
 				}
-			: { kind, appId: input.appId, accountId: input.accountId };
+			: { kind, appId: input.appId, label: input.label };
 	}
 	return undefined;
 }

@@ -9,13 +9,13 @@
  */
 
 import { expect, test } from 'bun:test';
+import { type SecretStore, secretLabel } from '@epicenter/app';
 import { Ok } from 'wellcrafted/result';
-import type { SecretStore } from '@epicenter/app';
 import { DEFAULT_MAIL_CONFIG, type MailConfig } from './config.ts';
 import { createTokenManager } from './token-manager.ts';
 
 const IDENTITY = { clientId: 'client-id-123', clientSecret: 'client-secret' };
-const ACCOUNT = 'account-row-id';
+const ACCOUNT = secretLabel('account-row-id');
 const NOW = () => Date.parse('2026-07-01T00:00:00.000Z');
 
 function config(overrides: Partial<MailConfig> = {}): MailConfig {
@@ -63,7 +63,7 @@ test('a held access token is used without touching the token endpoint', async ()
 		config: config({ tokenUrl: `http://127.0.0.1:${server.port}/token` }),
 		identity: IDENTITY,
 		secrets,
-		accountId: ACCOUNT,
+		label: ACCOUNT,
 		now: NOW,
 	});
 
@@ -91,7 +91,7 @@ test('a rotated refresh token is stored back', async () => {
 		config: config({ tokenUrl: `http://127.0.0.1:${server.port}/token` }),
 		identity: IDENTITY,
 		secrets,
-		accountId: ACCOUNT,
+		label: ACCOUNT,
 		now: NOW,
 	});
 
@@ -121,7 +121,7 @@ test('concurrent callers share one refresh grant', async () => {
 		config: config({ tokenUrl: `http://127.0.0.1:${server.port}/token` }),
 		identity: IDENTITY,
 		secrets,
-		accountId: ACCOUNT,
+		label: ACCOUNT,
 		now: NOW,
 	});
 
@@ -161,7 +161,7 @@ test('a failed grant does not poison the next call', async () => {
 		config: config({ tokenUrl: `http://127.0.0.1:${server.port}/token` }),
 		identity: IDENTITY,
 		secrets,
-		accountId: ACCOUNT,
+		label: ACCOUNT,
 		now: NOW,
 	});
 
@@ -186,7 +186,7 @@ test('a revoked grant asks for re-consent rather than a retry', async () => {
 		config: config({ tokenUrl: `http://127.0.0.1:${server.port}/token` }),
 		identity: IDENTITY,
 		secrets,
-		accountId: ACCOUNT,
+		label: ACCOUNT,
 		now: NOW,
 	});
 
@@ -204,7 +204,7 @@ test('a device holding no credential asks for the account again', async () => {
 		config: config(),
 		identity: IDENTITY,
 		secrets,
-		accountId: ACCOUNT,
+		label: ACCOUNT,
 		now: NOW,
 	});
 

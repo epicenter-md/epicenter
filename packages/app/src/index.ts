@@ -1,18 +1,26 @@
 /**
- * The one application-owned handle for Epicenter capabilities (ADR-0316).
+ * The one application-owned handle for Epicenter capabilities (ADR-0316,
+ * ADR-0339).
  *
- * An application creates `epicenter` once, with its declared application id,
- * and reaches its data, its relational stores, and its secrets through it. It
- * never selects IndexedDB, OPFS, Bun SQLite, a native path, a keychain, or a
- * host IPC mechanism, because none of those names appear on this surface.
+ * An application creates `epicenter` once and reaches its data, its relational
+ * files, and its secrets through it. It never selects IndexedDB, OPFS, Bun
+ * SQLite, a native path, a keychain, or a host IPC mechanism, because none of
+ * those names appear on this surface.
  *
- * **The runtime arrives as a binding, chosen at build time.** There is no
- * `typeof window` test here and there must not be one: the desktop build runs
- * in a WebView, so a runtime sniff cannot tell it apart from a browser tab,
- * and the two differ in exactly the ways that matter (a keychain, a Bun-owned
- * file). Applications select the leaf through the `#platform/*` condition the
- * repository already uses for auth and instance seams; a build that forgot to
+ * **The runtime is the import path.** `@epicenter/app/browser` and
+ * `@epicenter/app/desktop` each export `createEpicenter`, and an application
+ * reaches its own leaf through the `#platform/*` condition its build already
+ * uses for auth. There is no `typeof window` test here and there must not be
+ * one: the desktop build runs in a WebView, so a runtime sniff cannot tell it
+ * apart from a browser tab, and the two differ in exactly the ways that matter
+ * (a keychain, a Bun-owned file). A build that forgot to declare the condition
  * fails to resolve rather than silently running the wrong owner.
+ *
+ * This module is what both leaves are made of: the types, the errors, and the
+ * one constructor that still takes a binding. An application does not call
+ * that constructor. The Bun host does (`apps/epicenter/src/app-binding.ts`),
+ * because it composes a storage root and a secrets owner its own test swaps,
+ * which is what a real extension point looks like.
  *
  * Runtime differences are typed failures, never branches (ADR-0181). A browser
  * build has no keychain, so its secret leaf answers from tab memory and forgets
@@ -20,12 +28,24 @@
  * it to.
  */
 
-import type { DatabaseAccount, ReplicaData } from '@epicenter/data';
-import type { DataDefinition } from '@epicenter/data/definition';
+import type { AuthClient } from '@epicenter/auth';
+import type { ReplicaData } from '@epicenter/data';
+import type { StoreError } from '@epicenter/data/browser';
+import type {
+	DataDefinition,
+	DataDefinitionParseError,
+} from '@epicenter/data/definition';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import { isDatabaseName, isProtocolAppId, isSecretLabel } from './protocol.js';
+import { eraseReplicaOf, openReplica } from './client-owned-data.js';
+import {
+	type DatabaseName,
+	isDatabaseName,
+	isProtocolAppId,
+	isSecretLabel,
+	type SecretLabel,
+} from './protocol.js';
 
 export const AppError = defineErrors({
 	InvalidAppId: ({ appId }: { appId: string }) => ({
@@ -51,9 +71,9 @@ export const AppError = defineErrors({
 export type AppError = InferErrors<typeof AppError>;
 
 export const SecretError = defineErrors({
-	InvalidAccountId: ({ accountId }: { accountId: string }) => ({
-		message: `The account id '${accountId}' is not valid.`,
-		accountId,
+	InvalidSecretLabel: ({ label }: { label: string }) => ({
+		message: `The secret label '${label}' is not valid.`,
+		label,
 	}),
 	StorageFailed: ({ cause }: { cause: unknown }) => ({
 		message: 'The secret owner failed.',
@@ -63,10 +83,54 @@ export const SecretError = defineErrors({
 export type SecretError = InferErrors<typeof SecretError>;
 
 /**
+ * The two names an application mints, and the guards that narrow them.
+ *
+ * Re-exported here rather than left on `/protocol`, because that subpath is
+ * the desktop owner's wire and an application is not writing one. The guards
+ * narrow: a name that passed one is a `DatabaseName` or a `SecretLabel`, which
+ * is what let the handle stop asking on every call.
+ */
+export {
+	type DatabaseName,
+	isDatabaseName,
+	isSecretLabel,
+	type SecretLabel,
+} from './protocol.js';
+
+/**
+ * Mint one SQLite file name, refusing what this platform cannot file.
+ *
+ * It throws, because a name reaching this is a constant in a build and a wrong
+ * one is a bug rather than a condition: the same reason `createEpicenter`
+ * throws on an application id it does not admit. A name derived from a value
+ * that arrived at runtime is not this function's business; narrow it with
+ * `isDatabaseName` where it is born, so the refusal can say what the person
+ * did rather than what the grammar is.
+ */
+export function databaseName(value: string): DatabaseName {
+	if (!isDatabaseName(value)) {
+		throw new Error(
+			AppError.InvalidDatabaseName({ databaseName: value }).error.message,
+		);
+	}
+	return value;
+}
+
+/** Mint one secret label, on the same terms as {@link databaseName}. */
+export function secretLabel(value: string): SecretLabel {
+	if (!isSecretLabel(value)) {
+		throw new Error(
+			SecretError.InvalidSecretLabel({ label: value }).error.message,
+		);
+	}
+	return value;
+}
+
+/**
  * All `run`, `all`, and `batch` (ADR-0312). A transaction never crosses this
  * boundary, so `batch` is how several statements become one, and there is no
  * `close`: the owner holds the handle for the life of the application, and the
- * only thing that ends that life is `deleteSqlite` (ADR-0321).
+ * only thing that ends that life is `sqlite.delete` (ADR-0321).
  */
 export type AppSqliteDatabase = {
 	run(
@@ -95,109 +159,163 @@ export type AppSqliteDatabase = {
  * test wearing a capability's clothes.
  */
 export type SecretStore = {
-	put(accountId: string, value: string): Promise<Result<void, SecretError>>;
-	get(accountId: string): Promise<Result<string | null, SecretError>>;
-	delete(accountId: string): Promise<Result<void, SecretError>>;
+	put(label: SecretLabel, value: string): Promise<Result<void, SecretError>>;
+	get(label: SecretLabel): Promise<Result<string | null, SecretError>>;
+	delete(label: SecretLabel): Promise<Result<void, SecretError>>;
 };
 
+/**
+ * What a runtime supplies, and it is not a quarter of what it used to be.
+ *
+ * `openData` left (ADR-0339). Both window leaves implemented it as the same
+ * `openReplica` call and the Bun host refused it outright, because the store is
+ * client-owned in every runtime (ADR-0226, ADR-0227): one quarter of this seam
+ * was not a seam. What varies by runtime is a Bun-owned file and a keychain,
+ * and that is all that is left here.
+ */
 export type EpicenterBinding = {
-	openData<TDefinition extends DataDefinition>(
-		definition: TDefinition,
-		account: DatabaseAccount,
-	): Promise<Result<ReplicaData<TDefinition>, AppError>>;
-	openSqlite(name: string): Promise<Result<AppSqliteDatabase, AppError>>;
-	deleteSqlite(name: string): Promise<Result<void, AppError>>;
+	open(name: DatabaseName): Promise<Result<AppSqliteDatabase, AppError>>;
+	delete(name: DatabaseName): Promise<Result<void, AppError>>;
 	secrets: SecretStore;
+};
+
+/**
+ * The store half of the handle: an application's one definition, and the
+ * account whose replica it opens.
+ *
+ * They arrive together or not at all. An authority mints every generation
+ * (ADR-0336), so there is no accountless store and no store without sync; an
+ * application that passes neither gets a handle with no `data` and no
+ * `account`, which is the whole surface Local Mail needs.
+ */
+export type EpicenterDataOptions<TDefinition extends DataDefinition> = {
+	/**
+	 * This application's one data definition, which an application has exactly
+	 * one of and imports (ADR-0313).
+	 */
+	definition: TDefinition;
+	/**
+	 * The account this acts as, which the application constructs and passes in.
+	 *
+	 * The package does not build one. A desktop leaf needs its own bootstrap
+	 * and a browser leaf needs a redirect launcher, and a package that built
+	 * both would have to know every auth model an application might use.
+	 */
+	account: AuthClient;
 };
 
 export type CreateEpicenterOptions = {
 	appId: string;
-	/** The runtime leaf, resolved by the application's build condition. */
+	/** The runtime leaf. An application reaches one through its import path. */
 	binding: EpicenterBinding;
 };
 
-export type EpicenterHandle = {
+/**
+ * One application's Epicenter: five nouns, and verbs under the noun they
+ * belong to.
+ *
+ * `openSqlite` and `deleteSqlite` were two verbs sharing a suffix, which is a
+ * noun that had not been written down.
+ *
+ * `data` is a lazy getter that memoizes. Reading it starts the open, so an
+ * application that never reads it pays no Web Lock, no IndexedDB, and no round
+ * trip, and reading it twice joins one open. Sync attaches inside, because the
+ * account is here.
+ *
+ * `[TDefinition] extends [never]` fails DOWNWARD: omitting the definition
+ * yields the smaller type rather than the larger, so a handle with no store
+ * cannot be read as one that has it.
+ */
+export type Epicenter<TDefinition extends DataDefinition = never> = {
 	readonly appId: string;
-	/**
-	 * Open this application's Epicenter Data, as a replica of `account`.
-	 *
-	 * The account is the caller's, because an authority mints every generation
-	 * and the application is what knows which principal it is acting as. There
-	 * is no device-owned overload: a store with no authority is not a shape
-	 * this platform produces.
-	 */
-	openData<TDefinition extends DataDefinition>(
-		definition: TDefinition,
-		account: DatabaseAccount,
-	): Promise<Result<ReplicaData<TDefinition>, AppError>>;
-	openSqlite(name: string): Promise<Result<AppSqliteDatabase, AppError>>;
-	/**
-	 * Delete one database this application named, and close the owner's handle
-	 * to it (ADR-0321).
-	 *
-	 * There is no `list`, for the same reason `secrets` has none: the
-	 * application's own rows are the only thing that knows a name exists. A name
-	 * that was never created deletes successfully, because the caller asked for
-	 * it to be gone and it is.
-	 */
-	deleteSqlite(name: string): Promise<Result<void, AppError>>;
+	readonly sqlite: {
+		open(name: DatabaseName): Promise<Result<AppSqliteDatabase, AppError>>;
+		/**
+		 * Delete one file this application named, and close the owner's handle to
+		 * it (ADR-0321).
+		 *
+		 * There is no `list`, for the same reason `secrets` has none: the
+		 * application's own rows are the only thing that knows a name exists. A
+		 * name that was never created deletes successfully, because the caller
+		 * asked for it to be gone and it is.
+		 */
+		delete(name: DatabaseName): Promise<Result<void, AppError>>;
+	};
 	readonly secrets: SecretStore;
-};
+} & ([TDefinition] extends [never]
+	? // biome-ignore lint/complexity/noBannedTypes: the empty half of the overload IS nothing added.
+		{}
+	: {
+			readonly account: AuthClient;
+			/**
+			 * This application's store, opened as a replica of `account`, syncing.
+			 *
+			 * It resolves a `Result`, and the error is the store's own rather than
+			 * `AppError.StorageFailed` wrapping it. An application's boot gate
+			 * switches on the failure's `name` to choose between a retry, an erase,
+			 * and a sign-in; wrapping hid that name under `cause`, so every arm
+			 * became the fallback and both repairs disappeared.
+			 */
+			readonly data: Promise<
+				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
+			>;
+			/**
+			 * Erase this device's copy, whoever it belongs to (ADR-0325).
+			 *
+			 * `replica` because it erases this device's copy and touches nothing at
+			 * the authority, and it is the word a developer reads unsoftened. It
+			 * takes every generation, because the refusal it repairs is about the
+			 * address rather than about one number.
+			 */
+			eraseReplica(): Promise<Result<void, StoreError>>;
+		});
 
+export function createEpicenter(options: CreateEpicenterOptions): Epicenter;
+export function createEpicenter<const TDefinition extends DataDefinition>(
+	options: CreateEpicenterOptions & EpicenterDataOptions<TDefinition>,
+): Epicenter<TDefinition>;
 /** Create one handle whose every capability is scoped to `appId`. */
-export function createEpicenter(
-	options: CreateEpicenterOptions,
-): EpicenterHandle {
-	if (!isProtocolAppId(options.appId)) {
-		throw new Error(
-			AppError.InvalidAppId({ appId: options.appId }).error.message,
-		);
+export function createEpicenter<const TDefinition extends DataDefinition>(
+	options: CreateEpicenterOptions & Partial<EpicenterDataOptions<TDefinition>>,
+): Epicenter<TDefinition> {
+	const { appId, binding, definition, account } = options;
+	if (!isProtocolAppId(appId)) {
+		throw new Error(AppError.InvalidAppId({ appId }).error.message);
 	}
-	const { binding } = options;
 
-	return Object.freeze({
-		appId: options.appId,
-		openData<TDefinition extends DataDefinition>(
-			definition: TDefinition,
-			account: DatabaseAccount,
-		) {
-			return binding.openData(definition, account);
-		},
-		openSqlite(name: string) {
-			if (!isDatabaseName(name)) {
-				return Promise.resolve(
-					AppError.InvalidDatabaseName({ databaseName: name }),
-				);
-			}
-			return binding.openSqlite(name);
-		},
-		deleteSqlite(name: string) {
-			if (!isDatabaseName(name)) {
-				return Promise.resolve(
-					AppError.InvalidDatabaseName({ databaseName: name }),
-				);
-			}
-			return binding.deleteSqlite(name);
-		},
-		secrets: Object.freeze({
-			put(accountId: string, value: string) {
-				if (!isSecretLabel(accountId)) {
-					return Promise.resolve(SecretError.InvalidAccountId({ accountId }));
-				}
-				return binding.secrets.put(accountId, value);
-			},
-			get(accountId: string) {
-				if (!isSecretLabel(accountId)) {
-					return Promise.resolve(SecretError.InvalidAccountId({ accountId }));
-				}
-				return binding.secrets.get(accountId);
-			},
-			delete(accountId: string) {
-				if (!isSecretLabel(accountId)) {
-					return Promise.resolve(SecretError.InvalidAccountId({ accountId }));
-				}
-				return binding.secrets.delete(accountId);
-			},
+	const capabilities = {
+		appId,
+		sqlite: Object.freeze({
+			open: (name: DatabaseName) => binding.open(name),
+			delete: (name: DatabaseName) => binding.delete(name),
 		}),
-	});
+		secrets: Object.freeze({
+			put: (label: SecretLabel, value: string) =>
+				binding.secrets.put(label, value),
+			get: (label: SecretLabel) => binding.secrets.get(label),
+			delete: (label: SecretLabel) => binding.secrets.delete(label),
+		}),
+	};
+
+	if (definition === undefined || account === undefined) {
+		return Object.freeze(capabilities) as Epicenter<TDefinition>;
+	}
+
+	let opening:
+		| Promise<
+				Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>
+		  >
+		| undefined;
+	return Object.freeze({
+		...capabilities,
+		account,
+		get data() {
+			// Memoized here rather than in the opener, because the memo is what
+			// makes a second reader join the first open instead of claiming a Web
+			// Lock somebody already holds.
+			opening ??= openReplica({ appId, definition, account });
+			return opening;
+		},
+		eraseReplica: () => eraseReplicaOf({ appId, definition }),
+	}) as Epicenter<TDefinition>;
 }

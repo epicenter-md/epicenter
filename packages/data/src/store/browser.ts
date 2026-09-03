@@ -86,6 +86,15 @@ import {
 // Re-exported so a browser caller's one import site names the document beside
 // the opener that produces it.
 export type { DatabaseAccount } from './handles.js';
+/**
+ * What every opener here fails with, as a type.
+ *
+ * The CONSTRUCTORS stay internal: a store is what throws these, and nothing
+ * outside builds one. The type is exported because a caller that holds an
+ * opener's `Result` has to be able to name it, and `@epicenter/app`'s handle
+ * does exactly that rather than wrapping it in an error of its own (ADR-0339).
+ */
+export type { StoreError } from './errors.js';
 export type { DataDocument, ReplicaDocument } from './store.js';
 
 /**

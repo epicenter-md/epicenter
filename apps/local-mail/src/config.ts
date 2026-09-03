@@ -2,8 +2,8 @@
  * Local Mail's own configuration: Gmail's endpoints and its polling shape.
  *
  * There is no `dataDir` here any more, and no path, file, or environment read
- * that resolves one. Storage is `epicenter.openData`, `epicenter.openSqlite`,
- * and `epicenter.secrets`; where any of those land is the runtime's business
+ * that resolves one. Storage is `epicenter.sqlite` and `epicenter.secrets`;
+ * where either of those lands is the runtime's business
  * and the application never learns it.
  *
  * The endpoint fields stay overridable because a test points the client at a

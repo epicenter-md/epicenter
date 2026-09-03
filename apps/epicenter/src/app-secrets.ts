@@ -7,7 +7,7 @@
  * in its own data, so nothing has to ask the credential store who it is.
  *
  * **Bun never names a keyring entry.** It sends the application id and the
- * account id, both already validated at the route, and Rust composes the
+ * label, both already validated at the route, and Rust composes the
  * service and account strings it stores under. That keeps the private sidecar
  * pipe as content-blind as it was when it carried only the auth cell: the worst
  * a compromised Bun can address here is a different application's secret, which
@@ -19,23 +19,23 @@
  */
 
 export type AppSecretOwner = {
-	put(appId: string, accountId: string, value: string): Promise<void>;
-	get(appId: string, accountId: string): Promise<string | null>;
-	delete(appId: string, accountId: string): Promise<void>;
+	put(appId: string, label: string, value: string): Promise<void>;
+	get(appId: string, label: string): Promise<string | null>;
+	delete(appId: string, label: string): Promise<void>;
 };
 
 /** The native half of this owner: three correlated requests on the Rust pipe. */
 export type NativeSecretPort = {
-	putAppSecret(appId: string, accountId: string, value: string): Promise<void>;
-	getAppSecret(appId: string, accountId: string): Promise<string | null>;
-	deleteAppSecret(appId: string, accountId: string): Promise<void>;
+	putAppSecret(appId: string, label: string, value: string): Promise<void>;
+	getAppSecret(appId: string, label: string): Promise<string | null>;
+	deleteAppSecret(appId: string, label: string): Promise<void>;
 };
 
 export function createNativeAppSecrets(port: NativeSecretPort): AppSecretOwner {
 	return {
-		put: (appId, accountId, value) => port.putAppSecret(appId, accountId, value),
-		get: (appId, accountId) => port.getAppSecret(appId, accountId),
-		delete: (appId, accountId) => port.deleteAppSecret(appId, accountId),
+		put: (appId, label, value) => port.putAppSecret(appId, label, value),
+		get: (appId, label) => port.getAppSecret(appId, label),
+		delete: (appId, label) => port.deleteAppSecret(appId, label),
 	};
 }
 
@@ -50,16 +50,16 @@ export function createNativeAppSecrets(port: NativeSecretPort): AppSecretOwner {
  */
 export function createProcessMemoryAppSecrets(): AppSecretOwner {
 	const values = new Map<string, string>();
-	const label = (appId: string, accountId: string) => `${appId} ${accountId}`;
+	const key = (appId: string, label: string) => `${appId} ${label}`;
 	return {
-		async put(appId, accountId, value) {
-			values.set(label(appId, accountId), value);
+		async put(appId, label, value) {
+			values.set(key(appId, label), value);
 		},
-		async get(appId, accountId) {
-			return values.get(label(appId, accountId)) ?? null;
+		async get(appId, label) {
+			return values.get(key(appId, label)) ?? null;
 		},
-		async delete(appId, accountId) {
-			values.delete(label(appId, accountId));
+		async delete(appId, label) {
+			values.delete(key(appId, label));
 		},
 	};
 }

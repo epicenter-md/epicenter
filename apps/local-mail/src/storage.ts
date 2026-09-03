@@ -1,4 +1,12 @@
-import type { AppSqliteDatabase, EpicenterHandle } from '@epicenter/app';
+import {
+	type AppSqliteDatabase,
+	type DatabaseName,
+	databaseName,
+	type Epicenter,
+	isDatabaseName,
+	isSecretLabel,
+	type SecretLabel,
+} from '@epicenter/app';
 import { type SqliteHandle, sqliteHandle } from './handle.ts';
 
 /**
@@ -40,11 +48,45 @@ import { type SqliteHandle, sqliteHandle } from './handle.ts';
 export const LOCAL_MAIL_APP_ID = 'so.epicenter.local-mail';
 
 /** The durable file. One per device, never per account, never unlinked. */
-export const LOCAL_DATABASE = 'local';
+export const LOCAL_DATABASE = databaseName('local');
 
-/** One account's borrowed copy. The name is derived, so nothing allocates it. */
-export function mailDatabaseName(sub: string): string {
-	return `mail-${sub}`;
+/**
+ * Where one account's bytes are filed: the file it owns, and the label its
+ * refresh token is kept under.
+ *
+ * Both derived from the Google subject, so nothing allocates either and
+ * reconnecting an account lands on its own rows by arithmetic. They are minted
+ * together because they are refused together: a subject the platform cannot
+ * file is not a mailbox and not a credential, and `finishConnect` is where
+ * that becomes a sentence, because "we cannot file your mail under that" is a
+ * thing only this application can say. Google issues numeric subjects, so
+ * nothing has reached it.
+ */
+export type AccountFiling = {
+	readonly database: DatabaseName;
+	readonly secret: SecretLabel;
+};
+
+export function accountFiling(sub: string): AccountFiling | undefined {
+	const database = `mail-${sub}`;
+	return isDatabaseName(database) && isSecretLabel(sub)
+		? { database, secret: sub }
+		: undefined;
+}
+
+/**
+ * The same, for an account that is already connected, which by then is one.
+ *
+ * `finishConnect` refuses a subject this platform cannot file before a row for
+ * it exists, so every `sub` read back out of the account table has passed. A
+ * throw here is that invariant stated, not a condition a caller handles.
+ */
+export function requireAccountFiling(sub: string): AccountFiling {
+	const filing = accountFiling(sub);
+	if (filing === undefined) {
+		throw new Error(`No mail file can be named for the subject '${sub}'.`);
+	}
+	return filing;
 }
 
 export type LocalMailStorage = {
@@ -64,7 +106,7 @@ export type LocalMailStorage = {
  * two callers asking at once join one open instead of racing it.
  */
 export async function openLocalMailStorage(
-	epicenter: EpicenterHandle,
+	epicenter: Epicenter,
 ): Promise<LocalMailStorage> {
 	const local = await open(epicenter, LOCAL_DATABASE);
 	await migrateDurable(sqliteHandle(local));
@@ -73,7 +115,7 @@ export async function openLocalMailStorage(
 	function opening(sub: string): Promise<AppSqliteDatabase> {
 		const existing = mailboxes.get(sub);
 		if (existing !== undefined) return existing;
-		const opened = openBorrowed(epicenter, mailDatabaseName(sub));
+		const opened = openBorrowed(epicenter, requireAccountFiling(sub).database);
 		// This open, not whatever is under the key when it fails.
 		opened.catch(() => {
 			if (mailboxes.get(sub) === opened) mailboxes.delete(sub);
@@ -87,22 +129,24 @@ export async function openLocalMailStorage(
 		mail: opening,
 		forgetMail: async (sub) => {
 			// Settle an open already in flight before unlinking. ADR-0321 makes
-			// sequencing the application's invariant to keep: an `openSqlite`
-			// landing after the `deleteSqlite` recreates the file this removed.
+			// sequencing the application's invariant to keep: a `sqlite.open`
+			// landing after the `sqlite.delete` recreates the file this removed.
 			const inflight = mailboxes.get(sub);
 			mailboxes.delete(sub);
 			await inflight?.catch(() => undefined);
-			const gone = await epicenter.deleteSqlite(mailDatabaseName(sub));
+			const gone = await epicenter.sqlite.delete(
+				requireAccountFiling(sub).database,
+			);
 			if (gone.error !== null) throw gone.error;
 		},
 	};
 }
 
 async function open(
-	epicenter: EpicenterHandle,
-	name: string,
+	epicenter: Epicenter,
+	name: DatabaseName,
 ): Promise<AppSqliteDatabase> {
-	const opened = await epicenter.openSqlite(name);
+	const opened = await epicenter.sqlite.open(name);
 	if (opened.error !== null) throw opened.error;
 	return opened.data;
 }
@@ -212,8 +256,8 @@ export const MAIL_CACHE_SCHEMA = [
  * can read and neither costs anything but a backfill.
  */
 async function openBorrowed(
-	epicenter: EpicenterHandle,
-	name: string,
+	epicenter: Epicenter,
+	name: DatabaseName,
 ): Promise<AppSqliteDatabase> {
 	const opened = await open(epicenter, name);
 	const handle = sqliteHandle(opened);
@@ -228,7 +272,7 @@ async function openBorrowed(
 		return opened;
 	}
 
-	const gone = await epicenter.deleteSqlite(name);
+	const gone = await epicenter.sqlite.delete(name);
 	if (gone.error !== null) throw gone.error;
 	const fresh = await open(epicenter, name);
 	await applyMailSchema(sqliteHandle(fresh));

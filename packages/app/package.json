@@ -7,7 +7,6 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./browser": "./src/browser.ts",
-		"./client-owned-data": "./src/client-owned-data.ts",
 		"./desktop": "./src/desktop.ts",
 		"./protocol": "./src/protocol.ts"
 	},
@@ -16,6 +15,7 @@
 		"test": "bun test"
 	},
 	"dependencies": {
+		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
 		"@epicenter/sqlite": "workspace:*",

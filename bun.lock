@@ -581,6 +581,7 @@
       "name": "@epicenter/app",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
@@ -705,6 +706,7 @@
       "name": "@epicenter/data",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/constants": "workspace:*",
         "@epicenter/principal": "workspace:*",
         "@epicenter/sqlite": "workspace:*",
         "@epicenter/sync": "workspace:*",

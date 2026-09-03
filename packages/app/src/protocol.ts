@@ -1,21 +1,22 @@
 /**
  * Messages exchanged by an application handle and the trusted desktop owner.
  *
- * Three concerns cross this seam and only three: opening the application's
- * declared data, running statements against an application-owned SQLite file or
- * deleting one, and holding one labeled secret. Every message names the
- * application, because the owner scopes everything it does by that identity
- * rather than by the socket it arrived on.
+ * Two concerns cross this seam and only two: running statements against an
+ * application-owned SQLite file or deleting one, and holding one labeled
+ * secret. Every message names the application, because the owner scopes
+ * everything it does by that identity rather than by the socket it arrived on.
  *
- * Opening data is not one of them. The store is client-owned in every runtime
- * (ADR-0226) and a deployed app is a trusted app (ADR-0334), so `openData`
- * never crosses this seam. A definition is a TypeScript module a host imports
- * from its own release (ADR-0313); there is no JSON spelling of one, and this
- * protocol has no message that would carry it.
+ * Opening data was never one of them. The store is client-owned in every
+ * runtime (ADR-0226) and a deployed app is a trusted app (ADR-0334), so it
+ * never crossed this seam; it is not on the binding either any more
+ * (ADR-0339). A definition is a TypeScript module a host imports from its own
+ * release (ADR-0313); there is no JSON spelling of one, and this protocol has
+ * no message that would carry it.
  */
 
 import { isAppId } from '@epicenter/constants/app-id';
 import type { SqliteValue } from '@epicenter/sqlite';
+import type { Brand } from 'wellcrafted/brand';
 
 export const APP_STORAGE_PATH = '/api/app-storage';
 
@@ -36,8 +37,30 @@ export const APP_STORAGE_PATH = '/api/app-storage';
  */
 export const isProtocolAppId = isAppId;
 
-/** One SQLite database an application may name through `openSqlite`. */
-export function isDatabaseName(value: string): boolean {
+/**
+ * One SQLite file name this platform admits, checked wherever one is minted.
+ *
+ * Branded, so the check happens once at the name rather than once per call.
+ * `epicenter.sqlite.open` used to re-run it on every open and every delete,
+ * and `secrets` on every put, get, and delete: six guards answering one
+ * question about a string that, in every caller here, is either a constant in
+ * the build or a value the application already had to validate to report
+ * something useful about it. Local Mail's `mail-<sub>` is the whole population
+ * of derived names, and `finishConnect` already refused a subject that could
+ * not be one, because "we cannot file your mail under that" is a sentence only
+ * the application can write.
+ *
+ * The desktop owner still validates on arrival (`apps/epicenter/src/server.ts`),
+ * which is where a check has to live anyway: a brand is a compile-time fact,
+ * and a request crossing the sidecar carries no types.
+ */
+export type DatabaseName = string & Brand<'DatabaseName'>;
+
+/** One label a secret is filed under (ADR-0310), branded for the same reason. */
+export type SecretLabel = string & Brand<'SecretLabel'>;
+
+/** One SQLite database an application may name through `sqlite.open`. */
+export function isDatabaseName(value: string): value is DatabaseName {
 	return /^[a-z][a-z0-9_-]*$/.test(value);
 }
 
@@ -51,7 +74,7 @@ export function isDatabaseName(value: string): boolean {
  * anything that could be read as a path or a separator, which is what keeps two
  * different pairs from naming one entry in the credential store.
  */
-export function isSecretLabel(value: string): boolean {
+export function isSecretLabel(value: string): value is SecretLabel {
 	return /^[A-Za-z0-9._-]+$/.test(value);
 }
 
@@ -87,18 +110,18 @@ export type AppStorageRequest =
 	| {
 			kind: 'secret-put';
 			appId: string;
-			accountId: string;
+			label: string;
 			value: string;
 	  }
 	| {
 			kind: 'secret-get';
 			appId: string;
-			accountId: string;
+			label: string;
 	  }
 	| {
 			kind: 'secret-delete';
 			appId: string;
-			accountId: string;
+			label: string;
 	  };
 
 export type AppStorageResponse =

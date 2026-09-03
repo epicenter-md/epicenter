@@ -1,11 +1,15 @@
 import { expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import { AppError, createEpicenter, type EpicenterBinding } from './index.js';
+import {
+	createEpicenter,
+	databaseName,
+	type EpicenterBinding,
+	secretLabel,
+} from './index.js';
 
 function bindingFor(calls: string[]): EpicenterBinding {
 	return {
-		openData: async () => AppError.StorageFailed({ cause: 'unused' }),
-		openSqlite: async (name) => {
+		open: async (name) => {
 			calls.push(name);
 			return Ok({
 				run: async () => Ok({ changes: 1 }),
@@ -13,7 +17,7 @@ function bindingFor(calls: string[]): EpicenterBinding {
 				batch: async (statements) => Ok({ changes: statements.map(() => 1) }),
 			});
 		},
-		deleteSqlite: async (name) => {
+		delete: async (name) => {
 			calls.push(`delete:${name}`);
 			return Ok(undefined);
 		},
@@ -33,7 +37,7 @@ test('creates a handle scoped to one application', async () => {
 	});
 
 	expect(epicenter.appId).toBe('so.epicenter.test');
-	const opened = await epicenter.openSqlite('mail');
+	const opened = await epicenter.sqlite.open(databaseName('mail'));
 	expect(opened.error).toBeNull();
 	if (opened.error !== null) throw opened.error;
 	expect(calls).toEqual(['mail']);
@@ -41,42 +45,47 @@ test('creates a handle scoped to one application', async () => {
 	expect('close' in opened.data).toBe(false);
 });
 
-test('refuses invalid database names before reaching the owner', async () => {
+test('deleting takes the same name as opening', async () => {
 	const calls: string[] = [];
 	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
 		binding: bindingFor(calls),
 	});
 
-	const result = await epicenter.openSqlite('../mail');
-	expect(result.error?.name).toBe('InvalidDatabaseName');
-	expect(calls).toEqual([]);
-});
-
-test('deleting takes the same name check as opening', async () => {
-	const calls: string[] = [];
-	const epicenter = createEpicenter({
-		appId: 'so.epicenter.test',
-		binding: bindingFor(calls),
-	});
-
-	const refused = await epicenter.deleteSqlite('../mail');
-	expect(refused.error?.name).toBe('InvalidDatabaseName');
-	expect(calls).toEqual([]);
-
-	const deleted = await epicenter.deleteSqlite('mail');
+	const deleted = await epicenter.sqlite.delete(databaseName('mail'));
 	expect(deleted.error).toBeNull();
 	expect(calls).toEqual(['delete:mail']);
 });
 
-test('refuses an account id that is not one label', async () => {
+test('a handle with no definition has no store and no account', () => {
 	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
 		binding: bindingFor([]),
 	});
 
-	const put = await epicenter.secrets.put('../other', 'token');
-	expect(put.error?.name).toBe('InvalidAccountId');
-	const read = await epicenter.secrets.get('a/b');
-	expect(read.error?.name).toBe('InvalidAccountId');
+	// The type says this already: `[TDefinition] extends [never]` fails
+	// downward, so omitting the definition yields the smaller handle. The
+	// runtime agrees, which is what keeps a `in` test from finding one.
+	expect('data' in epicenter).toBe(false);
+	expect('account' in epicenter).toBe(false);
+	expect('eraseReplica' in epicenter).toBe(false);
+});
+
+test('a name is checked where it is minted, not on every call', () => {
+	// The six per-call guards are gone (ADR-0339). What refuses a name that
+	// could be read as a path is the mint, and it throws, because a name
+	// reaching it is a constant in a build.
+	expect(() => databaseName('../mail')).toThrow('is not valid');
+	expect(() => databaseName('Mail')).toThrow('is not valid');
+	expect(String(databaseName('mail'))).toBe('mail');
+
+	expect(() => secretLabel('../other')).toThrow('is not valid');
+	expect(() => secretLabel('a/b')).toThrow('is not valid');
+	expect(String(secretLabel('sub-one'))).toBe('sub-one');
+});
+
+test('an application id this platform cannot file refuses at construction', () => {
+	expect(() =>
+		createEpicenter({ appId: 'not an app id', binding: bindingFor([]) }),
+	).toThrow('is not valid');
 });

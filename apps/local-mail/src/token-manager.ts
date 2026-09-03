@@ -13,8 +13,8 @@
  * by attempting the refresh and reading `invalid_grant` back.
  */
 
+import type { SecretLabel, SecretStore } from '@epicenter/app';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { SecretStore } from '@epicenter/app';
 import type { GmailClientIdentity, MailConfig } from './config.ts';
 import { OAuthError, refreshAccess } from './oauth.ts';
 
@@ -40,21 +40,21 @@ export function createTokenManager({
 	config,
 	identity,
 	secrets,
-	accountId,
+	label,
 	now,
 }: {
 	config: MailConfig;
 	identity: GmailClientIdentity;
 	secrets: SecretStore;
-	/** The Epicenter Data row id for this account, which keys the secret. */
-	accountId: string;
+	/** What this account's refresh token is filed under (ADR-0310). */
+	label: SecretLabel;
 	now: () => number;
 }): TokenManager {
 	let access: { token: string; expiresAt: string } | null = null;
 	let inFlight: Promise<Result<string, TokenError>> | null = null;
 
 	async function refreshOnce(): Promise<Result<string, TokenError>> {
-		const stored = await secrets.get(accountId);
+		const stored = await secrets.get(label);
 		// The account list synchronized and the credential did not, which is what
 		// a secret is (ADR-0310). A browser build reads this after every reload,
 		// and a new desktop device reads it once. A secret owner that FAILED and
@@ -82,7 +82,7 @@ export function createTokenManager({
 		// memory, and the next session would present one Google has already
 		// replaced and ask for re-consent with nothing to explain it.
 		if (refreshed.data.refreshToken !== stored.data) {
-			const kept = await secrets.put(accountId, refreshed.data.refreshToken);
+			const kept = await secrets.put(label, refreshed.data.refreshToken);
 			if (kept.error !== null) {
 				return OAuthError.ReauthRequired({
 					reason: `the rotated credential could not be stored (${kept.error.message})`,

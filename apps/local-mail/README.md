@@ -14,9 +14,9 @@ triage it, reconcile, and remove it.
 
 | | What it is | Where it lives | If you lose it |
 | --- | --- | --- | --- |
-| which accounts are connected | a fact about this device | `openSqlite('local')`, durable | reconnect each account |
-| undelivered triage | a person's own act | `openSqlite('local')`, durable | real work, unrecoverably |
-| the mail itself | borrowed data | `openSqlite('mail-<sub>')`, one per account | nothing but quota; re-pull |
+| which accounts are connected | a fact about this device | `sqlite.open('local')`, durable | reconnect each account |
+| undelivered triage | a person's own act | `sqlite.open('local')`, durable | real work, unrecoverably |
+| the mail itself | borrowed data | `sqlite.open('mail-<sub>')`, one per account | nothing but quota; re-pull |
 | the credential | a secret | the host's keychain, never synchronized | reconnect that account |
 
 Run ADR-0318's test on each one and it answers no four times: Gmail is the

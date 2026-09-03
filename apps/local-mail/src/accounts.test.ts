@@ -9,11 +9,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import type {
-	AppSqliteDatabase,
-	EpicenterHandle,
-	SecretStore,
-} from '@epicenter/app';
+import type { AppSqliteDatabase, Epicenter, SecretStore } from '@epicenter/app';
 import { Ok } from 'wellcrafted/result';
 import {
 	createMailApp,
@@ -31,7 +27,7 @@ import {
 	LOCAL_MAIL_APP_ID,
 	LOCAL_SCHEMA,
 	MAIL_CACHE_SCHEMA,
-	mailDatabaseName,
+	requireAccountFiling,
 } from './storage.ts';
 
 const IDENTITY = { clientId: 'client-id-123', clientSecret: 'client-secret' };
@@ -105,7 +101,7 @@ async function openApp(options: { refuse?: 'put' | 'delete' } = {}) {
 	const epicenter = {
 		appId: LOCAL_MAIL_APP_ID,
 		secrets,
-	} as unknown as EpicenterHandle;
+	} as unknown as Epicenter;
 
 	const app = createMailApp({
 		epicenter,
@@ -113,7 +109,7 @@ async function openApp(options: { refuse?: 'put' | 'delete' } = {}) {
 			local,
 			mail,
 			forgetMail: async (sub) => {
-				deleted.push(mailDatabaseName(sub));
+				deleted.push(requireAccountFiling(sub).database);
 				mailboxes.get(sub)?.close();
 				mailboxes.delete(sub);
 			},

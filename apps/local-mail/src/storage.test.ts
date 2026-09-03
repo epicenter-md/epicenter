@@ -11,39 +11,45 @@
  */
 
 import { expect, test } from 'bun:test';
-import type { AppSqliteDatabase, EpicenterHandle } from '@epicenter/app';
+import {
+	type AppSqliteDatabase,
+	databaseName,
+	type Epicenter,
+} from '@epicenter/app';
 import { Ok } from 'wellcrafted/result';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
 import {
 	LOCAL_SCHEMA_VERSION,
 	MAIL_SCHEMA_VERSION,
-	mailDatabaseName,
 	openLocalMailStorage,
+	requireAccountFiling,
 } from './storage.ts';
 
 /**
  * A storage owner over in-memory databases, keyed by name the way the host
- * keys files, so `deleteSqlite` is observable as the name losing its contents.
+ * keys files, so `sqlite.delete` is observable as the name losing its contents.
  */
 function testOwner() {
 	const files = new Map<string, ReturnType<typeof createTestAppSqlite>>();
 	const deleted: string[] = [];
 	const epicenter = {
 		appId: 'so.epicenter.local-mail',
-		openSqlite: async (name: string) => {
-			const existing = files.get(name);
-			if (existing !== undefined) return Ok(existing);
-			const opened = createTestAppSqlite();
-			files.set(name, opened);
-			return Ok(opened);
+		sqlite: {
+			open: async (name: string) => {
+				const existing = files.get(name);
+				if (existing !== undefined) return Ok(existing);
+				const opened = createTestAppSqlite();
+				files.set(name, opened);
+				return Ok(opened);
+			},
+			delete: async (name: string) => {
+				deleted.push(name);
+				files.get(name)?.close();
+				files.delete(name);
+				return Ok(undefined);
+			},
 		},
-		deleteSqlite: async (name: string) => {
-			deleted.push(name);
-			files.get(name)?.close();
-			files.delete(name);
-			return Ok(undefined);
-		},
-	} as unknown as EpicenterHandle;
+	} as unknown as Epicenter;
 	return { epicenter, files, deleted };
 }
 
@@ -79,7 +85,7 @@ test('a first open creates the durable file and stamps its version', async () =>
 
 test('the durable file refuses a shape written by a newer build', async () => {
 	const owner = testOwner();
-	const opened = await owner.epicenter.openSqlite('local');
+	const opened = await owner.epicenter.sqlite.open(databaseName('local'));
 	if (opened.error !== null) throw opened.error;
 	await stamp(opened.data, LOCAL_SCHEMA_VERSION + 1);
 
@@ -95,9 +101,9 @@ test('a mail file at the wrong shape is demolished, in either direction', async 
 	for (const wrong of [MAIL_SCHEMA_VERSION - 1, MAIL_SCHEMA_VERSION + 1]) {
 		const owner = testOwner();
 		const storage = await openLocalMailStorage(owner.epicenter);
-		const name = mailDatabaseName('sub-one');
+		const name = requireAccountFiling('sub-one').database;
 
-		const stale = await owner.epicenter.openSqlite(name);
+		const stale = await owner.epicenter.sqlite.open(name);
 		if (stale.error !== null) throw stale.error;
 		await stale.data.run('CREATE TABLE gone (id TEXT)');
 		await stale.data.run(`INSERT INTO gone VALUES ('row')`);
@@ -163,8 +169,8 @@ test('two accounts are two files, and forgetting one leaves the other', async ()
 	);
 
 	await storage.forgetMail('sub-one');
-	expect(owner.deleted).toEqual([mailDatabaseName('sub-one')]);
-	expect(owner.files.has(mailDatabaseName('sub-two'))).toBe(true);
+	expect(owner.deleted).toEqual([requireAccountFiling('sub-one').database]);
+	expect(owner.files.has(requireAccountFiling('sub-two').database)).toBe(true);
 
 	// The next open of a forgotten account is a new empty file, not the handle
 	// that was evicted with it.

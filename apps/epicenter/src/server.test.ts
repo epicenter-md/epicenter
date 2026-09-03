@@ -1998,7 +1998,7 @@ describe('the application storage owner', () => {
 			const stored = await post(server, {
 				kind: 'secret-put',
 				appId: LOCAL_MAIL_APP_ID,
-				accountId: 'account-one',
+				label: 'account-one',
 				value: 'refresh-token',
 			});
 			expect(stored.status).toBe(200);
@@ -2006,7 +2006,7 @@ describe('the application storage owner', () => {
 			const read = await post(server, {
 				kind: 'secret-get',
 				appId: LOCAL_MAIL_APP_ID,
-				accountId: 'account-one',
+				label: 'account-one',
 			});
 			expect(await read.json()).toEqual({
 				kind: 'secret-get',
@@ -2018,7 +2018,7 @@ describe('the application storage owner', () => {
 			const neighbour = await post(server, {
 				kind: 'secret-get',
 				appId: 'so.epicenter.other',
-				accountId: 'account-one',
+				label: 'account-one',
 			});
 			expect(await neighbour.json()).toEqual({
 				kind: 'secret-get',
@@ -2028,12 +2028,12 @@ describe('the application storage owner', () => {
 			await post(server, {
 				kind: 'secret-delete',
 				appId: LOCAL_MAIL_APP_ID,
-				accountId: 'account-one',
+				label: 'account-one',
 			});
 			const gone = await post(server, {
 				kind: 'secret-get',
 				appId: LOCAL_MAIL_APP_ID,
-				accountId: 'account-one',
+				label: 'account-one',
 			});
 			expect(await gone.json()).toEqual({ kind: 'secret-get', value: null });
 		} finally {
@@ -2041,17 +2041,17 @@ describe('the application storage owner', () => {
 		}
 	});
 
-	test('refuses an account id that could name something other than one label', async () => {
+	test('refuses a label that could name something other than one label', async () => {
 		await using host = await createTestHost({ engine: scriptedEngine([[]]) });
 		const server = await serveHost(host, PAGE, null, {
 			appSecrets: createProcessMemoryAppSecrets(),
 		});
 		try {
-			for (const accountId of ['../other', 'a/b', 'a:b', '']) {
+			for (const label of ['../other', 'a/b', 'a:b', '']) {
 				const refused = await post(server, {
 					kind: 'secret-get',
 					appId: LOCAL_MAIL_APP_ID,
-					accountId,
+					label,
 				});
 				expect(refused.status).toBe(400);
 			}
@@ -2067,7 +2067,7 @@ describe('the application storage owner', () => {
 			const unavailable = await post(server, {
 				kind: 'secret-get',
 				appId: LOCAL_MAIL_APP_ID,
-				accountId: 'account-one',
+				label: 'account-one',
 			});
 			expect(unavailable.status).toBe(503);
 		} finally {

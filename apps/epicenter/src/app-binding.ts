@@ -14,11 +14,13 @@
  * would have reached. Two writers on one database do not appear, because there
  * is one connection and the owner serializes it.
  *
- * **There is no Epicenter Data here.** The store is client-owned in every
- * runtime (ADR-0226, ADR-0227) and the host does not open one, so `openData`
- * fails rather than pretending. Background work gets SQLite, secrets, and the
- * network. An application whose background half needs the store is asking for
- * something ADR-0323 does not provide.
+ * **There is no Epicenter Data here, and there is nothing left to refuse.**
+ * The store is client-owned in every runtime (ADR-0226, ADR-0227), so it left
+ * the binding entirely (ADR-0339); this leaf used to carry an `openData` whose
+ * whole body was a sentence explaining that it could not. Background work gets
+ * SQLite, secrets, and the network. An application whose background half needs
+ * the store is asking for something ADR-0323 does not provide, and it now says
+ * so by having no `definition` to pass rather than by failing at the call.
  */
 
 import { AppError, type EpicenterBinding, SecretError } from '@epicenter/app';
@@ -38,20 +40,14 @@ export function createHostBinding({
 	secrets,
 }: HostBindingOptions): EpicenterBinding {
 	return {
-		openData: async (definition) =>
-			AppError.StorageFailed({
-				cause: new Error(
-					`The host holds no store, so '${definition.id}' cannot be opened here. Epicenter Data is client-owned in every runtime (ADR-0226), and a background half reaches SQLite, secrets, and the network (ADR-0323).`,
-				),
-			}),
-		openSqlite: async (name) => {
+		open: async (name) => {
 			try {
 				return Ok(await storage.open(appId, name));
 			} catch (cause) {
 				return AppError.StorageFailed({ cause });
 			}
 		},
-		deleteSqlite: async (name) => {
+		delete: async (name) => {
 			try {
 				await storage.delete(appId, name);
 				return Ok(undefined);
@@ -60,24 +56,24 @@ export function createHostBinding({
 			}
 		},
 		secrets: {
-			put: async (accountId, value) => {
+			put: async (label, value) => {
 				try {
-					await secrets.put(appId, accountId, value);
+					await secrets.put(appId, label, value);
 					return Ok(undefined);
 				} catch (cause) {
 					return SecretError.StorageFailed({ cause });
 				}
 			},
-			get: async (accountId) => {
+			get: async (label) => {
 				try {
-					return Ok(await secrets.get(appId, accountId));
+					return Ok(await secrets.get(appId, label));
 				} catch (cause) {
 					return SecretError.StorageFailed({ cause });
 				}
 			},
-			delete: async (accountId) => {
+			delete: async (label) => {
 				try {
-					await secrets.delete(appId, accountId);
+					await secrets.delete(appId, label);
 					return Ok(undefined);
 				} catch (cause) {
 					return SecretError.StorageFailed({ cause });

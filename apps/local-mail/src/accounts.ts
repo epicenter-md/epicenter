@@ -21,8 +21,7 @@
  * decided in this file.
  */
 
-import type { EpicenterHandle, SecretError } from '@epicenter/app';
-import { isDatabaseName } from '@epicenter/app/protocol';
+import type { Epicenter, SecretError } from '@epicenter/app';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
@@ -42,7 +41,11 @@ import {
 } from './oauth.ts';
 import type { ReconcileDeps } from './reconcile.ts';
 import { claimReconcile, type ReconcileClaimError } from './reconcile-claim.ts';
-import { type LocalMailStorage, mailDatabaseName } from './storage.ts';
+import {
+	accountFiling,
+	type LocalMailStorage,
+	requireAccountFiling,
+} from './storage.ts';
 import { createTokenManager } from './token-manager.ts';
 
 export const AccountError = defineErrors({
@@ -79,7 +82,7 @@ export type MailApp = {
 	storage: LocalMailStorage;
 	config: MailConfig;
 	identity: GmailClientIdentity;
-	epicenter: EpicenterHandle;
+	epicenter: Epicenter;
 	now: () => number;
 	/**
 	 * One live session per connected account, for the life of the application.
@@ -100,7 +103,7 @@ export function createMailApp({
 	config = DEFAULT_MAIL_CONFIG,
 	now = () => Date.now(),
 }: {
-	epicenter: EpicenterHandle;
+	epicenter: Epicenter;
 	storage: LocalMailStorage;
 	identity: GmailClientIdentity;
 	config?: MailConfig;
@@ -176,10 +179,12 @@ export async function finishConnect(
 
 	const sub = authorized.data.providerAccountId;
 	const { email, refreshToken } = authorized.data;
-	// The subject becomes this account's mail file name, so a subject the
-	// storage owner would refuse has to fail here, while the person can still
-	// read why. Google issues numeric subjects, so nothing has reached this.
-	if (!isDatabaseName(mailDatabaseName(sub))) {
+	// The subject names this account's mail file and its credential, so a
+	// subject the storage owner would refuse has to fail here, while the person
+	// can still read why. Google issues numeric subjects, so nothing has
+	// reached this.
+	const filing = accountFiling(sub);
+	if (filing === undefined) {
 		return Err(AccountError.UnusableSubject({ sub }).error);
 	}
 	const local = sqliteHandle(app.storage.local);
@@ -191,7 +196,7 @@ export async function finishConnect(
 		[sub, email, connectedAt],
 	);
 
-	const kept = await app.epicenter.secrets.put(sub, refreshToken);
+	const kept = await app.epicenter.secrets.put(filing.secret, refreshToken);
 	if (kept.error !== null) return kept;
 
 	const [row] = await local.all<AccountRow>(
@@ -287,12 +292,14 @@ export async function removeAccount(
 			return Err(AccountError.OwesWork({ sub, pending: owed }).error);
 		}
 
-		const forgotten = await app.epicenter.secrets.delete(sub);
+		const forgotten = await app.epicenter.secrets.delete(
+			requireAccountFiling(sub).secret,
+		);
 		if (forgotten.error !== null) return forgotten;
 
 		// The session goes before the file it holds, so nothing composed over
 		// this account survives the account. A session still opening is awaited
-		// rather than only dropped: it holds an `openSqlite` that would land
+		// rather than only dropped: it holds a `sqlite.open` that would land
 		// after the unlink and recreate the file (ADR-0321).
 		const opening = app.sessions.get(sub);
 		app.sessions.delete(sub);
@@ -334,7 +341,7 @@ export function openSession(app: MailApp, sub: string): Promise<ReconcileDeps> {
 			config: app.config,
 			identity: app.identity,
 			secrets: app.epicenter.secrets,
-			accountId: sub,
+			label: requireAccountFiling(sub).secret,
 			now: app.now,
 		});
 		return {
