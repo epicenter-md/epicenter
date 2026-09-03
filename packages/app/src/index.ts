@@ -217,24 +217,13 @@ export type CreateEpicenterOptions = {
 	 * What this application owns ON THIS DEVICE: its IndexedDB prefix, its
 	 * SQLite files, and its keychain scope.
 	 *
-	 * **Leave it out.** It defaults to `definition.id`, and every data id is a
-	 * legal application id, so the default is always valid. State it only when
-	 * this application opens ANOTHER application's data: the first segment of a
-	 * store's address is the OPENING application (ADR-0324), which is what lets
-	 * two applications hold their own replicas of one data id instead of taking
-	 * one Web Lock away from each other on a shared origin. Nothing does that
-	 * yet, and an application holds one store until something does (ADR-0339).
-	 *
-	 * An application with no definition has nothing to default from and states
-	 * it. Local Mail is that application.
-	 *
-	 * It is optional HERE and required in the first overload, because those are
-	 * two different questions. This type is the half every handle takes, and a
-	 * handle that also takes a definition can read the id off it. A handle with
-	 * no definition has nothing to read, so the accountless overload asks for it
-	 * outright: `createEpicenter({ appId, binding })`.
+	 * The application whose local files, secrets, and replicas this handle
+	 * scopes. State it explicitly even when it matches `definition.id`: the
+	 * opening application is an independent part of a store address
+	 * (ADR-0324), and making it explicit keeps every constructor honest about
+	 * the scope it is opening.
 	 */
-	appId?: string;
+	appId: string;
 	/**
 	 * The runtime leaf, built for the id this handle resolved.
 	 *
@@ -339,30 +328,19 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 export function createEpicenter<const TDefinition extends DataDefinition>(
 	options: CreateEpicenterOptions & Partial<EpicenterDataOptions<TDefinition>>,
 ): Epicenter<TDefinition> {
-	const { definition, account } = options;
-	const appId = options.appId ?? definition?.id;
-	if (appId === undefined) {
-		throw new Error(
-			'An epicenter needs an application id, or a definition to take one from.',
-		);
-	}
+	const { definition, account, appId } = options;
 	if (!isProtocolAppId(appId)) {
 		throw new Error(AppError.InvalidAppId({ appId }).error.message);
 	}
 	const binding = options.binding(appId);
 
+	// The binding's own verbs, not five closures that forward to them. `sqlite`
+	// names two of the binding's three members rather than being the binding,
+	// so `secrets` is reachable at one name and `sqlite.secrets` is not a thing.
 	const capabilities = {
 		appId,
-		sqlite: Object.freeze({
-			open: (name: DatabaseName) => binding.open(name),
-			delete: (name: DatabaseName) => binding.delete(name),
-		}),
-		secrets: Object.freeze({
-			put: (label: SecretLabel, value: string) =>
-				binding.secrets.put(label, value),
-			get: (label: SecretLabel) => binding.secrets.get(label),
-			delete: (label: SecretLabel) => binding.secrets.delete(label),
-		}),
+		sqlite: Object.freeze({ open: binding.open, delete: binding.delete }),
+		secrets: binding.secrets,
 	};
 
 	if (definition === undefined || account === undefined) {

@@ -26,22 +26,7 @@
 
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { createBrowserSqliteOwner } from './browser-sqlite.js';
-import {
-	AppError,
-	type AppSqliteDatabase,
-	type EpicenterBinding,
-	type SecretStore,
-} from './index.js';
-
-type BrowserSqliteOwner = {
-	open(appId: string, name: string): Promise<AppSqliteDatabase>;
-	delete(appId: string, name: string): Promise<void>;
-};
-
-export type CreateBrowserBindingOptions = {
-	/** The SQLite owner, which only this package's own test replaces. */
-	sqlite?: BrowserSqliteOwner;
-};
+import { AppError, type EpicenterBinding, type SecretStore } from './index.js';
 
 /**
  * One binding over what a browser tab can own, for whichever application asks.
@@ -51,9 +36,8 @@ export type CreateBrowserBindingOptions = {
  * hands it over, so the files and the keychain cannot be scoped to a different
  * application than the store (ADR-0339).
  */
-export function createBrowserBinding({
-	sqlite = createBrowserSqliteOwner(),
-}: CreateBrowserBindingOptions = {}): (appId: string) => EpicenterBinding {
+export function createBrowserBinding(): (appId: string) => EpicenterBinding {
+	const sqlite = createBrowserSqliteOwner();
 	return (appId) => ({
 		open: (name) =>
 			tryAsync({

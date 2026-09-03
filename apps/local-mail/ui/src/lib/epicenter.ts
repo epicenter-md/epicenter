@@ -1,5 +1,8 @@
 /**
- * Local Mail's scoped storage capability. Semantic Gmail calls stay app-owned.
+ * The one thing this application reaches its files and its secrets through.
+ *
+ * Semantic Gmail calls stay app-owned; what is here is the handle they file
+ * and store credentials with.
  *
  * One `createEpicenter`, composed here rather than in two platform leaves that
  * differed on an import line. No `definition` and no `account`: Local Mail

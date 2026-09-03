@@ -37,8 +37,8 @@ import { reconcileAccount } from '@epicenter/local-mail/reconcile';
 import { claimReconcile } from '@epicenter/local-mail/reconcile-claim';
 import { readMailStatus } from '@epicenter/local-mail/status';
 import { openLocalMailStorage } from '@epicenter/local-mail/storage';
+import { epicenter } from './epicenter';
 import { gmailIdentity } from './identity';
-import { epicenter } from './storage';
 
 let opening: Promise<MailApp> | null = null;
 
