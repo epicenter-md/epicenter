@@ -28,6 +28,7 @@ import type {
 	DataDefinition,
 	DataDefinitionParseError,
 } from '@epicenter/data/definition';
+import { persistOnHide } from '@epicenter/data/flush-on-hide';
 import { attachStoreSync } from '@epicenter/data/sync';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
@@ -164,6 +165,16 @@ export async function openReplica<TDefinition extends DataDefinition>({
 		);
 		throw cause;
 	}
+	// Durable work is what a reconnect offers the authority, so a flush that
+	// never happened is work the account never hears about either. The page
+	// telling us it is going is the last chance to ask for one, and it is asked
+	// here rather than by an application: the store's lifetime is this page's
+	// (ADR-0088), which is exactly the listener's, and an application that
+	// forgot this would lose the last few seconds of typing with no error
+	// anywhere. `FlushEditsOnHide` does the other half, blurring the focused
+	// element so a commit-on-blur input writes into the store first.
+	persistOnHide(() => opened.data.persistence.flush());
+
 	return Ok(opened.data);
 }
 
