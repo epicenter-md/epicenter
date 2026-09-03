@@ -644,6 +644,135 @@ describe('a pull shows what it writes over, and a person says yes', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
+	test('a push carries the settings base forward when kv.json is not there', async () => {
+		// A person deletes `kv.json`, or a sync tool moves it, and then pushes
+		// something else. Starting the base over would read the file coming back
+		// as an edit to every setting in it, and the folder wins, so it would
+		// push a value nobody typed over one somebody did.
+		const host = fakeHost();
+		const { data, noteId } = await notebook();
+		data.kv.update({ theme: 'dark' });
+		expectOk(await pullInto(host, data));
+		host.folder.delete('kv.json');
+		host.folder.set(
+			`notes/${noteId}.md`,
+			(host.folder.get(`notes/${noteId}.md`) as string).replace(
+				'"Groceries"',
+				'"Shopping"',
+			),
+		);
+
+		applied(expectOk(await sendBack(host, data)));
+		expect(manifestOf(host.folder).kv).toEqual({ theme: 'dark' });
+
+		// The file comes back saying what it always said, and that is not an edit.
+		host.folder.set('kv.json', '{"theme":"dark"}');
+		expect(await planOf(host, data)).toEqual([]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a removed setting reaches the store as null, and settles there', async () => {
+		// The one place kv differs in shape from a row: `stored()` does not drop
+		// a key written as `null`, so what the manifest records has to be what
+		// the store now reads, or the next plan reports the removal again.
+		const host = fakeHost();
+		const { data } = await notebook();
+		data.kv.update({ theme: 'dark' });
+		expectOk(await pullInto(host, data));
+		host.folder.set('kv.json', '{}');
+
+		const pushed = applied(expectOk(await sendBack(host, data)));
+		expect(pushed.settings).toBe(1);
+		expect(data.kv.get('theme')).toBeUndefined();
+		expect(manifestOf(host.folder).kv).toEqual({ theme: null });
+		expect(await planOf(host, data)).toEqual([]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a setting and a note value go back in one push, and both bases advance', async () => {
+		// The common case, and the one where the two halves of the manifest have
+		// to move together: the row file is re-rendered and `kv.json` is not.
+		const host = fakeHost();
+		const { data, noteId } = await notebook();
+		data.kv.update({ theme: 'dark' });
+		expectOk(await pullInto(host, data));
+		host.folder.set('kv.json', '{"theme":"light"}');
+		host.folder.set(
+			`notes/${noteId}.md`,
+			(host.folder.get(`notes/${noteId}.md`) as string).replace(
+				'"Groceries"',
+				'"Shopping"',
+			),
+		);
+
+		const pushed = applied(expectOk(await sendBack(host, data)));
+		expect(pushed).toMatchObject({ settings: 1, values: 1, rows: 1 });
+		expect(data.kv.get('theme')).toBe('light');
+		expect(data.tables.notes.get(noteId)?.title).toBe('Shopping');
+		expect(await planOf(host, data)).toEqual([]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a key the definition does not declare goes in and is read by nothing', async () => {
+		// What `AGENTS.md` promises. Nothing is validated on the way in
+		// (ADR-0338), and `get` answers `undefined` for a key this release does
+		// not name, so the folder is not a stricter door than `update`.
+		const host = fakeHost();
+		const { data } = await notebook();
+		expectOk(await pullInto(host, data));
+		host.folder.set('kv.json', '{"theme":"dark","invented":1}');
+
+		expect(applied(expectOk(await sendBack(host, data))).settings).toBe(2);
+		expect(data.kv.get('theme')).toBe('dark');
+		expect(
+			(data.kv as unknown as { get(key: string): unknown }).get('invented'),
+		).toBeUndefined();
+		expect(await planOf(host, data)).toEqual([]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('an unreadable kv.json does not stop the row edits beside it', async () => {
+		// The kept rule, over settings. The file is left as it was written and
+		// says so again at the next push, and everything else still lands.
+		const host = fakeHost();
+		const { data, noteId } = await notebook();
+		expectOk(await pullInto(host, data));
+		const broken = '{"theme": ';
+		host.folder.set('kv.json', broken);
+		host.folder.set(
+			`notes/${noteId}.md`,
+			(host.folder.get(`notes/${noteId}.md`) as string).replace(
+				'"Groceries"',
+				'"Shopping"',
+			),
+		);
+
+		const pushed = applied(expectOk(await sendBack(host, data)));
+		expect(pushed).toMatchObject({ settings: 0, values: 1 });
+		expect(data.tables.notes.get(noteId)?.title).toBe('Shopping');
+		expect(host.folder.get('kv.json')).toBe(broken);
+		expect(only(await planOf(host, data), 'kept').reason).toBe('kv-unreadable');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a manifest from before kv had values is no base at all', async () => {
+		// The upgrade. A folder written by a release that hashed `kv.json` has
+		// no settings base, so it cannot be told apart from the notes and the
+		// repair is a pull, which is what a manifest this side cannot read has
+		// always meant.
+		const host = fakeHost();
+		const { data } = await notebook();
+		expectOk(await pullInto(host, data));
+		const { kv: _dropped, ...older } = manifestOf(host.folder);
+		host.folder.set(
+			MANIFEST_PATH,
+			JSON.stringify({ ...older, kvHash: 'e3b0c442' }),
+		);
+
+		expect(await previewPull(host, data)).toMatchObject({ base: false });
+		await data[Symbol.asyncDispose]();
+	});
+
 	test('a setting the store changed and nobody edited says nothing', async () => {
 		// The three-way, over the kv root. The folder was written before the
 		// setting moved here, and a person who never opened the file is not

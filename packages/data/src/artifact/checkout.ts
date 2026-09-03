@@ -146,10 +146,13 @@ export type CheckoutManifest = {
 	 *
 	 * Verbatim, for the same reason a row's values are: a push resolves per key
 	 * and needs the base VALUE to tell "the person changed this" from "the store
-	 * changed this". It used to be a hash, on the reasoning that the kv root is
-	 * one object with no per-field base, which was never true: it is a declared
-	 * field map compiled by the same code as a table, and it is LWW per key in
-	 * the document (`packages/data/src/store/document.ts`).
+	 * changed this". The kv root is a declared field map compiled by the same
+	 * code as a table, and it is last-write-wins per key in the document
+	 * (`packages/data/src/store/document.ts`), so it resolves the same way.
+	 *
+	 * It is the base rather than a copy of the file: a folder whose `kv.json`
+	 * somebody deleted still has one, and the file coming back is not an edit
+	 * to every setting in it.
 	 *
 	 * So this record holds two rules rather than three: values for everything
 	 * that comes back, and a hash for the one region that only renders out.
@@ -751,14 +754,17 @@ async function writeFolder({
 	definition: ParsedDataDefinition;
 	sources: readonly FileSource[];
 	/**
-	 * `kv.json` and the settings it says, or nothing where the folder is to
-	 * have none.
+	 * The `kv.json` to write, and the settings base to record.
 	 *
-	 * Both, because they are written together and the manifest records what the
-	 * file says rather than what the store held: a push that applied some
-	 * settings writes the merged object and the entry that describes it.
+	 * Two facts rather than one. `contents` is `undefined` where the folder is
+	 * to have no `kv.json`, and `values` is recorded either way: a folder whose
+	 * file somebody deleted still has a base, and dropping it would read the
+	 * file coming back as an edit to every setting in it.
 	 */
-	kv: { readonly contents: string; readonly values: JsonObject } | undefined;
+	kv: {
+		readonly contents: string | undefined;
+		readonly values: JsonObject;
+	};
 	/** When the folder was last made current, which only a pull moves. */
 	pulledAt: string;
 	/** The folder this checkout was built against, which the host requires back. */
@@ -814,7 +820,9 @@ async function writeFolder({
 	// (ADR-0325).
 	if (failures.length > 0) return CheckoutError.Unrenderable({ failures });
 
-	if (kv !== undefined) files.push({ path: 'kv.json', contents: kv.contents });
+	if (kv.contents !== undefined) {
+		files.push({ path: 'kv.json', contents: kv.contents });
+	}
 
 	const manifest: CheckoutManifest = {
 		dataId: data.dataId,
@@ -823,7 +831,7 @@ async function writeFolder({
 		principalId: data.principalId,
 		pulledAt,
 		rows,
-		kv: kv?.values ?? {},
+		kv: kv.values,
 	};
 	files.push(
 		{ path: AGENTS_PATH, contents: agentsFile(definition) },
@@ -1008,10 +1016,6 @@ export type PlannedValue = {
  * `undefined` for a value this release cannot read, so a hand edit that does
  * not fit degrades to the default and shows in `nonconforming` (ADR-0125).
  *
- * `kv.json` used to be pulled to read and never pushed, which cost a manifest
- * hash, a permanent `kept` line saying an edit was discarded, and a paragraph
- * in `AGENTS.md` telling a person the one file in the folder they may not
- * edit.
  */
 export type PlannedSetting = {
 	readonly kind: 'setting';
@@ -1513,18 +1517,18 @@ async function planPush(
 				...Object.keys(base.kv),
 				...Object.keys(inFile),
 			])) {
-				const handed = base.kv[name] ?? null;
-				const file = inFile[name] ?? null;
-				const store = inStore[name] ?? null;
-				if (same(file, handed)) continue;
-				if (same(file, store)) continue;
+				const wrote = inFile[name] ?? null;
+				const wasHandedOver = base.kv[name];
+				const held = inStore[name];
+				if (same(wrote, wasHandedOver)) continue;
+				if (same(wrote, held)) continue;
 				items.push({
 					kind: 'setting',
 					path: 'kv.json',
 					name,
-					store: inStore[name],
-					file,
-					storeChanged: !same(store, handed),
+					store: held,
+					file: wrote,
+					storeChanged: !same(held, wasHandedOver),
 				});
 			}
 		}
@@ -1840,12 +1844,17 @@ function readRowFile(contents: string): ParsedRowFile | undefined {
 }
 
 /**
- * Whether two values are the same, by exact JSON identity.
+ * Whether two values are the same, by exact JSON identity, key order included.
  *
- * All three sides came through `frontmatter.ts`, which emits every value as
- * JSON and reads it back with `JSON.parse`, so serializing to compare is the
- * same round trip the file already made. Absent and `null` compare equal,
- * because that is what the emitter writes for both.
+ * Every side is JSON that `JSON.stringify` emitted or `JSON.parse` read back:
+ * a row's through `frontmatter.ts`, a setting's through `kv.json`. So
+ * serializing to compare is the same round trip the file already made. Absent
+ * and `null` compare equal, because that is what both emitters write for both.
+ *
+ * Key order counts, so an object value whose keys a person reordered by hand
+ * reads as an edit. `frontmatter.ts` sorts the top level and no deeper, and
+ * the folder wins either way, so what this costs is one line in an overview
+ * rather than a wrong answer.
  */
 function same(
 	left: JsonValue | undefined,
@@ -1953,7 +1962,7 @@ async function applyPush({
 	plan: PushPlan;
 	fetch: typeof globalThis.fetch;
 }): Promise<Result<PushOutcome, CheckoutError>> {
-
+	const settings = appliedSettings(plan);
 	const outcome = {
 		rows: 0,
 		values: 0,
@@ -2038,15 +2047,10 @@ async function applyPush({
 				// The settings, one write however many keys moved, for the same
 				// reason a row's are. `update` merges, so a key nobody touched is
 				// left alone rather than cleared.
-				const settings: JsonObject = {};
-				for (const item of plan) {
-					if (item.kind !== 'setting') continue;
-					settings[item.name] = item.file;
-				}
-				const movedSettings = Object.keys(settings).length;
-				if (movedSettings > 0) {
+				const moved = Object.keys(settings).length;
+				if (moved > 0) {
 					data.kv.update(settings);
-					outcome.settings += movedSettings;
+					outcome.settings += moved;
 				}
 
 				// Values gathered per row, because a row is one write however many
@@ -2216,16 +2220,13 @@ async function applyPush({
 		sources,
 		// `kv.json` holds still, like every other file this push did not touch:
 		// the bytes the folder already has, so nothing a person typed into it is
-		// rewritten from the store. Its manifest entry advances by exactly what
-		// the push applied, which is what keeps the next plan from reporting an
-		// applied setting as an edit nobody made.
-		kv:
-			kvContents === undefined
-				? undefined
-				: {
-						contents: kvContents,
-						values: { ...base.kv, ...appliedSettings(plan) },
-					},
+		// rewritten from the store. The base advances by exactly what the push
+		// applied, which is what keeps the next plan from reporting an applied
+		// setting as an edit nobody made, and it advances whether or not the
+		// file is there: a folder somebody deleted `kv.json` from still has a
+		// base, and starting it over would read the file coming back as an edit
+		// to every setting in it.
+		kv: { contents: kvContents, values: { ...base.kv, ...settings } },
 		// Unchanged, because the folder is still current as of the last pull.
 		// Only the files this push wrote moved, and each carries its own fresh
 		// entry.
