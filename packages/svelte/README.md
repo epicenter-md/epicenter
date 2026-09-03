@@ -56,21 +56,33 @@ round trip. It is its own state rather than a failure: folding it into the
 error channel would make the gate sniff an error to choose between "sign in"
 and "something broke".
 
+Both halves are lazy, so nothing opens until something renders: the first read
+of `state` starts the open and writes no signal synchronously. That makes it
+safe inside a `$derived` and safe at module scope, which is where it belongs —
+one call site by construction, so there is no wrapper to own and nothing to
+memoize.
+
+`eraseReplica` rides on `failed` and nowhere else. Erasing takes the same claim
+an open takes, so erasing an open store is refused by the store; a failed open
+released its claim before it returned.
+
 The handle is taken structurally, the way `fromData` takes opened data, so this
 package does not depend on `@epicenter/app`.
 
+```ts
+// apps/<app>/src/lib/platform/epicenter.browser.svelte.ts
+export const notes = fromEpicenter(createEpicenter({ definition, account: auth }));
+```
+
 ```svelte
-<script lang="ts">
-  const store = fromEpicenter(epicenter);
-</script>
-{#if store.state.status === 'signed-out'}
+{#if notes.state.status === 'signed-out'}
   <SignInGate />
-{:else if store.state.status === 'opening'}
+{:else if notes.state.status === 'opening'}
   <Loading />
-{:else if store.state.status === 'ready'}
-  <Notes data={store.state.data} />
+{:else if notes.state.status === 'ready'}
+  <Notes data={notes.state.data} />
 {:else}
-  <BootFailure error={store.state.error} />
+  <BootFailure error={notes.state.error} erase={notes.state.eraseReplica} />
 {/if}
 ```
 

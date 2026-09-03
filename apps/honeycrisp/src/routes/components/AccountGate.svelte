@@ -4,10 +4,17 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '#platform/auth';
-	import { epicenter } from '#platform/epicenter';
 	import { bootFailure } from '$lib/boot-failure.js';
+	import type { EraseReplica } from '$lib/boot-failure.js';
 
-	let { error = undefined }: { error?: unknown } = $props();
+	// The erase arrives as data rather than being imported, because it is only
+	// callable in the state that hands it over: erasing takes the same claim an
+	// open takes, so erasing an open store is refused by the store, and a failed
+	// open released its claim before it returned (ADR-0340).
+	let {
+		error = undefined,
+		erase: eraseReplica = undefined,
+	}: { error?: unknown; erase?: EraseReplica } = $props();
 
 	// One decision, made in `bootFailure`: the sentence and the control below it
 	// are the same answer, so nothing here re-reads the error to pick a verb.
@@ -30,7 +37,8 @@
 	async function erase() {
 		erasing = true;
 		eraseFailure = undefined;
-		const { error } = await epicenter.eraseReplica();
+		if (eraseReplica === undefined) return;
+		const { error } = await eraseReplica();
 		erasing = false;
 		if (error !== null) {
 			eraseFailure = bootFailure(error).message;

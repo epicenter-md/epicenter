@@ -13,7 +13,9 @@ Design authority: [ADR-0339](../../docs/adr/0339-an-application-creates-one-epic
 (ADR-0339). Its two leaves differ in one line, the runtime subpath:
 
 ```ts
-createEpicenter({ definition: honeycrispDefinition, account: auth })
+export const honeycrisp = fromEpicenter(
+	createEpicenter({ definition: honeycrispDefinition, account: auth }),
+);
 ```
 
 `definition` and `account` arrive together, which IS the store: an authority
@@ -44,11 +46,13 @@ Opening is cache-first and never waits on a socket. A device holding a copy is
 usable offline; one that holds none fetches the generation whole before
 returning, so a fresh account never renders empty while its state is arriving.
 
-`fromEpicenter` (from `@epicenter/svelte`) is what the route renders from:
-`signed-out | opening | ready | failed`, with the store on `ready` and the
-error on `failed`. Signed-out is answered before anything opens, and it is a
-state rather than a failure, so the gate never sniffs an error to choose
-between "sign in" and "something broke".
+The leaf exports ONE name, `honeycrisp`, which is `fromEpicenter` composed over
+the handle: `signed-out | opening | ready | failed`, with the store on `ready`
+and the error and the erase on `failed`. Signed-out is answered before anything
+opens, and it is a state rather than a failure, so the gate never sniffs an
+error to choose between "sign in" and "something broke". Both halves are lazy,
+so importing the leaf opens nothing: `/auth/callback` never reads `state` and
+never claims a lock.
 
 `createHoneycrisp` turns that one opened store into the reactive application
 object the UI consumes. It adapts the document into Svelte-reactive named

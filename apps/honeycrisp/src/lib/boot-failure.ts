@@ -42,6 +42,14 @@ export type BootRepair =
 	 * it (ADR-0325). Both are the person's, and neither happens by itself. */
 	| 'erase';
 
+/**
+ * Erase this device's copy, as the gate receives it.
+ *
+ * Declared here rather than imported from the handle, so a component takes the
+ * verb it was handed and never the object that owns it.
+ */
+export type EraseReplica = () => Promise<{ error: unknown }>;
+
 export type BootFailure = {
 	message: string;
 	repair: BootRepair;
