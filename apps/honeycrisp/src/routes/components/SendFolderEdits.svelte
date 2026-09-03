@@ -1,10 +1,14 @@
 <script lang="ts">
-	import type { PlanItem, PushPlan } from '@epicenter/data/artifact/checkout';
+	import type { PushPlan } from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderUpIcon from '@lucide/svelte/icons/folder-up';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import type { AccountDatabase } from '$lib/databases.js';
+	import {
+		irreversible,
+		renderPlan,
+	} from '$lib/folder-overview.js';
 	import { reportBackgroundError } from '$lib/report.js';
 
 	let {
@@ -27,12 +31,11 @@
 	);
 	let running = $state(false);
 	let confirm = $state<HTMLButtonElement | null>(null);
+	/** Whether this overview replaced one that stopped being true. */
+	let stale = $state(false);
 
 	/** How many of these changes cannot be put back afterwards. */
-	const irreversible = $derived(
-		plan?.filter((item) => item.kind === 'deletion' || item.kind === 'body')
-			.length ?? 0,
-	);
+	const cannotUndo = $derived(plan === undefined ? 0 : irreversible(plan));
 
 	/**
 	 * The whole push as one block of plain text.
@@ -41,166 +44,9 @@
 	 * it to the agent that made the mess (ADR-0330, ADR-0338). Everything a
 	 * surface would have styled is a word here instead.
 	 */
-	const overview = $derived(plan === undefined ? '' : written(plan));
-
-	/**
-	 * The name a note is known by, whether or not this release can read it.
-	 *
-	 * Trashed notes are in the folder too, so a plan can name one, and `all` is
-	 * filtered to live notes. A note this release cannot read has no title to
-	 * ask for and its raw one is shown where it is a string, which is what the
-	 * note list does.
-	 */
-	function nameOf(row: { table: string; rowId: string }): string {
-		if (row.table !== 'notes') return `${row.table}/${row.rowId}`;
-		const note = [...honeycrisp.tables.notes.all, ...honeycrisp.tables.notes.deleted].find(
-			(candidate) => candidate.id === row.rowId,
-		);
-		if (note !== undefined) return note.title === '' ? 'Untitled' : note.title;
-		const raw = honeycrisp.tables.notes.nonconforming.find(
-			(candidate) => candidate.id === row.rowId,
-		)?.raw.title;
-		return typeof raw === 'string' && raw !== '' ? raw : `notes/${row.rowId}`;
-	}
-
-	/** Whether this note is already in Recently Deleted. */
-	function isTrashed(rowId: string): boolean {
-		return honeycrisp.tables.notes.deleted.some((note) => note.id === rowId);
-	}
-
-	/** One line of the overview: a verb, a name, and what it costs. */
-	type Line = { verb: string; name: string; detail: string };
-
-	/** Everything about to be destroyed, and nothing that can be typed back. */
-	function goneForGood(plan: PushPlan): Line[] {
-		return plan.flatMap((item): Line[] => {
-			if (item.kind === 'deletion') {
-				return [
-					{
-						verb: 'deleted',
-						name: nameOf(item),
-						detail: isTrashed(item.rowId)
-							? 'already in Recently Deleted, and this removes it for good'
-							: 'not moved to Recently Deleted',
-					},
-				];
-			}
-			if (item.kind === 'body') {
-				return [
-					{
-						verb: 'replaced',
-						name: nameOf(item),
-						detail: item.storeChanged
-							? 'you also edited this here since the folder was written, and that text goes too'
-							: '',
-					},
-				];
-			}
-			return [];
-		});
-	}
-
-	/** Everything whose old version is printed beside it. */
-	function changed(plan: PushPlan): Line[] {
-		return plan.flatMap((item): Line[] => {
-			if (item.kind === 'value') {
-				const moved = `${item.name}  ${JSON.stringify(item.store ?? null)} -> ${JSON.stringify(item.file)}`;
-				return [
-					{
-						verb: 'changed',
-						name: nameOf(item),
-						detail: item.storeChanged
-							? `${moved}  (you also changed this here since the folder was written)`
-							: moved,
-					},
-				];
-			}
-			if (item.kind === 'admission') {
-				return [
-					{
-						verb: 'new note',
-						name: item.path,
-						detail: 'renamed to the id it gets',
-					},
-				];
-			}
-			return [];
-		});
-	}
-
-	/** Files the push cannot read, which the re-render writes over. */
-	function rewritten(plan: PushPlan): Line[] {
-		return plan.flatMap((item): Line[] =>
-			item.kind === 'discard'
-				? [
-						{
-							verb: 'unreadable',
-							name: item.path,
-							detail: item.notes.map((note) => why(note.reason)).join('; '),
-						},
-					]
-				: [],
-		);
-	}
-
-	/** What is wrong with a file the push cannot read. */
-	function why(reason: string): string {
-		switch (reason) {
-			case 'row-gone':
-				return 'this note was deleted here after the folder was written';
-			case 'kv-changed':
-				return 'this file is written for you to read and is never sent back';
-			case 'unreadable':
-				return 'the --- block at the top is missing';
-			case 'table-undeclared':
-				return 'this version of Honeycrisp cannot write this kind of file back';
-			case 'body-unreadable':
-				return 'the text under the --- block cannot be read as a note';
-			default:
-				return reason;
-		}
-	}
-
-	/**
-	 * The overview, ranked by what is still reachable afterwards (ADR-0338).
-	 *
-	 * Not by which region of the file moved: a person scanning this is asking
-	 * whether anything is about to be destroyed. Inside a section it is a fixed
-	 * verb column sorted by the name the note is known by, and a note appears
-	 * twice when two things happened to it, which is what `git status` does for
-	 * a file both staged and modified.
-	 */
-	function written(plan: PushPlan): string {
-		const sections: [string, Line[]][] = [
-			['Gone for good', goneForGood(plan)],
-			[
-				'Changed. The old value is here, so you can put it back by hand.',
-				changed(plan),
-			],
-			['Rewritten from your notes', rewritten(plan)],
-		];
-		const shown = sections.filter(([, lines]) => lines.length > 0);
-		const verbs = Math.max(
-			...shown.flatMap(([, lines]) => lines.map((line) => line.verb.length)),
-			0,
-		);
-		const names = Math.max(
-			...shown.flatMap(([, lines]) => lines.map((line) => line.name.length)),
-			0,
-		);
-		return shown
-			.map(([heading, lines]) =>
-				[
-					heading,
-					...[...lines]
-						.sort((left, right) => (left.name < right.name ? -1 : 1))
-						.map((line) =>
-							`  ${line.verb.padEnd(verbs)}  ${line.name.padEnd(names)}  ${line.detail}`.trimEnd(),
-						),
-				].join('\n'),
-			)
-			.join('\n\n');
-	}
+	const overview = $derived(
+		plan === undefined ? '' : renderPlan(plan, honeycrisp.tables.notes),
+	);
 
 	async function open() {
 		running = true;
@@ -215,6 +61,7 @@
 				outcome = { tone: 'held', message: 'Your folder matches your notes.' };
 				return;
 			}
+			stale = false;
 			plan = data;
 		} catch (cause) {
 			reportBackgroundError(cause);
@@ -230,6 +77,14 @@
 		running = true;
 		try {
 			const { data, error } = await push({ plan: confirmed });
+			if (error !== null && error.name === 'PlanStale') {
+				// Not an outcome and not an apology: what the refusal carries IS
+				// the next overview. The folder moved while they were reading, so
+				// they read the version that is true now and approve that.
+				plan = error.plan;
+				stale = true;
+				return;
+			}
 			plan = undefined;
 			outcome =
 				error === null
@@ -294,8 +149,8 @@
 				return 'Your Epicenter folder could not be read. It may be on a drive that is not there, or already being written.';
 			case 'FolderUnwritten':
 				return 'Nothing here wrote this folder, so nothing in it can be told apart from what you already have. Save notes as files first.';
-			case 'PlanStale':
-				return 'The folder or your notes changed while you were looking. Read it again.';
+			case 'PushUnapplied':
+				return 'Part of the push could not be applied, and part of it may have landed. Read the folder again to see what did.';
 			case 'FolderStale':
 				return 'Your edits reached your notes, and the folder could not be rewritten. Save notes as files to catch it up, and do not push again first: any file that became a note is still there under its old name and would be pushed twice.';
 			default:
@@ -345,14 +200,14 @@
 	>
 		<AlertDialog.Header>
 			<AlertDialog.Title>
-				Push {plan?.length ?? 0} change{plan?.length === 1 ? '' : 's'}{irreversible >
-				0
-					? `, ${irreversible} you cannot get back`
+				Push {plan?.length ?? 0} change{plan?.length === 1 ? '' : 's'}{cannotUndo > 0
+					? `, ${cannotUndo} you cannot get back`
 					: ''}
 			</AlertDialog.Title>
 			<AlertDialog.Description>
-				Everything below is applied together, then the folder is rewritten from
-				your notes. To change any of it: cancel, edit the file, push again.
+				{stale
+					? 'The folder or your notes changed while you were reading, so nothing was pushed. This is what is true now.'
+					: 'Everything below is applied together, then the folder is rewritten from your notes. To change any of it: cancel, edit the file, push again.'}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 

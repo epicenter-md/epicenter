@@ -336,6 +336,7 @@ describe('pull refuses a folder holding unpushed edits', () => {
 			table: 'notes',
 			rowId: noteId,
 			storeChanged: false,
+			fileHash: expect.any(String) as unknown as string,
 		});
 		await data[Symbol.asyncDispose]();
 	});
@@ -359,6 +360,7 @@ describe('pull refuses a folder holding unpushed edits', () => {
 			kind: 'admission',
 			path: 'notes/handwritten.md',
 			table: 'notes',
+			fileHash: expect.any(String) as unknown as string,
 		});
 		await data[Symbol.asyncDispose]();
 	});
@@ -597,6 +599,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			kind: 'admission',
 			path: 'notes/handwritten.md',
 			table: 'notes',
+			fileHash: expect.any(String) as unknown as string,
 		});
 		await data[Symbol.asyncDispose]();
 	});
@@ -615,7 +618,12 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		});
 		const plan = expectOk(await planOf(host, data));
 		expect(plan).toEqual([
-			{ kind: 'admission', path: 'notes/handwritten.md', table: 'notes' },
+			{
+				kind: 'admission',
+				path: 'notes/handwritten.md',
+				table: 'notes',
+				fileHash: expect.any(String) as unknown as string,
+			},
 		]);
 		await data[Symbol.asyncDispose]();
 	});
@@ -733,6 +741,49 @@ describe('push sends the values back and re-renders', () => {
 		const refused = expectErr(await sendBack(host, data, plan));
 		expect(refused.name).toBe('PlanStale');
 		expect(data.tables.notes.get(noteId)?.title).toBe('Groceries');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a body edited again after the overview is a different plan', async () => {
+		// The guard is that the list applied is the list somebody read, and an
+		// agent may still be working while the overview is open (ADR-0330). A
+		// body carries no text, so without a hash on the item this plan is
+		// byte-identical and the push rewrites the note from text nobody read.
+		const { host, data, noteId } = await edited(['buy milk', 'buy bread']);
+		const plan = expectOk(await planOf(host, data));
+		host.folder.set(
+			`notes/${noteId}.md`,
+			(host.folder.get(`notes/${noteId}.md`) as string).replace(
+				'buy bread',
+				'buy something else entirely',
+			),
+		);
+
+		const refused = expectErr(await sendBack(host, data, plan));
+		expect(refused.name).toBe('PlanStale');
+		expect(
+			(data.rowFile('notes', noteId)?.content as Y.Type).toString(),
+		).toContain('buy milk');
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a new file edited again after the overview is a different plan', async () => {
+		// Same rule for the other item whose contents are not in the plan:
+		// `push` re-reads the file to build the row.
+		const { host, data } = await edited(['buy milk', 'buy milk']);
+		host.folder.set(
+			'notes/q3-plan.md',
+			'---\ntitle: "Q3 plan"\npinned: true\n---\n\nship the thing\n',
+		);
+		const plan = expectOk(await planOf(host, data));
+		host.folder.set(
+			'notes/q3-plan.md',
+			'---\ntitle: "Q3 plan"\npinned: true\n---\n\nship something else\n',
+		);
+
+		const refused = expectErr(await sendBack(host, data, plan));
+		expect(refused.name).toBe('PlanStale');
+		expect(data.tables.notes.ids()).toHaveLength(1);
 		await data[Symbol.asyncDispose]();
 	});
 

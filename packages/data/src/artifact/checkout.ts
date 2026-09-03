@@ -112,8 +112,8 @@ export type CheckoutStore = {
  * field and needs the base VALUE to tell "the person changed this" from "the
  * store changed this". A body is hashed instead, because it never comes back:
  * a body renders out and does not read back (ADR-0329), so the only question
- * is whether it still matches what was handed over, and a body that does not is
- * a refusal rather than a change.
+ * is whether it still matches what was handed over, and a body that does not
+ * is text the push carries home whole (ADR-0338).
  */
 export type CheckoutManifest = {
 	readonly baseURL: string;
@@ -207,12 +207,29 @@ export const CheckoutError = defineErrors({
 	 * folder rather than one refusal per file: the repair for every one of them
 	 * is the same `pull`.
 	 *
-	 * `unwritten` is the row-shaped paths found there anyway, which is what
-	 * makes this a refusal rather than a no-op: a pull would overwrite them.
+	 * `unwritten` is the row-shaped paths found there anyway. It is what makes
+	 * this `pull`'s refusal rather than its ordinary first run, since a pull
+	 * would overwrite them; `diff` and `push` refuse an unwritten folder
+	 * whether or not it holds any, because there is nothing to compare.
 	 */
 	FolderUnwritten: ({ unwritten }: { unwritten: readonly string[] }) => ({
 		message: `nothing wrote this folder, and it holds ${unwritten.length} file(s) that look like rows`,
 		unwritten,
+	}),
+	/**
+	 * A change the plan named could not be applied, and some of the push may
+	 * have landed.
+	 *
+	 * Its own arm rather than an `Unrenderable`, which is what it used to
+	 * borrow: nothing here failed to RENDER, and a person told their folder
+	 * could not be read would go looking for a folder problem instead of for
+	 * work that half landed. Everything reaching here was checked against a
+	 * plan read a moment ago, so it means an invariant broke rather than that a
+	 * person did something.
+	 */
+	PushUnapplied: ({ reason }: { reason: string }) => ({
+		message: `a planned change could not be applied: ${reason}`,
+		reason,
 	}),
 	/**
 	 * The values reached the store and the folder could not be rewritten.
@@ -257,7 +274,7 @@ export const CheckoutError = defineErrors({
 		 * Carried because it is the one part of a stale folder that is not
 		 * self-correcting. The rows exist and their files are still at the names
 		 * a person gave them, so the next plan offers them as new files again
-		 * and answering `file` a second time mints a duplicate. What clears it
+		 * and a second push mints a duplicate. What clears it
 		 * is a pull, which writes each row at its id and sweeps the old name.
 		 */
 		admitted,
@@ -816,6 +833,15 @@ export type PlannedBody = {
 	 * person before they approve it.
 	 */
 	readonly storeChanged: boolean;
+	/**
+	 * A hash of the text this item is about, which is what `samePlan` compares.
+	 *
+	 * A value item carries both its sides, so a value that moved again makes a
+	 * different plan on its own. A body's text is not in the item, and without
+	 * this an agent editing the same paragraph twice produced a byte-identical
+	 * item while `push` applied text nobody read.
+	 */
+	readonly fileHash: string;
 };
 
 /**
@@ -836,6 +862,12 @@ export type PlannedAdmission = {
 	readonly kind: 'admission';
 	readonly path: string;
 	readonly table: string;
+	/**
+	 * A hash of the whole file this row is made from, for the same reason a
+	 * body carries one: `push` re-reads the file, so a file that changed after
+	 * the overview would otherwise become a row nobody read.
+	 */
+	readonly fileHash: string;
 };
 
 /**
@@ -943,7 +975,7 @@ function planKey(item: PlanItem): string {
  * | `file == base` | the person did not touch it; the store's value stands |
  * | `store == base` | apply the file's value |
  * | `store == file` | already converged; nothing to do |
- * | all three differ | a conflict on that field |
+ * | all three differ | the file's value, and the overview says the store moved |
  */
 export async function diff({
 	data,
@@ -988,7 +1020,7 @@ export async function diff({
  * `decode` validates the text `rewrite` would apply and `rewrite` would edit
  * the store. That is what lets a plan be JSON a dialog can hold and a push can
  * compare against, and it is why `push` decodes a second time rather than
- * carrying a live node through the person's decision.
+ * carrying a live node through the plan a person reads.
  */
 async function planPush(
 	data: RenderableData,
@@ -1025,7 +1057,8 @@ async function planPush(
 		if (address === undefined) continue;
 		const path = rowPath(address.table, address.rowId);
 		// Collected rather than pushed, because everything wrong with one file
-		// resolves the same way and a person should answer for the file once.
+		// resolves the same way and the overview should say it about the file
+		// once.
 		const notes: DiscardNote[] = [];
 		const discard = (reason: DiscardReason, name?: string) =>
 			notes.push({ reason, name });
@@ -1095,6 +1128,7 @@ async function planPush(
 						path,
 						...address,
 						storeChanged: inStore !== handed.bodyHash,
+						fileHash: inFile,
 					});
 				}
 			}
@@ -1135,7 +1169,7 @@ async function planPush(
 		const address = parseRowPath(path);
 		if (address === undefined) continue;
 		if (base.rows[`${address.table}/${address.rowId}`] !== undefined) continue;
-		items.push(admission(definition, address.table, path, contents));
+		items.push(await admission(definition, address.table, path, contents));
 	}
 
 	// Sorted, because `push` compares the plan a person read against one it
@@ -1170,7 +1204,7 @@ type Reading =
  * which is the one place a person has to be able to look.
  *
  * It is also the promise `rewrite` is applied under: a push validates a body
- * by decoding it here and rewrites with the same text after a person answers,
+ * by decoding it here and rewrites with the same text after the approval,
  * so a codec whose two readers disagreed would show a plan its own push
  * refuses.
  *
@@ -1198,12 +1232,12 @@ function readsBack(table: ParsedTable, text: string): boolean {
  * word, a surface, and a record for (ADR-0125, ADR-0338). It is written, and
  * the note list shows it.
  */
-function admission(
+async function admission(
 	definition: ParsedDataDefinition,
 	tableName: string,
 	path: string,
 	contents: string,
-): PlannedAdmission | PlannedDiscard {
+): Promise<PlannedAdmission | PlannedDiscard> {
 	const table = definition.tables.get(tableName);
 	if (table === undefined) {
 		return { kind: 'discard', path, notes: [{ reason: 'table-undeclared' }] };
@@ -1217,7 +1251,12 @@ function admission(
 	if (file.body !== '' && !readsBack(table, file.body)) {
 		return { kind: 'discard', path, notes: [{ reason: 'body-unreadable' }] };
 	}
-	return { kind: 'admission', path, table: tableName };
+	return {
+		kind: 'admission',
+		path,
+		table: tableName,
+		fileHash: await contentHash(contents),
+	};
 }
 
 /**
@@ -1512,7 +1551,7 @@ export async function push({
 	// The folder is re-rendered from the store the push just changed, so what a
 	// person reads next is what is true. `discardEdits` because the plan was
 	// carried whole: every difference this folder held is either applied above
-	// or was answered `store`, which IS the discard.
+	// or is a file the re-render overwrites, which IS the discard.
 	const pulled = await pull({
 		data,
 		definition,
@@ -1538,13 +1577,7 @@ function unapplied(failure: {
 	name: string;
 	message: string;
 }): Result<never, CheckoutError> {
-	return CheckoutError.Unrenderable({
-		failures: [
-			RenderError.MalformedDefinition({
-				reason: `a planned change could not be applied: ${failure.message}`,
-			}).error,
-		],
-	});
+	return CheckoutError.PushUnapplied({ reason: failure.message });
 }
 
 /** One file that became a row, and the id its file is renamed to. */

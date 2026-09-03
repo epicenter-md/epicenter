@@ -1,31 +1,15 @@
 <script lang="ts">
-	import type { PlanItem, PushPlan } from '@epicenter/data/artifact/checkout';
+	import type { PushPlan } from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderDownIcon from '@lucide/svelte/icons/folder-down';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import type { AccountDatabase } from '$lib/databases.js';
+	import { renderPlan } from '$lib/folder-overview.js';
 
 	let { pull }: { pull: AccountDatabase['pull'] } = $props();
 
 	const honeycrisp = getHoneycrisp();
-
-	/**
-	 * The note a path names, as a person knows it.
-	 *
-	 * `notes/9f2c…` is an address, and nobody can act on one. The title is what
-	 * they typed, and a row the store no longer has (a file somebody wrote by
-	 * hand) has none, so the address is the fallback rather than the label.
-	 */
-	function label(row: { table: string; rowId: string }): string {
-		if (row.table !== 'notes') return `${row.table}/${row.rowId}`;
-		const title = honeycrisp.tables.notes.all.find(
-			(note) => note.id === row.rowId,
-		)?.title;
-		return title === undefined || title === ''
-			? `${row.table}/${row.rowId}`
-			: title;
-	}
 
 	/**
 	 * What the last pull said, in the person's words.
@@ -104,47 +88,19 @@
 	}
 
 	/**
-	 * One line per thing the folder holds that these notes do not.
+	 * What the pull would write over, as the block the push dialog renders.
 	 *
-	 * A flat list, because the plan is one: this dialog only has to say what
-	 * would go, and the send-back dialog is where each of them is decided.
+	 * One renderer for both directions: this is the same plan read from the
+	 * other end, and two renderers meant two answers to what a note is called.
 	 */
-	const edited = $derived.by(() => {
-		if (unpushed === undefined) return [];
+	const wouldGo = $derived.by(() => {
+		if (unpushed === undefined) return '';
 		if (unpushed.kind === 'unwritten') {
-			return unpushed.paths.map((path, index) => ({
-				key: `${index}`,
-				subject: path,
-				what: 'nothing here wrote this file',
-			}));
+			return unpushed.paths.map((path) => `  ${path}`).join('\n');
 		}
-		return unpushed.plan.map((item, index) => ({
-			key: `${index}`,
-			subject:
-				item.kind === 'value' ||
-				item.kind === 'body' ||
-				item.kind === 'deletion'
-					? label(item)
-					: item.path,
-			what: went(item),
-		}));
+		return renderPlan(unpushed.plan, honeycrisp.tables.notes);
 	});
 
-	/** What this item is, in the fewest words that say what would be lost. */
-	function went(item: PlanItem): string {
-		switch (item.kind) {
-			case 'value':
-				return `${item.name} changed`;
-			case 'body':
-				return 'the text changed';
-			case 'deletion':
-				return 'the file was deleted, and sending would delete the note';
-			case 'admission':
-				return 'a file that is not a note yet';
-			case 'discard':
-				return item.notes.map((note) => note.name ?? note.reason).join(', ');
-		}
-	}
 </script>
 
 <div class="flex flex-col gap-1 px-2 pb-1">
@@ -176,7 +132,7 @@
 		if (!open) unpushed = undefined;
 	}}
 >
-	<AlertDialog.Content>
+	<AlertDialog.Content class="max-w-2xl">
 		<AlertDialog.Header>
 			<AlertDialog.Title>
 				{unpushed?.kind === 'unwritten'
@@ -190,14 +146,8 @@
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 
-		<ul class="max-h-56 space-y-1 overflow-y-auto text-xs">
-			{#each edited as item (item.key)}
-				<li class="flex gap-2">
-					<span class="truncate">{item.subject}</span>
-					<span class="shrink-0 text-muted-foreground">{item.what}</span>
-				</li>
-			{/each}
-		</ul>
+		<pre
+			class="max-h-56 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed">{wouldGo}</pre>
 
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Leave the folder alone</AlertDialog.Cancel>
