@@ -4,8 +4,8 @@
  * **A push applies the folder, whole, after one approval** (ADR-0338). It
  * validates nothing, deletes a row when its file is gone, reads a removed
  * frontmatter line as `null`, and asks nothing per item: to change any of it,
- * a person cancels, edits the file, and pushes again. `kv.json` is the one
- * thing still pulled to read and never pushed.
+ * a person cancels, edits the file, and pushes again. A setting in `kv.json`
+ * comes back the same way a frontmatter value does.
  *
  * ```txt
  * ~/Epicenter/<data-id>/
@@ -49,6 +49,7 @@ import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import {
 	CONTENT_FIELD,
+	isJsonObject,
 	type JsonObject,
 	type JsonValue,
 	type ParsedDataDefinition,
@@ -141,15 +142,19 @@ export type CheckoutManifest = {
 		{ readonly values: JsonObject; readonly bodyHash: string }
 	>;
 	/**
-	 * `kv.json`'s hash, and only its hash.
+	 * What `kv.json` held when it was handed over, key by key.
 	 *
-	 * The kv root is one object rather than a set of rows, so it has no per-field
-	 * base a push could resolve against and no address a plan could name. It is
-	 * pulled so the folder is complete to read and to grep, and an edit to it is
-	 * reported rather than applied: a value that silently did not push is the
-	 * failure this format exists to prevent.
+	 * Verbatim, for the same reason a row's values are: a push resolves per key
+	 * and needs the base VALUE to tell "the person changed this" from "the store
+	 * changed this". It used to be a hash, on the reasoning that the kv root is
+	 * one object with no per-field base, which was never true: it is a declared
+	 * field map compiled by the same code as a table, and it is LWW per key in
+	 * the document (`packages/data/src/store/document.ts`).
+	 *
+	 * So this record holds two rules rather than three: values for everything
+	 * that comes back, and a hash for the one region that only renders out.
 	 */
-	readonly kvHash: string;
+	readonly kv: JsonObject;
 };
 
 export const CheckoutError = defineErrors({
@@ -313,7 +318,7 @@ export const CheckoutError = defineErrors({
 export type CheckoutError = InferErrors<typeof CheckoutError>;
 
 /**
- * The hash a body and `kv.json` are compared by.
+ * The hash a body is compared by.
  *
  * SHA-256 through `crypto.subtle`, which both a WebView and Bun have. It is
  * not a security claim: what it answers is "are these the bytes that were
@@ -443,7 +448,7 @@ function parseManifest(text: string | undefined): CheckoutManifest | undefined {
 		typeof record.dataId !== 'string' ||
 		typeof record.generation !== 'number' ||
 		typeof record.pulledAt !== 'string' ||
-		typeof record.kvHash !== 'string' ||
+		!isJsonObject(record.kv) ||
 		typeof record.rows !== 'object' ||
 		record.rows === null
 	) {
@@ -494,7 +499,7 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'```txt',
 		'.epicenter/manifest.json   what the last write handed over. Do not edit.',
 		'AGENTS.md                  this file. Generated; do not edit.',
-		'kv.json                    settings. Read only.',
+		'kv.json                    settings, one JSON object.',
 		`<table>/<row-id>${ROW_FILE_EXTENSION}        one row: frontmatter, then its text`,
 		'```',
 		'',
@@ -515,7 +520,8 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'were editing.',
 		'',
 		'A write you make while the person is reading either list makes that verb',
-		'refuse and re-read, so it is not lost quietly.',
+		'read the folder again and show them what is true now, so it is not lost',
+		'quietly.',
 		'',
 		'## What happens to what you edit',
 		'',
@@ -583,9 +589,11 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'  Under a NEW id, because a row id is minted and never chosen, so the',
 		'  file is renamed like any file you create. A file you did NOT edit',
 		'  says nothing and the next pull removes it.',
-		'- **`kv.json` is read only.** A push never sends it and never rewrites',
-		'  it; an edit there is reported at every push, and the next pull',
-		'  replaces it.',
+		'- **A value in `kv.json` comes back**, the way a frontmatter value does.',
+		'  It is one JSON object of settings. A key you remove reads as `null`,',
+		'  and a key you add goes in and is read by nothing. Keep it a JSON',
+		'  object: if it will not parse, the push takes nothing from it, leaves',
+		'  it exactly as you wrote it, and says so.',
 		'- **A file the push rewrote comes back in canonical form**, with its',
 		'  keys sorted and its strings quoted. A file it did not rewrite keeps',
 		'  your bytes exactly, formatting and all.',
@@ -664,7 +672,7 @@ async function applyPull({
 		data,
 		definition: data.definition,
 		sources,
-		kv: { contents: kvContents, hash: await contentHash(kvContents) },
+		kv: { contents: kvContents, values: state.kv },
 		pulledAt: now().toISOString(),
 		ifMatch: held.etag,
 		fetch: httpFetch,
@@ -742,8 +750,15 @@ async function writeFolder({
 	data: RenderableData & CheckoutAddress;
 	definition: ParsedDataDefinition;
 	sources: readonly FileSource[];
-	/** `kv.json` and its hash, or nothing where the folder is to have none. */
-	kv: { readonly contents: string; readonly hash: string } | undefined;
+	/**
+	 * `kv.json` and the settings it says, or nothing where the folder is to
+	 * have none.
+	 *
+	 * Both, because they are written together and the manifest records what the
+	 * file says rather than what the store held: a push that applied some
+	 * settings writes the merged object and the entry that describes it.
+	 */
+	kv: { readonly contents: string; readonly values: JsonObject } | undefined;
 	/** When the folder was last made current, which only a pull moves. */
 	pulledAt: string;
 	/** The folder this checkout was built against, which the host requires back. */
@@ -808,7 +823,7 @@ async function writeFolder({
 		principalId: data.principalId,
 		pulledAt,
 		rows,
-		kvHash: kv?.hash ?? '',
+		kv: kv?.values ?? {},
 	};
 	files.push(
 		{ path: AGENTS_PATH, contents: agentsFile(definition) },
@@ -876,6 +891,15 @@ function checkoutUrl(dataId: string): string {
  * folder that matches nothing.
  */
 export type PushableData = RenderableData & {
+	/**
+	 * The kv root's write, which a setting from `kv.json` goes through.
+	 *
+	 * `update` and not `set`, so a key nobody edited is left alone: the folder
+	 * carries every setting on one file and a push touches the ones that moved.
+	 */
+	readonly kv: {
+		update(values: JsonObject): void;
+	};
 	readonly tables: Readonly<
 		Record<
 			string,
@@ -933,7 +957,8 @@ export type PlanItem =
 	| PlannedBody
 	| PlannedAdmission
 	| PlannedDeletion
-	| PlannedKeep;
+	| PlannedKeep
+	| PlannedSetting;
 
 /**
  * One value the push sets, and the one it is replacing.
@@ -967,6 +992,36 @@ export type PlannedValue = {
 	 * false the store's value is the one the folder was written from, and with
 	 * it true the push is overwriting an edit somebody made on this side.
 	 */
+	readonly storeChanged: boolean;
+};
+
+/**
+ * One setting in `kv.json` the push writes, and the one it is replacing.
+ *
+ * Its own arm rather than a `PlannedValue` with an invented row id: a value
+ * item is always about a row, and a renderer that had to special-case one
+ * table name to print a setting is a second vocabulary for one item kind.
+ *
+ * Otherwise it is a value in every way that matters. The same three-way, the
+ * same folder-wins rule, the same nothing-is-validated rule: an application
+ * reads a setting as `kv.get(key) ?? DEFAULT`, and `get` already answers
+ * `undefined` for a value this release cannot read, so a hand edit that does
+ * not fit degrades to the default and shows in `nonconforming` (ADR-0125).
+ *
+ * `kv.json` used to be pulled to read and never pushed, which cost a manifest
+ * hash, a permanent `kept` line saying an edit was discarded, and a paragraph
+ * in `AGENTS.md` telling a person the one file in the folder they may not
+ * edit.
+ */
+export type PlannedSetting = {
+	readonly kind: 'setting';
+	readonly path: 'kv.json';
+	readonly name: string;
+	/** What the store holds now, and what the overview prints beside it. */
+	readonly store: JsonValue | undefined;
+	/** What the file says, and what the push writes. */
+	readonly file: JsonValue;
+	/** Whether this setting moved here too since the folder was written. */
 	readonly storeChanged: boolean;
 };
 
@@ -1079,8 +1134,13 @@ export type PlannedKeep = {
 };
 
 export type KeepReason =
-	/** `kv.json` is pulled to read and never pushed (ADR-0337). */
-	| 'kv-changed'
+	/**
+	 * `kv.json` is not one JSON object, so there are no settings to read out.
+	 *
+	 * The same rule a row file follows: a file this side cannot read is left
+	 * exactly as the person wrote it, and the repair is the file (ADR-0341).
+	 */
+	| 'kv-unreadable'
 	/**
 	 * The row is there and this release cannot write it out.
 	 *
@@ -1124,6 +1184,7 @@ export type PushPlan = readonly PlanItem[];
 function planKey(item: PlanItem): string {
 	switch (item.kind) {
 		case 'value':
+		case 'setting':
 			return `${item.path}#${item.name}`;
 		case 'body':
 			return `${item.path}#${CONTENT_FIELD}`;
@@ -1438,8 +1499,35 @@ async function planPush(
 	}
 
 	const onDisk = held.files.get('kv.json');
-	if (onDisk !== undefined && (await contentHash(onDisk)) !== base.kvHash) {
-		items.push({ kind: 'kept', path: 'kv.json', reason: 'kv-changed' });
+	if (onDisk !== undefined) {
+		const inFile = readSettings(onDisk);
+		if (inFile === undefined) {
+			items.push({ kind: 'kept', path: 'kv.json', reason: 'kv-unreadable' });
+		} else {
+			const inStore = data.stored().kv;
+			// The same three-way and the same loop a row's values run, over the
+			// union of what was handed over and what the file says now. A key only
+			// the store holds and the person never touched says nothing, which is
+			// what makes a setting this release added silent in an old folder.
+			for (const name of new Set([
+				...Object.keys(base.kv),
+				...Object.keys(inFile),
+			])) {
+				const handed = base.kv[name] ?? null;
+				const file = inFile[name] ?? null;
+				const store = inStore[name] ?? null;
+				if (same(file, handed)) continue;
+				if (same(file, store)) continue;
+				items.push({
+					kind: 'setting',
+					path: 'kv.json',
+					name,
+					store: inStore[name],
+					file,
+					storeChanged: !same(store, handed),
+				});
+			}
+		}
 	}
 
 	for (const [key, handed] of Object.entries(base.rows)) {
@@ -1869,12 +1957,14 @@ async function applyPush({
 	const outcome = {
 		rows: 0,
 		values: 0,
+		settings: 0,
 		bodies: 0,
 		deleted: 0,
 		admitted: [],
 	} as {
 		rows: number;
 		values: number;
+		settings: number;
 		bodies: number;
 		deleted: number;
 		admitted: Admitted[];
@@ -1943,6 +2033,20 @@ async function applyPush({
 					}
 					table.delete(item.rowId);
 					outcome.deleted += 1;
+				}
+
+				// The settings, one write however many keys moved, for the same
+				// reason a row's are. `update` merges, so a key nobody touched is
+				// left alone rather than cleared.
+				const settings: JsonObject = {};
+				for (const item of plan) {
+					if (item.kind !== 'setting') continue;
+					settings[item.name] = item.file;
+				}
+				const movedSettings = Object.keys(settings).length;
+				if (movedSettings > 0) {
+					data.kv.update(settings);
+					outcome.settings += movedSettings;
 				}
 
 				// Values gathered per row, because a row is one write however many
@@ -2110,14 +2214,18 @@ async function applyPush({
 		data,
 		definition: data.definition,
 		sources,
-		// `kv.json` holds still like everything else, hash and all. A folder
-		// that no longer has one does not get one here: fresh bytes beside the
-		// base's hash would describe a file the manifest does not, and every
-		// later plan would report an edit nobody made.
+		// `kv.json` holds still, like every other file this push did not touch:
+		// the bytes the folder already has, so nothing a person typed into it is
+		// rewritten from the store. Its manifest entry advances by exactly what
+		// the push applied, which is what keeps the next plan from reporting an
+		// applied setting as an edit nobody made.
 		kv:
 			kvContents === undefined
 				? undefined
-				: { contents: kvContents, hash: base.kvHash },
+				: {
+						contents: kvContents,
+						values: { ...base.kv, ...appliedSettings(plan) },
+					},
 		// Unchanged, because the folder is still current as of the last pull.
 		// Only the files this push wrote moved, and each carries its own fresh
 		// entry.
@@ -2156,6 +2264,8 @@ export type Admitted = {
 export type PushOutcome = {
 	readonly rows: number;
 	readonly values: number;
+	/** Settings written to `kv.json`'s root, which is one write however many. */
+	readonly settings: number;
 	readonly bodies: number;
 	/**
 	 * Rows deleted because their file is gone (ADR-0338).
@@ -2167,6 +2277,39 @@ export type PushOutcome = {
 	readonly deleted: number;
 	readonly admitted: readonly Admitted[];
 };
+
+/**
+ * The settings a push wrote, keyed by name.
+ *
+ * The base advances by this and nothing else, for the reason a kept row's
+ * entry does not advance at all: a manifest that ran ahead of what landed
+ * would read the difference as an edit at the next push.
+ */
+function appliedSettings(plan: PushPlan): JsonObject {
+	const applied: JsonObject = {};
+	for (const item of plan) {
+		if (item.kind === 'setting') applied[item.name] = item.file;
+	}
+	return applied;
+}
+
+/**
+ * The settings one `kv.json` says, or nothing when it is not a JSON object.
+ *
+ * The counterpart of `readRowFile`, and it refuses for the same reason: a file
+ * this side cannot read is left exactly as the person wrote it, and the repair
+ * is the file. Nested values are kept as they are, because nothing here
+ * interprets a setting; `kv.get` is what decides whether one reads.
+ */
+function readSettings(contents: string): JsonObject | undefined {
+	let value: unknown;
+	try {
+		value = JSON.parse(contents);
+	} catch {
+		return undefined;
+	}
+	return isJsonObject(value) ? value : undefined;
+}
 
 /** The text under one file's fence, as the folder holds it right now. */
 function bodyOf(held: FolderContents, path: string): string {

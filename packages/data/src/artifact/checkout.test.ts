@@ -573,13 +573,88 @@ describe('a pull shows what it writes over, and a person says yes', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
-	test('an edit to kv.json is reported, because it is never pushed', async () => {
+	test('a setting edited in kv.json is a value like any other', async () => {
 		const { host, data } = await pulledThenEdited((folder) => {
 			folder.set('kv.json', '{"theme":"dark"}');
 		});
 		expect(await planOf(host, data)).toEqual([
-			{ kind: 'kept', path: 'kv.json', reason: 'kv-changed' },
+			{
+				kind: 'setting',
+				path: 'kv.json',
+				name: 'theme',
+				store: undefined,
+				file: 'dark',
+				storeChanged: false,
+			},
 		]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a setting removed from kv.json reads as null, like a frontmatter line', async () => {
+		const host = fakeHost();
+		const { data } = await notebook();
+		data.kv.update({ theme: 'dark' });
+		expectOk(await pullInto(host, data));
+		host.folder.set('kv.json', '{}');
+
+		expect(await planOf(host, data)).toEqual([
+			{
+				kind: 'setting',
+				path: 'kv.json',
+				name: 'theme',
+				store: 'dark',
+				file: null,
+				storeChanged: false,
+			},
+		]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a kv.json that is not one JSON object is kept as it was written', async () => {
+		// The same rule a row file follows. A person who broke the braces has a
+		// file to fix, and nothing here rewrites it from the store.
+		const { host, data } = await pulledThenEdited((folder) => {
+			folder.set('kv.json', '{"theme": ');
+		});
+		expect(await planOf(host, data)).toEqual([
+			{ kind: 'kept', path: 'kv.json', reason: 'kv-unreadable' },
+		]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('an applied setting reaches the store, and the manifest advances by it', async () => {
+		// The whole reason `kv.json` stopped being read only: a person edits a
+		// setting in the folder and it lands, and the next plan does not report
+		// the setting it just applied as an edit nobody made.
+		const host = fakeHost();
+		const { data } = await notebook();
+		data.kv.update({ theme: 'dark' });
+		expectOk(await pullInto(host, data));
+		host.folder.set('kv.json', '{\n  "theme": "light"\n}');
+
+		const pushed = applied(expectOk(await sendBack(host, data)));
+		expect(pushed).toMatchObject({ settings: 1, values: 0, rows: 0 });
+		expect(data.kv.get('theme')).toBe('light');
+		// The file is left byte for byte as it was written, like every other
+		// file a push touched but did not have to re-render.
+		expect(host.folder.get('kv.json')).toBe('{\n  "theme": "light"\n}');
+		expect(manifestOf(host.folder).kv).toEqual({ theme: 'light' });
+		// And the folder now matches the notes.
+		expect(await planOf(host, data)).toEqual([]);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a setting the store changed and nobody edited says nothing', async () => {
+		// The three-way, over the kv root. The folder was written before the
+		// setting moved here, and a person who never opened the file is not
+		// pushing an edit they did not make.
+		const host = fakeHost();
+		const { data } = await notebook();
+		data.kv.update({ theme: 'dark' });
+		expectOk(await pullInto(host, data));
+		data.kv.update({ theme: 'light' });
+
+		expect(await planOf(host, data)).toEqual([]);
 		await data[Symbol.asyncDispose]();
 	});
 });
@@ -882,6 +957,7 @@ describe('push sends the values back and re-renders', () => {
 		expect(pushed).toEqual({
 			rows: 1,
 			values: 1,
+			settings: 0,
 			bodies: 0,
 			deleted: 0,
 			admitted: [],
@@ -910,6 +986,7 @@ describe('push sends the values back and re-renders', () => {
 		expect(pushed).toEqual({
 			rows: 1,
 			values: 1,
+			settings: 0,
 			bodies: 0,
 			deleted: 0,
 			admitted: [],
@@ -1464,6 +1541,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		// changed what a push does.
 		const perKind: Record<PlanItem['kind'], string> = {
 			value: 'A value in the frontmatter comes back',
+			setting: 'A value in `kv.json` comes back',
 			body: 'replaces the note',
 			admission: 'becomes a row, and is RENAMED',
 			deletion: 'deletes the row, for good',
@@ -1471,7 +1549,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		};
 		const perReason: Record<KeepReason, string> = {
 			'row-unwritable': 'cannot write out leaves its file alone',
-			'kv-changed': '`kv.json` is read only',
+			'kv-unreadable': 'if it will not parse',
 			unreadable: 'Keep the `---` block',
 			'table-undeclared': 'The tables',
 			'body-unreadable': 'cannot read is left alone',
