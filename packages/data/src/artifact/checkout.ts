@@ -197,6 +197,19 @@ export const CheckoutError = defineErrors({
 		plan,
 	}),
 	/**
+	 * The folder a person approved writing over is not the folder that is
+	 * there now, so nothing was written.
+	 *
+	 * `pull`'s half of the guard `PlanStale` is for `push`: a file landed or a
+	 * note moved between the list they read and the click, and a pull writes
+	 * over everything in that list. `state` is what is true now, so a surface
+	 * shows that rather than an apology.
+	 */
+	FolderChanged: ({ state }: { state: FolderState }) => ({
+		message: 'the folder changed after it was read',
+		state,
+	}),
+	/**
 	 * Nothing wrote this folder, so there is nothing to compare it against.
 	 *
 	 * Never pulled, manifest deleted, manifest mangled, or manifest written by
@@ -276,21 +289,6 @@ export const CheckoutError = defineErrors({
 		 */
 		admitted,
 		cause,
-	}),
-	/**
-	 * The folder holds work nobody pushed, so a pull would overwrite it.
-	 *
-	 * The one refusal `pull` makes. Sending it back and discarding it are both
-	 * the person's, and both are a second deliberate act: nothing here decides
-	 * that unpushed work is disposable.
-	 *
-	 * It carries the same `PushPlan` `diff` produces, because it is the same
-	 * question asked at the other end. Two comparisons is how a pull comes to
-	 * refuse work a push would have called converged.
-	 */
-	WorkingCopyDirty: ({ plan }: { plan: PushPlan }) => ({
-		message: `The folder holds ${plan.length} unpushed change(s)`,
-		plan,
 	}),
 });
 export type CheckoutError = InferErrors<typeof CheckoutError>;
@@ -560,10 +558,10 @@ function agentsFile(definition: ParsedDataDefinition): string {
  * of one instant and a partial one would leave a manifest describing a folder
  * that does not exist.
  *
- * It **refuses a dirty folder**. A pull is the destructive direction: it
- * replaces every rendered file, so running one over unpushed edits is the way
- * a person loses work they can see on disk. The refusal carries what changed,
- * so the surface can show them and discarding is a second, deliberate act.
+ * It **writes over everything**, which is why it takes an approval. A pull is
+ * the destructive direction: it replaces every rendered file, so the list a
+ * person read before saying yes is the list it is allowed to write over
+ * (ADR-0341). Confirming it is the discard; there is no second gesture.
  *
  * It **fails closed**, unlike the mirror. A row that could not be rendered
  * would be a file absent from the folder, and absence is a deletion at the
@@ -572,14 +570,21 @@ function agentsFile(definition: ParsedDataDefinition): string {
 export async function pull({
 	data,
 	definition,
-	discardEdits = false,
+	state: confirmed,
 	fetch: httpFetch = globalThis.fetch,
 	now = () => new Date(),
 }: {
 	data: RenderableData & CheckoutAddress;
 	definition: DataDefinition;
-	/** The person saw the unpushed edits and asked for them to go. */
-	discardEdits?: boolean;
+	/**
+	 * What `diff` said and a person approved, whole.
+	 *
+	 * Confirming it IS the discard (ADR-0341): a pull writes over everything in
+	 * the list, and a person who read the list said so. It refuses one that
+	 * stopped being true for the same reason `push` does, because writing over
+	 * work nobody was shown is the thing this verb has to be unable to do.
+	 */
+	state: FolderState;
 	fetch?: typeof globalThis.fetch;
 	now?: () => Date;
 }): Promise<Result<{ files: number }, CheckoutError>> {
@@ -593,25 +598,18 @@ export async function pull({
 			],
 		});
 	}
-	if (!discardEdits) {
-		const held = await readWorkingCopy(data, httpFetch);
-		if (held.error !== null) return Err(held.error);
-		// The same plan `diff` produces, because it is the same question asked
-		// at the other end: what does this folder hold that the store does not?
-		// Two comparisons is how a pull comes to refuse work a push would have
-		// called converged.
-		const read = await planPush(data, parsedDefinition.data, held.data);
-		// A folder with no base is its own refusal: with nothing to compare
-		// against, every row-shaped file there might be work nobody has ever
-		// sent, and a pull would write over it. An EMPTY one is the ordinary
-		// first pull and is not refused.
-		if (read.base === undefined) {
-			if (read.unwritten.length > 0) {
-				return CheckoutError.FolderUnwritten({ unwritten: read.unwritten });
-			}
-		} else if (read.plan.length > 0) {
-			return CheckoutError.WorkingCopyDirty({ plan: read.plan });
-		}
+	// The same reading `diff` produced for the person, made again: a pull writes
+	// over everything in it, so applying a list that moved would write over work
+	// nobody was shown.
+	const held = await readWorkingCopy(data, httpFetch);
+	if (held.error !== null) return Err(held.error);
+	const read = await planPush(data, parsedDefinition.data, held.data);
+	const found: FolderState =
+		read.base === undefined
+			? { base: false, unwritten: read.unwritten }
+			: { base: true, plan: read.plan };
+	if (JSON.stringify(found) !== JSON.stringify(confirmed)) {
+		return CheckoutError.FolderChanged({ state: found });
 	}
 
 	// The store's own set of paths: every row it holds is rendered, and a file
@@ -1070,7 +1068,7 @@ export async function diff({
 	data: RenderableData & CheckoutAddress;
 	definition: DataDefinition;
 	fetch?: typeof globalThis.fetch;
-}): Promise<Result<PushPlan, CheckoutError>> {
+}): Promise<Result<FolderState, CheckoutError>> {
 	const parsed = compileData(definition);
 	if (parsed.error !== null) {
 		return CheckoutError.Unrenderable({
@@ -1082,9 +1080,11 @@ export async function diff({
 	const held = await readWorkingCopy(data, httpFetch);
 	if (held.error !== null) return Err(held.error);
 	const read = await planPush(data, parsed.data, held.data);
-	return read.base === undefined
-		? CheckoutError.FolderUnwritten({ unwritten: read.unwritten })
-		: Ok(read.plan);
+	return Ok(
+		read.base === undefined
+			? { base: false, unwritten: read.unwritten }
+			: { base: true, plan: read.plan },
+	);
 }
 
 /**
@@ -1266,13 +1266,26 @@ async function planPush(
 /**
  * What one reading of the folder found: a plan, or no base to plan against.
  *
- * Two shapes rather than a plan holding a refusal, because they are answered
- * in different places. A plan is read and approved; an unwritten folder is a
- * sentence and a `pull`.
+ * Two shapes rather than a plan holding a refusal, because the two verbs
+ * answer them differently. A push refuses an unwritten folder, because nothing
+ * in it can be told from what the store already has. A pull writes over it,
+ * and the paths are what it owes a person before they say yes.
  */
 type Reading =
 	| { readonly base: CheckoutManifest; readonly plan: PushPlan }
 	| { readonly base: undefined; readonly unwritten: readonly string[] };
+
+/**
+ * What the folder holds that the notes do not, as a surface reads it.
+ *
+ * The same question both verbs ask, and the one a person is shown before
+ * either runs (ADR-0341): a push applies this list, a pull writes over it.
+ * `unwritten` is a folder nothing here ever wrote, where there is nothing to
+ * compare and every row-shaped file might be work nobody has sent.
+ */
+export type FolderState =
+	| { readonly base: true; readonly plan: PushPlan }
+	| { readonly base: false; readonly unwritten: readonly string[] };
 
 /**
  * Whether this file still says exactly what `pull` handed over.

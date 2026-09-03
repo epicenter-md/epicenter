@@ -134,7 +134,7 @@
 	<Sidebar.Footer>
 		{#if HAS_FOLDER}
 			<SendFolderEdits {diff} {push} />
-			<PullToFolder {pull} />
+			<PullToFolder {diff} {pull} />
 		{/if}
 		{#if sync}
 			<div

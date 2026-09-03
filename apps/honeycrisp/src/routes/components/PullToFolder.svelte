@@ -1,13 +1,17 @@
 <script lang="ts">
-	import type { PushPlan } from '@epicenter/data/artifact/checkout';
+	import type { FolderState } from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderDownIcon from '@lucide/svelte/icons/folder-down';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import type { FolderVerbs } from '$lib/folder.js';
 	import { renderPlan } from '$lib/folder-overview.js';
+	import { reportBackgroundError } from '$lib/report.js';
 
-	let { pull }: { pull: FolderVerbs['pull'] } = $props();
+	let {
+		diff,
+		pull,
+	}: { diff: FolderVerbs['diff']; pull: FolderVerbs['pull'] } = $props();
 
 	const honeycrisp = getHoneycrisp();
 
@@ -22,44 +26,68 @@
 		undefined,
 	);
 	/**
-	 * What the folder holds that these notes do not, when a pull refused.
+	 * The folder a person is looking at before they write over it.
 	 *
-	 * A pull refuses two ways and this dialog answers both, because the person
-	 * is deciding the same thing: whether to write over files nobody sent back.
-	 * `plan` is the same `PushPlan` the push dialog reads, and `unwritten` is a
-	 * folder with no base at all, where there is nothing to compare and every
-	 * row-shaped file might be work nobody ever sent (ADR-0338).
+	 * The same shape the push dialog reads, because it is the same question
+	 * asked from the other end (ADR-0341): a push applies this list, a pull
+	 * writes over it. It travels back into `pull`, which reads the folder again
+	 * and refuses if the two disagree.
 	 */
-	let unpushed = $state<
-		| { readonly kind: 'edited'; readonly plan: PushPlan }
-		| { readonly kind: 'unwritten'; readonly paths: readonly string[] }
-		| undefined
-	>(undefined);
+	let shown = $state<FolderState | undefined>(undefined);
 	let running = $state(false);
+	let confirm = $state<HTMLButtonElement | null>(null);
 
-	async function run(discardEdits: boolean) {
+	/** Whether this folder holds anything a pull would write over. */
+	const wouldLose = $derived(
+		shown === undefined
+			? 0
+			: shown.base
+				? shown.plan.length
+				: shown.unwritten.length,
+	);
+
+	/** Read the folder, and show it when there is anything to lose. */
+	async function open() {
 		running = true;
 		outcome = undefined;
 		try {
-			const { data, error } = await pull({ discardEdits });
-			if (error === null) {
-				outcome = {
-					tone: 'held',
-					message: `${data.files} file${data.files === 1 ? '' : 's'} written to your Epicenter folder.`,
-				};
+			const { data, error } = await diff();
+			if (error !== null) {
+				outcome = { tone: 'refused', message: refusal(error) };
 				return;
 			}
-			if (error.name === 'WorkingCopyDirty') {
-				// Not an outcome line. The work is the person's, and the only
-				// honest next step is showing them what they are about to lose.
-				unpushed = { kind: 'edited', plan: error.plan };
+			// Nothing here is anybody's work, so there is nothing to approve.
+			// A pull with an empty list is the ordinary way a folder catches up.
+			if (data.base && data.plan.length === 0) {
+				await write(data);
 				return;
 			}
-			if (error.name === 'FolderUnwritten') {
-				unpushed = { kind: 'unwritten', paths: error.unwritten };
+			if (!data.base && data.unwritten.length === 0) {
+				await write(data);
 				return;
 			}
-			outcome = { tone: 'refused', message: refusal(error) };
+			shown = data;
+		} catch (cause) {
+			reportBackgroundError(cause);
+			outcome = { tone: 'refused', message: refusal({ name: '' }) };
+		} finally {
+			running = false;
+		}
+	}
+
+	/** Write the folder from the notes, over the list they approved. */
+	async function write(state: FolderState) {
+		running = true;
+		try {
+			const { data, error } = await pull({ state });
+			shown = undefined;
+			outcome =
+				error === null
+					? {
+							tone: 'held',
+							message: `${data.files} file${data.files === 1 ? '' : 's'} written to your Epicenter folder.`,
+						}
+					: { tone: 'refused', message: refusal(error) };
 		} finally {
 			running = false;
 		}
@@ -82,6 +110,8 @@
 				return 'Your Epicenter folder could not be written to. It may be full, read only, or already being written.';
 			case 'Unrenderable':
 				return `${error.failures?.length ?? 0} note(s) could not be written as files, so nothing was written. Nothing on this device changed.`;
+			case 'FolderChanged':
+				return 'Your folder changed while you were reading it. Read it again.';
 			default:
 				return 'Your notes could not be written to the folder.';
 		}
@@ -94,11 +124,9 @@
 	 * other end, and two renderers meant two answers to what a note is called.
 	 */
 	const wouldGo = $derived.by(() => {
-		if (unpushed === undefined) return '';
-		if (unpushed.kind === 'unwritten') {
-			return unpushed.paths.map((path) => `  ${path}`).join('\n');
-		}
-		return renderPlan(unpushed.plan, honeycrisp.tables.notes);
+		if (shown === undefined) return '';
+		if (!shown.base) return shown.unwritten.map((path) => `  ${path}`).join('\n');
+		return renderPlan(shown.plan, honeycrisp.tables.notes);
 	});
 
 </script>
@@ -110,7 +138,7 @@
 		class="justify-start gap-2 text-xs text-muted-foreground"
 		disabled={running}
 		tooltip="Write these notes into your Epicenter folder as files"
-		onclick={() => run(false)}
+		onclick={open}
 	>
 		<FolderDownIcon class="size-3.5" />
 		{running ? 'Writing files…' : 'Save notes as files'}
@@ -127,22 +155,29 @@
 </div>
 
 <AlertDialog.Root
-	open={unpushed !== undefined}
-	onOpenChange={(open) => {
-		if (!open) unpushed = undefined;
+	open={shown !== undefined}
+	onOpenChange={(isOpen) => {
+		if (!isOpen) shown = undefined;
 	}}
 >
-	<AlertDialog.Content class="max-w-2xl">
+	<AlertDialog.Content
+		class="max-w-2xl"
+		onOpenAutoFocus={(event) => {
+			// Enter pulls, the same way Enter pushes. Both verbs are one approval
+			// of a list a person just read (ADR-0341).
+			event.preventDefault();
+			confirm?.focus();
+		}}
+	>
 		<AlertDialog.Header>
 			<AlertDialog.Title>
-				{unpushed?.kind === 'unwritten'
-					? 'Your folder holds files Honeycrisp did not write'
-					: 'Your folder has changes Honeycrisp does not have'}
+				Save notes as files, and {wouldLose} edit{wouldLose === 1 ? '' : 's'} in your
+				folder go
 			</AlertDialog.Title>
 			<AlertDialog.Description>
-				{unpushed?.kind === 'unwritten'
-					? 'Nothing here wrote this folder, so nothing in it can be told apart from your notes. Saving replaces everything in it.'
-					: 'Saving replaces every file written last time, so these would go. Push folder edits back first if you want to keep them.'}
+				{shown?.base === false
+					? 'Nothing here wrote this folder, so nothing in it can be told apart from your notes. Saving replaces every file below.'
+					: 'Every file is written from your notes. These are the edits in your folder that have not been pushed back, and saving replaces them.'}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 
@@ -150,11 +185,14 @@
 			class="max-h-56 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed">{wouldGo}</pre>
 
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel>Leave the folder alone</AlertDialog.Cancel>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
+				bind:ref={confirm}
 				class={buttonVariants({ variant: 'destructive' })}
-				onclick={() => run(true)}>Discard and save</AlertDialog.Action
+				onclick={() => shown !== undefined && write(shown)}
 			>
+				Save all
+			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>

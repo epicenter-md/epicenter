@@ -57,12 +57,16 @@
 				outcome = { tone: 'refused', message: unavailable(error.name) };
 				return;
 			}
-			if (data.length === 0) {
+			if (!data.base) {
+				outcome = { tone: 'refused', message: unavailable('FolderUnwritten') };
+				return;
+			}
+			if (data.plan.length === 0) {
 				outcome = { tone: 'held', message: 'Your folder matches your notes.' };
 				return;
 			}
 			stale = false;
-			plan = data;
+			plan = data.plan;
 		} catch (cause) {
 			reportBackgroundError(cause);
 			outcome = { tone: 'refused', message: unavailable('') };
