@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Loading } from '@epicenter/ui/loading';
-	import { epicenter } from '#platform/epicenter';
+	import { epicenter } from '$lib/epicenter.svelte.js';
 	import AccountGate from './components/AccountGate.svelte';
 	import StoreShell from './components/StoreShell.svelte';
 

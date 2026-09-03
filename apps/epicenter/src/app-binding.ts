@@ -24,24 +24,31 @@
  * so by having no `definition` to pass rather than by failing at the call.
  */
 
-import { AppError, type EpicenterBinding, SecretError } from '@epicenter/app';
+import {
+	AppError,
+	type EpicenterBindingFactory,
+	SecretError,
+} from '@epicenter/app';
 import { Ok } from 'wellcrafted/result';
 import type { AppSecretOwner } from './app-secrets.ts';
 import type { BunAppStorage } from './app-storage.ts';
 
 export type HostBindingOptions = {
-	appId: string;
 	storage: BunAppStorage;
 	secrets: AppSecretOwner;
 };
 
+/**
+ * A function of `appId` rather than a built binding, on the same terms as the
+ * two window leaves: the handle resolves the id and hands it over, so the files
+ * and the keychain cannot be scoped to a different application than the store
+ * (ADR-0339).
+ */
 export function createHostBinding({
-	appId,
 	storage,
 	secrets,
-}: HostBindingOptions): EpicenterBinding {
-	return {
-		appId,
+}: HostBindingOptions): EpicenterBindingFactory {
+	return (appId) => ({
 		open: async (name) => {
 			try {
 				return Ok(await storage.open(appId, name));
@@ -82,5 +89,5 @@ export function createHostBinding({
 				}
 			},
 		},
-	};
+	});
 }

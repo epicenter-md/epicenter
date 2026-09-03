@@ -10,45 +10,69 @@ the handle supplies it.
 `apps/local-mail` is the app that uses this handle today, with no definition and
 no account: its whole surface is `sqlite` and `secrets`.
 
-The constructor is `createEpicenter`. It is not `createEpicenterClient`, which
-is the HTTP client in `packages/client` and a different concern with a different
-lifetime.
+The constructor is `createEpicenter`, one of it, at the root. It is not
+`createEpicenterClient`, which is the HTTP client in `packages/client` and a
+different concern with a different lifetime.
 
-## The runtime is the import path
+## The runtime is the binding's import path
+
+There is one `createEpicenter` and it serves every build. What varies by runtime
+is a Bun-owned file and a keychain, so that is what the runtime subpaths export:
+a binding, which an application selects through its own `#platform/binding` seam
+and composes in one file.
 
 ```ts
-import { createBrowserEpicenter } from '@epicenter/app/browser';
-// or: import { createDesktopEpicenter } from '@epicenter/app/desktop';
+// src/lib/platform/binding.browser.ts
+import type { EpicenterBindingFactory } from '@epicenter/app';
+import { createBrowserBinding } from '@epicenter/app/browser';
+
+export const binding: EpicenterBindingFactory = createBrowserBinding();
 ```
 
-Each runtime subpath exports its runtime-specific Epicenter constructor. The
-shared core is not a platform choice an application needs to make.
+```ts
+// src/lib/epicenter.ts, one file for every build
+import { createEpicenter } from '@epicenter/app';
+import { binding } from '#platform/binding';
+
+export const epicenter = createEpicenter({ appId, definition, account, binding });
+```
+
 There is no runtime sniff here and there must not be one: the desktop build runs
-in a WebView, so `typeof window` cannot tell it apart from a browser tab, and the
-two differ in exactly the ways that matter, which are a keychain and a Bun-owned
-file. An application selects its leaf through the `#platform/*` build condition
-the repository already uses for the auth and instance seams; a build that forgot
-to fails to resolve rather than quietly running the wrong owner.
+in a WebView, so `typeof window` cannot tell it apart from a browser tab. An
+application selects its leaf through the `#platform/*` build condition the
+repository already uses for the auth seam; a build that forgot to fails to
+resolve rather than quietly running the wrong owner.
 
 | Import | What it gives you |
 | --- | --- |
-| `@epicenter/app/browser` | `createBrowserEpicenter`, over this origin's OPFS and tab memory |
-| `@epicenter/app/desktop` | `createDesktopEpicenter`, over the trusted owner's files and the OS keychain |
-| `@epicenter/app` | the shared `createEpicenter` core, types, errors, and name mints |
+| `@epicenter/app` | `createEpicenter`, the types, the errors, and the name mints |
+| `@epicenter/app/browser` | `createBrowserBinding`, over this origin's OPFS and tab memory |
+| `@epicenter/app/desktop` | `createDesktopBinding`, over the trusted owner's files and the OS keychain |
 | `@epicenter/app/protocol` | the request and response shapes both ends of the desktop seam read |
 
-| Leaf | `sqlite` | `secrets` |
+| Binding | `sqlite` | `secrets` |
 | --- | --- | --- |
 | browser | SQLite WASM over this origin's OPFS | tab memory, forgotten on close |
 | desktop | the trusted owner, over `/api/app-storage` | the OS keychain |
+| host | the Bun process's own connection | the OS keychain, directly |
 
-Neither leaf carries the store. It is client-owned in every runtime (ADR-0226,
+No binding carries the store. It is client-owned in every runtime (ADR-0226,
 ADR-0227), so `data` is composed above the seam rather than through it.
+
+**A binding is a function of `appId`, not a value beside one.** The handle
+resolves the id and hands it over, so the files and the keychain cannot be
+scoped to a different application than the store. That mismatch is the pair
+ADR-0339 is named for, and this is what makes it unrepresentable rather than
+checked.
+
+The Bun host is the third implementation of `EpicenterBinding`
+(`apps/epicenter/src/app-binding.ts`), so an application's background half runs
+the same code against the same handle (ADR-0323).
 
 ## The surface
 
 ```ts
-const epicenter = createBrowserEpicenter({ appId, definition, account });
+const epicenter = createEpicenter({ appId, definition, account, binding });
 
 epicenter.appId              // string, frozen
 epicenter.sqlite.open(name)  // Promise<Result<AppSqliteDatabase, AppError>>

@@ -83,12 +83,25 @@ describe('the runtime is the import path', () => {
 		// silent failure this file exists for: the host-served build would reach
 		// for OPFS and tab memory instead of the Bun-owned files and the
 		// keychain, and still build and still start.
-		expect(await leafSource('#platform/epicenter', 'default')).toContain(
+		expect(await leafSource('#platform/binding', 'default')).toContain(
 			"from '@epicenter/app/browser'",
 		);
-		expect(await leafSource('#platform/epicenter', 'epicenter-host')).toContain(
+		expect(await leafSource('#platform/binding', 'epicenter-host')).toContain(
 			"from '@epicenter/app/desktop'",
 		);
+	});
+
+	test('the seam holds the binding and nothing composed from it', async () => {
+		// The whole point of this seam is that it holds only what varies. A leaf
+		// that composed the handle would be the application's one `epicenter`
+		// defined twice, and "there is exactly one" would rest on nobody
+		// importing a leaf directly (ADR-0339).
+		for (const condition of ['default', 'epicenter-host']) {
+			const source = await leafSource('#platform/binding', condition);
+			expect({ condition, composes: source.includes('createEpicenter') }).toEqual(
+				{ condition, composes: false },
+			);
+		}
 	});
 });
 

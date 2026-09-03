@@ -9,14 +9,18 @@ Design authority: [ADR-0339](../../docs/adr/0339-an-application-creates-one-epic
 
 ## One handle, one URL, and the generation is nobody's to choose
 
-`#platform/epicenter` is where this application's notes come from
-(ADR-0339). Its two leaves differ in one line, the runtime subpath:
+`$lib/epicenter.svelte.ts` is where this application's notes come from
+(ADR-0339). There is one of it, for every build:
 
 ```ts
-import { epicenter } from '#platform/epicenter';
+import { epicenter } from '$lib/epicenter.svelte.js';
 ```
 
-`definition` and `account` arrive together in the platform leaf, which IS the store: an authority
+`#platform/binding` holds the only thing that varies, which is who owns the
+SQLite files and the keychain. Honeycrisp uses neither, and still takes the
+owner its platform actually has.
+
+`definition` and `account` arrive together in that one file, which IS the store: an authority
 mints every generation (ADR-0336), so there is no accountless notebook.
 Nothing opens at construction. `epicenter.data` is a lazy getter, so a
 signed-out person meeting the gate pays no Web Lock, no IndexedDB, and no
@@ -43,7 +47,7 @@ Opening is cache-first and never waits on a socket. A device holding a copy is
 usable offline; one that holds none fetches the generation whole before
 returning, so a fresh account never renders empty while its state is arriving.
 
-The leaf exports ONE name, `honeycrisp`, which is `fromEpicenter` composed over
+That file exports ONE name, `epicenter`, which is `fromEpicenter` composed over
 the handle. Its one member is `boot`: `signed-out | opening | ready | failed`,
 with the store on `ready` and the error and the erase on `failed`. Signed-out is answered before anything
 opens, and it is a state rather than a failure, so the gate never sniffs an
@@ -123,7 +127,7 @@ after showing the paths once for the folder rather than once per file.
 **They differ in nothing that concerns data.** Every build opens the same
 client-owned store through the same handle and owns it; the desktop host serves
 the bundle and brokers the credential and owns none of it (ADR-0226). What
-`#platform/epicenter` selects is the runtime the handle's SQLite and secrets are
+`#platform/binding` selects is the runtime the handle's SQLite and secrets are
 built over, which Honeycrisp uses neither of.
 There used to be a platform seam where the hosted build reached the host's
 shared `epicenter.sqlite3`, and ADR-0226 refused it.
@@ -159,10 +163,13 @@ only the default one is checked by an editor.
   chose that number and no link carries it. When importing a replica ships, an
   import ends in a document reload and a device holding an older number is told
   a newer one exists (ADR-0281); neither is a route parameter.
-- Do not add a `#platform/*` seam for data. `#platform/epicenter` selects the
+- Do not add a `#platform/*` seam for data. `#platform/binding` selects the
   RUNTIME the handle is built over, which is a keychain and a Bun-owned file;
   every build opens its own store either way, and a seam over the data is the
   thing ADR-0226 refused.
+- Do not compose the handle inside a platform leaf. The seam holds the binding
+  and nothing built from it, so the application's one `epicenter` is defined
+  once rather than once per build (ADR-0339).
 - Do not write a note's `title` or `updatedAt` from anywhere but
 	  `notes.openContent`'s subscription. The store writes no derived fields and no
 	  timestamps (ADR-0297), so those are Honeycrisp's, hung on the content node's

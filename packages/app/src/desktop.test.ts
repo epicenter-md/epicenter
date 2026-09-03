@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { createDesktopEpicenter } from './desktop.js';
-import { databaseName, secretLabel } from './index.js';
+import { createDesktopBinding } from './desktop.js';
+import { createEpicenter, databaseName, secretLabel } from './index.js';
 import type { AppStorageRequest } from './protocol.js';
 
 function ownerFor(answer: (request: AppStorageRequest) => Response): {
@@ -26,10 +26,12 @@ test('statements and secrets reach the owner scoped by application', async () =>
 		}
 		return Response.json({ kind: request.kind });
 	});
-	const epicenter = createDesktopEpicenter({
+	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
-		baseURL: 'http://127.0.0.1:1',
-		fetch: owner.fetch,
+		binding: createDesktopBinding({
+			baseURL: 'http://127.0.0.1:1',
+			fetch: owner.fetch,
+		}),
 	});
 
 	const sqlite = await epicenter.sqlite.open(databaseName('mail'));

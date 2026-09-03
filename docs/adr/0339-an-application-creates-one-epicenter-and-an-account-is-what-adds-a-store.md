@@ -6,7 +6,7 @@
 - **Amends:** [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md) at "the composition is `openData`, `openSqlite`, and `secrets`" and at the handle's argument list. The scoped handle, its one name, and its refusal of `createAppRuntime` stand.
 - **Relates:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) (account and store are one yes/no), [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md), [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md), [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md), [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md)
 - **2026-09-02, amended in place:** every handle now states its opening `appId` explicitly, including when it matches `definition.id`. The one-handle and one-store decisions stand; only the constructor convenience default is withdrawn.
-- **2026-09-03, amended in place:** browser and desktop subpaths now export runtime-specific constructors that build concrete bindings. The shared core verifies that a binding carries the same `appId` as the handle.
+- **2026-09-03, amended in place:** the browser and desktop subpaths export a binding, which is a function of `appId`, and an application composes the handle in one file. Two other shapes were built and withdrawn the same day; the amendment records both.
 
 ## Context
 
@@ -45,14 +45,15 @@ declares none, has no `@epicenter/auth` dependency, and uses `openSqlite` and
 
 **An application creates one epicenter, and an account is what adds a store.**
 
-The runtime is the import path. The runtime constructor enters the shared core;
-the application never constructs or passes a binding.
+The runtime is the binding's import path. One `createEpicenter` serves every
+build, and the seam holds the binding it enters with.
 
 ```ts
-import { createBrowserEpicenter } from '@epicenter/app/browser';
+import { createEpicenter } from '@epicenter/app';
+import { binding } from '#platform/binding';
 
-createBrowserEpicenter({ appId }): Epicenter
-createBrowserEpicenter({ appId, definition, account }): Epicenter<typeof definition>
+createEpicenter({ appId, binding }): Epicenter
+createEpicenter({ appId, binding, definition, account }): Epicenter<typeof definition>
 ```
 
 ```ts
@@ -110,9 +111,10 @@ is one change made at once.** `data` becomes a record keyed by the
 application's own words rather than by data ids:
 
 ```ts
-createBrowserEpicenter({
+createEpicenter({
 	appId: VOCAB_APP_ID,          // stated again: two definitions, no single default
 	account,
+	binding,
 	data: { own: vocabDefinition, notes: honeycrispDefinition },
 })
 epicenter.data.own
@@ -277,78 +279,104 @@ it. That record is
 - The generation stops being a route parameter. `data` resolves it, so
   `/account/[generation]` and the `/account` page that only redirects into it
   both go. Nobody chose that number and no link carries it.
-- An application constructs nothing from the `@epicenter/app` root: every
-  `createEpicenter` an application calls lives under a runtime subpath. The root
-  is not types only, which this record claimed and the build corrected twice
-  over. It holds the errors, the two name mints and their guards, and the
-  binding-taking `createEpicenter` the Bun host's leaf composes
+- The root is not types only, which this record claimed and the build corrected
+  twice over. It holds the one `createEpicenter` every build calls, the errors,
+  the two name mints and their guards, and `EpicenterBindingFactory`, the
+  contract every seam leaf annotates against. The runtime subpaths hold a
+  binding each, and the Bun host is the third
   (`apps/epicenter/src/app-binding.ts`, which nothing in `main.ts` wires yet:
   ADR-0323's background half is a leaf and a test).
 - ADR-0337's folder verbs stay functions over an opened store rather than
   methods on the handle, because they belong to the store's address.
 
-## Amendment, 2026-09-02: the runtime is the binding's import path, not the handle's
+## Amendment, 2026-09-03: the runtime is the binding's import path, and the binding is a function of the id
 
 The decision above is unchanged. An application still creates one epicenter, an
 account is still what adds a store, one id still scopes every capability, and
-the runtime is still a build fact rather than a `typeof window` test. What moved
-is which module the build selects.
+the runtime is still a build fact rather than a `typeof window` test. What this
+amendment settles is which module the build selects, and it is written after
+the question was answered three different ways in one evening.
 
-**`@epicenter/app/browser` and `@epicenter/app/desktop` export a binding.** They
-each used to export a `createEpicenter` that supplied their own, which made the
-runtime a property of the whole handle:
+**`@epicenter/app/browser` and `@epicenter/app/desktop` export a binding, and
+it is a function of `appId`.**
 
 ```ts
-import { createBrowserEpicenter } from '@epicenter/app/browser';
-import { createDesktopEpicenter } from '@epicenter/app/desktop';
+// src/lib/platform/binding.browser.ts, the whole leaf
+import type { EpicenterBindingFactory } from '@epicenter/app';
+import { createBrowserBinding } from '@epicenter/app/browser';
 
-createBrowserEpicenter({ appId, definition, account }): Epicenter<typeof definition>
-createDesktopEpicenter({ appId, definition, account }): Epicenter<typeof definition>
+export const binding: EpicenterBindingFactory = createBrowserBinding();
 ```
 
-The cost of the old shape was paid by the application that needs it least.
-Honeycrisp owns no SQLite file and keeps no secret: grep its source for either
-and there is nothing. It carried `#platform/epicenter` and two leaf files that
-were identical except for one import line, because the only way to obtain a
-handle was through a runtime subpath. Its store never varied by runtime, and it
-inherited a platform axis to reach a keychain it does not use.
-
-So the seam holds the thing that actually varies. `#platform/epicenter` exports
-the runtime-specific constructor, and everything composed from it lives in one
-file for every build:
-
 ```ts
-// apps/honeycrisp/src/lib/epicenter.svelte.ts
-const handle = createBrowserEpicenter({ appId, definition, account: auth });
+// src/lib/epicenter.svelte.ts, one file for every build
+const handle = createEpicenter({ appId, definition, account: auth, binding });
 export const epicenter = fromEpicenter(handle);
 if (import.meta.hot) import.meta.hot.dispose(() => void handle.close());
 ```
 
-**The binding is core-only.** Runtime constructors build a concrete binding for
-the explicit `appId` and pass it to the shared core. Application code does not
-carry a callback or construct a binding separately. The host can still call the
-core with its own concrete binding because it owns that runtime directly.
-memory on the desktop, which is a durability difference nothing can observe.
+**The seam holds only what varies, and a binding is the only thing that does.**
+Nothing else about an epicenter is a platform fact: the store is client-owned in
+every build (ADR-0226, ADR-0227), the definition is one file, and the account is
+selected by the seam next door. So the composition, the singleton, and the one
+call that ends it live in one file per application, where they cannot drift
+between two leaves that differ on an import line.
 
-**The leaves are duplicated values, not duplicated singletons.** Two files that
-each composed the handle would each define the application's one `epicenter`,
-and the invariant "there is exactly one" would rest on nobody importing a leaf
-directly. Two files that export a binding cannot drift into two of anything.
+**A binding is a function of the id rather than a value beside one.** The
+mismatched pair this record is named for is a handle scoped to one application
+holding a binding scoped to another. No type can forbid two strings being
+different, so the fix is to stop having two: `createEpicenter` resolves the id
+and hands it to the leaf. Nothing is checked because nothing can disagree.
 
-Three lines in this record are corrected by the amendment:
+**Honeycrisp is the application that pays for getting this wrong**, and it is
+the one that needs the seam least. It owns no SQLite file and keeps no secret:
+grep its source for either and there is nothing. Whatever the seam holds,
+Honeycrisp carries it, so a seam holding the whole handle made an application
+with no files and no secrets inherit a platform axis to reach a keychain it
+does not use.
 
-- "The runtime is the import path" now names the runtime-specific constructor.
-  The common core remains at the root, and the application enters through its
-  platform constructor.
-- The root's contents were already more than types; they now hold the common
-  constructor that the two runtime constructors compose.
+### Two other shapes were built first, and both lost
+
+They are recorded because each was reasonable, each shipped, and each has an
+argument that reads well until it meets the tree.
+
+**The runtime constructor** (`createBrowserEpicenter`, `createDesktopEpicenter`,
+each supplying its own binding). It made the runtime a property of the whole
+handle. Its cost was paid three times over: nine overload declarations and three
+`as Epicenter<TDefinition>` casts to restate one signature per runtime, and, once
+a binding became a value again, a `readonly appId` on `EpicenterBinding` and a
+`binding.appId !== appId` throw inside the core. That throw is this record's
+title defeated: the pair became representable again and was answered with a
+runtime check instead of a type. Its stated reason, that a function forced
+application code "to pass a callback solely to delay construction", was never
+true of any tree. The application wrote `binding`, an identifier imported from a
+seam, exactly the way it writes `auth`.
+
+**The composed leaf**, where `#platform/epicenter` exported the finished
+`epicenter` and the composition file was deleted. It buys one real thing: the
+word `binding` never appears in application code. It costs the invariant. Two
+files that each compose the handle each define the application's one
+`epicenter`, so "there is exactly one" rests on nobody importing a leaf
+directly, and the two leaves are then twelve identical lines that no type
+compares. The seam test could only assert that a leaf contained an import
+specifier; a leaf that dropped `fromEpicenter`, dropped its hot-reload disposal,
+or exported a differently shaped object would build and start.
+
+The gains are not in tension, which is why this shape takes both. The binding
+factory lives inside `packages/app` and its leaves; an application names
+`binding` once, in one file, and never learns what is behind it.
+
+**Every leaf is annotated against `EpicenterBindingFactory`**, so a leaf that
+drifts fails to typecheck rather than at a person's runtime, and
+`platform-selection.test.ts` asserts that no leaf composes a handle.
+
 
 ## Considered alternatives
 
-- **One runtime-neutral constructor for applications.** Refused. It forced
-  application code to pass a callback solely to delay construction of the
-  platform binding. `createBrowserEpicenter` and `createDesktopEpicenter` keep
-  the runtime choice at the import boundary while sharing the core lifecycle.
+- **A runtime-specific constructor per platform** (`createBrowserEpicenter`,
+  `createDesktopEpicenter`). Built, then withdrawn; the amendment above records
+  why. The short version is nine overloads, three casts, and a runtime check
+  standing in for a type.
 - **`AppStorage` beside `Epicenter`, as two constructors.** Refused. The base
   name teaches the wrong lesson: a developer would learn "storage" first and
   "Epicenter" as the upgrade, when the reference application has all four parts
@@ -397,7 +425,7 @@ Three lines in this record are corrected by the amendment:
   everything after it forks into two shapes permanently, and a reader of the type
   holds two pictures of what an epicenter is. The saving is one word at one call
   site.
-- **A binding callback that receives the application id later.** Refused. It
-  added indirection only to avoid constructing the platform binding at the same
-  boundary as the handle. Runtime-specific constructors now build a concrete
-  binding for the explicit id before entering the shared core.
+- **A built binding passed beside an `appId`.** Refused, and it is the
+  alternative this record exists to refuse. Two strings that must match and no
+  type that can say so; the only defence left is a runtime throw, which is the
+  invariant this record replaced with a signature.

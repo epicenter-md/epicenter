@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-31
-- **Built.** The runtime is selected by the `#platform/epicenter` build condition rather than by a runtime test, because a desktop build runs in a WebView and nothing observable there tells it apart from a browser tab.
+- **Built.** The runtime is selected by the `#platform/binding` build condition rather than by a runtime test, because a desktop build runs in a WebView and nothing observable there tells it apart from a browser tab.
 - **Amended by:** [ADR-0324](0324-a-database-address-is-its-data-id-and-generation-and-the-definition-declares-its-authority.md) at the desktop spelling only: `data/<data-id>/` gains a format-version segment above the data id and a generation below it, so the path reads `data/v4/<data-id>/<n>.sqlite`. The per-app scoping and the logical identity this record fixed are unchanged.
 - **Amended by:** [ADR-0314](0314-an-app-is-one-directory-and-installation-is-a-rename.md), which extends the per-app layout to the app's bundle and its blobs. The `data/<data-id>/` and `sqlite/<store-name>` paths this record fixed are unchanged.
 - **Amended by:** [ADR-0312](0312-a-sqlite-handle-is-all-run-and-batch-and-a-transaction-never-crosses-a-process-boundary.md) at two bounded points. Withdrawn: the citation of ADR-0275 as the intended browser SQLite medium, which is superseded; Epicenter Data's browser medium is IndexedDB. Narrowed: the platform's role in browser SQLite is opening only. The address layout stands. (ADR-0308 held this amendment first; ADR-0312 supersedes it and carries it forward.)

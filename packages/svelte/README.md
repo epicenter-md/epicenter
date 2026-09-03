@@ -72,12 +72,13 @@ The handle is taken structurally, the way `fromData` takes opened data, so this
 package does not depend on `@epicenter/app`.
 
 ```ts
-// apps/<app>/src/lib/platform/epicenter.browser.svelte.ts
-import { createBrowserEpicenter } from '@epicenter/app/browser';
+// apps/<app>/src/lib/epicenter.svelte.ts, one file for every build
+import { createEpicenter } from '@epicenter/app';
 import { fromEpicenter } from '@epicenter/svelte';
+import { binding } from '#platform/binding';
 
 export const notes = fromEpicenter(
-	createBrowserEpicenter({ appId, definition, account: auth }),
+	createEpicenter({ appId, definition, account: auth, binding }),
 );
 ```
 

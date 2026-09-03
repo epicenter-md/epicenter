@@ -21,7 +21,7 @@ browser as a static site.
 Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/data/index.ts`) and opens it as a store the app owns:
 
 ```txt
-createEpicenter({ appId, definition, account })           the runtime-selected handle
+createEpicenter({ appId, definition, account, binding })  the handle, composed once
 epicenter.data                                            the store, opened on first read
 epicenter.eraseReplica()                                  the one deleting verb
 data.tables.notes.rows                                    synchronous from here on

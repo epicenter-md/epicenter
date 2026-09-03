@@ -5,9 +5,9 @@
 	"version": "0.0.1",
 	"type": "module",
 	"imports": {
-		"#platform/epicenter": {
-			"epicenter-host": "./src/lib/platform/epicenter.epicenter-host.ts",
-			"default": "./src/lib/platform/epicenter.browser.ts"
+		"#platform/binding": {
+			"epicenter-host": "./src/lib/platform/binding.epicenter-host.ts",
+			"default": "./src/lib/platform/binding.browser.ts"
 		},
 		"#platform/gmail-authorization": {
 			"epicenter-host": "./src/lib/platform/gmail-authorization.epicenter-host.ts",

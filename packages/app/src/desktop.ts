@@ -13,9 +13,10 @@
  * party whose answer could mean anything, and a seam with one implementation
  * is not a seam.
  *
- * **This leaf builds the desktop half of the handle.** The common constructor
- * remains in `@epicenter/app`; this leaf supplies the trusted owner's files and
- * keychain without putting that platform choice in application code.
+ * **This leaf builds a binding, not a handle.** Nothing about an epicenter
+ * varies by runtime; the trusted owner's files and keychain do. So the leaf is
+ * what varies, an application composes it, and one `createEpicenter` in
+ * `@epicenter/app` serves every build.
  *
  * **SQLite is a Bun-owned file.** The owner maps `(appId, name)` to a path
  * below the one Epicenter data root; the application sends statements and never
@@ -27,17 +28,12 @@
  * entry. Nothing durable lands in the page.
  */
 
-import type { DataDefinition } from '@epicenter/data/definition';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	AppError,
 	type AppSqliteDatabase,
-	createEpicenter,
-	type Epicenter,
-	type EpicenterBinding,
-	type EpicenterDataOptions,
-	type EpicenterScopeOptions,
+	type EpicenterBindingFactory,
 	SecretError,
 	type SecretStore,
 } from './index.js';
@@ -48,60 +44,41 @@ import {
 	isAppStorageResponse,
 } from './protocol.js';
 
-type DesktopBindingOptions = {
+export type CreateDesktopBindingOptions = {
 	/** The trusted origin that owns the files and the keychain entries. */
 	baseURL?: string;
 	fetch?: typeof globalThis.fetch;
 };
 
-export type CreateDesktopEpicenterOptions = EpicenterScopeOptions &
-	DesktopBindingOptions;
-
 /**
- * One binding over what the trusted origin owns for one application.
+ * One binding over what the trusted origin owns, for whichever application
+ * asks.
+ *
+ * A function of `appId` rather than a built binding, because that is the shape
+ * `createEpicenter` takes: the handle resolves the id and hands it over, so the
+ * files and the keychain cannot be scoped to a different application than the
+ * store (ADR-0339).
+ *
+ * The origin and the fetch are read inside the returned function rather than
+ * here, so a seam leaf evaluated at module scope does not refuse a build before
+ * anything asked it for a handle.
  */
-function createDesktopBinding(
-	appId: string,
-	options: DesktopBindingOptions = {},
-): EpicenterBinding {
-	const request = createOwnerRequest(options);
-	return {
-		appId,
-		open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
-		delete: (name) =>
-			unwrap(
-				request({ kind: 'sqlite-delete', appId, name }),
-				'sqlite-delete',
-				() => undefined,
-			),
-		secrets: createKeychainSecrets(request, appId),
+export function createDesktopBinding(
+	options: CreateDesktopBindingOptions = {},
+): EpicenterBindingFactory {
+	return (appId) => {
+		const request = createOwnerRequest(options);
+		return {
+			open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
+			delete: (name) =>
+				unwrap(
+					request({ kind: 'sqlite-delete', appId, name }),
+					'sqlite-delete',
+					() => undefined,
+				),
+			secrets: createKeychainSecrets(request, appId),
+		};
 	};
-}
-
-export function createDesktopEpicenter(
-	options: CreateDesktopEpicenterOptions,
-): Epicenter;
-export function createDesktopEpicenter<
-	const TDefinition extends DataDefinition,
->(
-	options: CreateDesktopEpicenterOptions & EpicenterDataOptions<TDefinition>,
-): Epicenter<TDefinition>;
-export function createDesktopEpicenter<
-	const TDefinition extends DataDefinition,
->(
-	options: CreateDesktopEpicenterOptions &
-		Partial<EpicenterDataOptions<TDefinition>>,
-): Epicenter<TDefinition> {
-	const { appId, definition, account } = options;
-	return createEpicenter({
-		appId,
-		binding: createDesktopBinding(appId, {
-			baseURL: options.baseURL,
-			fetch: options.fetch,
-		}),
-		...(definition === undefined ? {} : { definition }),
-		...(account === undefined ? {} : { account }),
-	}) as Epicenter<TDefinition>;
 }
 
 type OwnerRequest = (
@@ -111,7 +88,7 @@ type OwnerRequest = (
 function createOwnerRequest({
 	baseURL = globalThis.location?.origin,
 	fetch: fetchImplementation = globalThis.fetch,
-}: DesktopBindingOptions): OwnerRequest {
+}: CreateDesktopBindingOptions): OwnerRequest {
 	if (!baseURL || !fetchImplementation) {
 		throw new Error('The desktop binding needs an origin and fetch.');
 	}

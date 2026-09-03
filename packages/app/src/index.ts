@@ -7,19 +7,21 @@
  * SQLite, a native path, a keychain, or a host IPC mechanism, because none of
  * those names appear on this surface.
  *
- * The browser and desktop subpaths export runtime-specific constructors. They
- * enter this shared lifecycle core with a concrete, app-scoped binding. There
- * is no `typeof window` test here and there must not be one: the desktop build
- * runs in a WebView, so a runtime sniff cannot tell it apart from a browser
- * tab. A build that forgot to declare its condition fails to resolve rather
- * than silently running the wrong owner.
+ * There is one `createEpicenter` and it serves every build. What varies by
+ * runtime is a Bun-owned file and a keychain, so that is what the browser and
+ * desktop subpaths export: a binding, which an application selects through its
+ * own `#platform/binding` seam and passes here. There is no `typeof window`
+ * test and there must not be one: the desktop build runs in a WebView, so a
+ * runtime sniff cannot tell it apart from a browser tab. A build that forgot
+ * to declare its condition fails to resolve rather than silently running the
+ * wrong owner.
  *
  * The store is client-owned in every runtime (ADR-0226, ADR-0227), so it is
- * composed here rather than behind the runtime seam. The runtime leaves own
- * only the capabilities that actually differ: a Bun-owned file and a
- * keychain.
+ * composed here rather than behind the runtime seam. Nothing else about an
+ * epicenter varies, which is why the composition lives in one file per
+ * application rather than once per platform leaf.
  *
- * The binding is also what the Bun host's own leaf composes
+ * The binding is also what the Bun host's own leaf builds
  * (`apps/epicenter/src/app-binding.ts`), with a storage root and a secrets
  * owner its test swaps. Nothing in `main.ts` composes it yet, so the host's
  * background half (ADR-0323) is a leaf and a test rather than a running
@@ -177,12 +179,20 @@ export type SecretStore = {
  * and that is all that is left here.
  */
 export type EpicenterBinding = {
-	/** The application scope used by every capability in this binding. */
-	readonly appId: string;
 	open(name: DatabaseName): Promise<Result<AppSqliteDatabase, AppError>>;
 	delete(name: DatabaseName): Promise<Result<void, AppError>>;
 	secrets: SecretStore;
 };
+
+/**
+ * What a `#platform/binding` leaf exports, and what `createEpicenter` takes.
+ *
+ * A function of `appId` rather than a built binding, so the files and the
+ * keychain cannot be scoped to a different application than the store. It is
+ * named because it is the seam's contract: every leaf annotates against it, so
+ * a leaf that drifts fails to typecheck rather than at a person's runtime.
+ */
+export type EpicenterBindingFactory = (appId: string) => EpicenterBinding;
 
 /**
  * The store half of the handle: an application's one definition, and the
@@ -209,7 +219,7 @@ export type EpicenterDataOptions<TDefinition extends DataDefinition> = {
 	account: AuthClient;
 };
 
-export type EpicenterScopeOptions = {
+export type CreateEpicenterOptions = {
 	/**
 	 * What this application owns ON THIS DEVICE: its IndexedDB prefix, its
 	 * SQLite files, and its keychain scope.
@@ -217,21 +227,20 @@ export type EpicenterScopeOptions = {
 	 * The application whose local files, secrets, and replicas this handle
 	 * scopes. State it explicitly even when it matches `definition.id`: the
 	 * opening application is an independent part of a store address
-	 * (ADR-0324), and making it explicit keeps every constructor honest about
+	 * (ADR-0324), and making it explicit keeps the constructor honest about
 	 * the scope it is opening.
 	 */
 	appId: string;
-};
-
-export type CreateEpicenterOptions = EpicenterScopeOptions & {
 	/**
-	 * The runtime capability owner, already scoped to `appId`.
+	 * The runtime leaf, built for the id this handle resolved.
 	 *
-	 * Runtime leaves construct this value. Keeping it concrete means the
-	 * application does not pass a callback merely to thread its id into the
-	 * platform owner.
+	 * A function rather than a value, so the two cannot disagree. A built
+	 * binding beside an `appId` is the mismatched pair ADR-0339 is named for:
+	 * the handle scoped its store to one application and the binding scoped
+	 * the files and the keychain to another, and it compiled. Taking the id
+	 * from one place makes that unrepresentable rather than checked.
 	 */
-	binding: EpicenterBinding;
+	binding: EpicenterBindingFactory;
 };
 
 /**
@@ -328,12 +337,7 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 	if (!isProtocolAppId(appId)) {
 		throw new Error(AppError.InvalidAppId({ appId }).error.message);
 	}
-	const { binding } = options;
-	if (binding.appId !== appId) {
-		throw new Error(
-			`The Epicenter binding is scoped to '${binding.appId}', not '${appId}'.`,
-		);
-	}
+	const binding = options.binding(appId);
 
 	const capabilities = {
 		appId,

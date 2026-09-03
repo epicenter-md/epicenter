@@ -7,12 +7,8 @@ import {
 	secretLabel,
 } from './index.js';
 
-function bindingFor(
-	calls: string[],
-	appId = 'so.epicenter.test',
-): EpicenterBinding {
-	return {
-		appId,
+function bindingFor(calls: string[]): (appId: string) => EpicenterBinding {
+	return () => ({
 		open: async (name) => {
 			calls.push(name);
 			return Ok({
@@ -30,7 +26,7 @@ function bindingFor(
 			get: async () => Ok(null),
 			delete: async () => Ok(undefined),
 		},
-	};
+	});
 }
 
 test('creates a handle scoped to one application', async () => {
@@ -89,12 +85,15 @@ test('a name is checked where it is minted, not on every call', () => {
 });
 
 test('the application id is explicit and independent from the definition id', () => {
+	// One id, threaded into the binding by the handle. There is nothing to
+	// check, because the binding is a function of the id rather than a value
+	// built beside one (ADR-0339).
 	const definition = { id: 'so.epicenter.notes' } as never;
 	const account = {} as never;
 	expect(
 		createEpicenter({
 			appId: 'so.epicenter.notes',
-			binding: bindingFor([], 'so.epicenter.notes'),
+			binding: bindingFor([]),
 			definition,
 			account,
 		}).appId,
@@ -102,7 +101,7 @@ test('the application id is explicit and independent from the definition id', ()
 	expect(
 		createEpicenter({
 			appId: 'so.epicenter.reader',
-			binding: bindingFor([], 'so.epicenter.reader'),
+			binding: bindingFor([]),
 			definition,
 			account,
 		}).appId,
@@ -115,14 +114,6 @@ test('an application id this platform cannot file refuses at construction', () =
 	).toThrow('is not valid');
 });
 
-test('a binding cannot belong to another application', () => {
-	expect(() =>
-		createEpicenter({
-			appId: 'so.epicenter.other',
-			binding: bindingFor([]),
-		}),
-	).toThrow("scoped to 'so.epicenter.test'");
-});
 
 test('definition and account are both required when adding a store', () => {
 	const binding = bindingFor([]);

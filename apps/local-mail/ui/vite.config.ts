@@ -32,7 +32,7 @@ function denyFramingInDev(): Plugin {
 export default defineConfig({
 	plugins: [sveltekit(), tailwindcss(), denyFramingInDev()],
 	resolve: {
-		// Build-time platform DI over `#platform/epicenter`. The spread is
+		// Build-time platform DI over `#platform/binding`. The spread is
 		// load-bearing: custom conditions REPLACE Vite's defaults, so a seam
 		// mistake fails at build time rather than at a person's runtime.
 		...(isEpicenterHost && {

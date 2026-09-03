@@ -20,7 +20,6 @@ async function hostHandle() {
 		epicenter: createEpicenter({
 			appId: APP,
 			binding: createHostBinding({
-				appId: APP,
 				storage,
 				secrets: createProcessMemoryAppSecrets(),
 			}),

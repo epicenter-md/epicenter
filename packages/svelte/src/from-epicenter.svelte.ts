@@ -22,7 +22,7 @@
  *
  * ```ts
  * // apps/<app>/src/lib/epicenter.svelte.ts, one file for every build
- * const handle = createBrowserEpicenter({ appId, definition, account: auth });
+ * const handle = createEpicenter({ appId, definition, account: auth, binding });
  * export const epicenter = fromEpicenter(handle);
  * ```
  *

@@ -31,6 +31,7 @@ Everything is reached through one scoped handle (ADR-0316):
 ```ts
 const epicenter = createEpicenter({
 	appId: 'so.epicenter.local-mail',
+	binding,
 });
 ```
 
