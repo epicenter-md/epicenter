@@ -2,15 +2,26 @@
  * `#platform/epicenter` for the web and standalone builds.
  *
  * OPFS files and secrets that live exactly as long as the tab (ADR-0310).
- * Honeycrisp owns no file and keeps no secret today, so nothing here is ever
- * called; it is passed because a handle scopes its files and its keychain to
- * the same application as its store, and the id it does that with comes from
- * one place (ADR-0339).
+ * The leaf owns the complete application surface: runtime construction,
+ * account and definition composition, Svelte adaptation, and hot-reload
+ * disposal. The other leaf has the same shape with a different owner.
  *
- * The seam holds only the line that differs. Everything composed from it lives
- * in `$lib/epicenter.svelte.ts`, once, for both builds.
  */
 
 import { createBrowserEpicenter } from '@epicenter/app/browser';
+import { fromEpicenter } from '@epicenter/svelte';
+import { auth } from '#platform/auth';
+import { honeycrispDefinition } from '$lib/data/index.js';
 
-export const createEpicenter = createBrowserEpicenter;
+const handle = createBrowserEpicenter({
+	appId: honeycrispDefinition.id,
+	definition: honeycrispDefinition,
+	account: auth,
+});
+
+export const epicenter = fromEpicenter(handle);
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => void handle.close());
+	import.meta.hot.accept(() => import.meta.hot?.invalidate());
+}

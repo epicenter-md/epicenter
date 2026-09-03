@@ -7,5 +7,6 @@
  */
 
 import { createBrowserEpicenter } from '@epicenter/app/browser';
+import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 
-export const createEpicenter = createBrowserEpicenter;
+export const epicenter = createBrowserEpicenter({ appId: LOCAL_MAIL_APP_ID });

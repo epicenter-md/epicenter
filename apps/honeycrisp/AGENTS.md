@@ -13,16 +13,10 @@ Design authority: [ADR-0339](../../docs/adr/0339-an-application-creates-one-epic
 (ADR-0339). Its two leaves differ in one line, the runtime subpath:
 
 ```ts
-export const honeycrisp = fromEpicenter(
-	createEpicenter({
-		appId: honeycrispDefinition.id,
-		definition: honeycrispDefinition,
-		account: auth,
-	}),
-);
+import { epicenter } from '#platform/epicenter';
 ```
 
-`definition` and `account` arrive together, which IS the store: an authority
+`definition` and `account` arrive together in the platform leaf, which IS the store: an authority
 mints every generation (ADR-0336), so there is no accountless notebook.
 Nothing opens at construction. `epicenter.data` is a lazy getter, so a
 signed-out person meeting the gate pays no Web Lock, no IndexedDB, and no

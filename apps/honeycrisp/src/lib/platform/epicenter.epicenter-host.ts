@@ -13,5 +13,19 @@
  */
 
 import { createDesktopEpicenter } from '@epicenter/app/desktop';
+import { fromEpicenter } from '@epicenter/svelte';
+import { auth } from '#platform/auth';
+import { honeycrispDefinition } from '$lib/data/index.js';
 
-export const createEpicenter = createDesktopEpicenter;
+const handle = createDesktopEpicenter({
+	appId: honeycrispDefinition.id,
+	definition: honeycrispDefinition,
+	account: auth,
+});
+
+export const epicenter = fromEpicenter(handle);
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => void handle.close());
+	import.meta.hot.accept(() => import.meta.hot?.invalidate());
+}
