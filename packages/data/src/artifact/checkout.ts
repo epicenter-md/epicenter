@@ -193,19 +193,43 @@ export const CheckoutError = defineErrors({
 		failures,
 	}),
 	/**
-	 * What is in the folder is not what somebody approved, so nothing happened.
+	 * A push against a folder nothing here ever wrote.
 	 *
-	 * **The only guard either verb has**, and it is one fact rather than three:
-	 * a file landed, a note moved, or an agent removed the manifest between the
-	 * list a person read and the click. It covers a folder nothing ever wrote
-	 * too, which is not a separate refusal but the same one with `base: false`.
+	 * Never pulled, manifest deleted, manifest mangled, or manifest written by
+	 * another account: with no base, every file might be work nobody has sent
+	 * and there is no comparison to print, so there is nothing to approve. The
+	 * repair is a pull, which is why this is the push's refusal alone.
 	 *
-	 * `state` is what is true now, so a surface shows the next list rather than
-	 * an apology (ADR-0341).
+	 * There is no matching refusal for the list moving underneath somebody.
+	 * That is not an error any more: the working copy reads the folder again
+	 * and asks with the list that is true now (ADR-0341).
 	 */
-	FolderChanged: ({ state }: { state: FolderState }) => ({
-		message: 'the folder changed after it was read',
-		state,
+	FolderUnwritten: () => ({
+		message: 'nothing here wrote this folder, so there is nothing to send back',
+	}),
+	/**
+	 * The other verb is between its preview and its write.
+	 *
+	 * `confirm` awaits a person, so that stretch is seconds long rather than
+	 * instant, and both verbs write the same folder. Refusing is better than
+	 * queueing: a second dialog that opens when the first one closes is a
+	 * question about a folder nobody has looked at since.
+	 */
+	Busy: () => ({
+		message: 'the folder is already being read or written here',
+	}),
+	/**
+	 * The host refused the write because the folder is not the one it was
+	 * prepared against.
+	 *
+	 * The same fact as `FolderChanged` from the other side of the wire: this
+	 * module compares what it read against what a person approved, and the host
+	 * compares what it holds against what this module read, in the same slot it
+	 * writes in. Only the host's comparison closes the window between the two,
+	 * which is why both exist and why neither is redundant.
+	 */
+	FolderMoved: () => ({
+		message: 'the folder changed before the write landed',
 	}),
 	/**
 	 * A change the plan named could not be applied, and some of the push may
@@ -302,9 +326,18 @@ export async function contentHash(text: string): Promise<string> {
  * "clean" is how the one refusal in this module gets bypassed by editing a
  * hidden file.
  */
-type WorkingCopy = {
+type FolderContents = {
 	readonly base: CheckoutManifest | undefined;
 	readonly files: ReadonlyMap<string, string>;
+	/**
+	 * Which folder this reading is of, as the host stated it.
+	 *
+	 * It travels back on the write, and the host refuses a write whose folder
+	 * moved since. That is why no file here is hashed on its own any more: one
+	 * fact about the whole folder answers "is this still what was read", and the
+	 * side holding the filesystem is the side that can answer it without a race.
+	 */
+	readonly etag: string;
 };
 
 /**
@@ -327,7 +360,7 @@ type WorkingCopy = {
 async function readWorkingCopy(
 	store: CheckoutAddress,
 	httpFetch: typeof globalThis.fetch = globalThis.fetch,
-): Promise<Result<WorkingCopy, CheckoutError>> {
+): Promise<Result<FolderContents, CheckoutError>> {
 	const { data: response, error } = await tryAsync({
 		try: () =>
 			httpFetch(checkoutUrl(store.dataId), {
@@ -359,7 +392,14 @@ async function readWorkingCopy(
 		manifest.baseURL === store.baseURL &&
 		manifest.principalId === store.principalId &&
 		manifest.generation === store.generation;
-	return Ok({ base: describesThisStore ? manifest : undefined, files });
+	return Ok({
+		base: describesThisStore ? manifest : undefined,
+		files,
+		// Absent only from a host that predates the header, which cannot happen:
+		// the app and the host ship together. An empty string would still be
+		// refused by the write, which is the safe direction.
+		etag: response.headers.get('etag') ?? '',
+	});
 }
 
 /**
@@ -577,35 +617,23 @@ function agentsFile(definition: ParsedDataDefinition): string {
  * would be a file absent from the folder, and absence is a deletion at the
  * next push.
  */
-export async function pull({
+async function applyPull({
 	data,
-	state: confirmed,
-	fetch: httpFetch = globalThis.fetch,
-	now = () => new Date(),
+	held,
+	fetch: httpFetch,
+	now,
 }: {
 	data: RenderableData & CheckoutAddress;
 	/**
-	 * What `diff` said and a person approved, whole.
+	 * The reading a person approved, re-read and found unmoved.
 	 *
-	 * Confirming it IS the discard (ADR-0341): a pull writes over everything in
-	 * the list, and a person who read the list said so. It refuses one that
-	 * stopped being true for the same reason `push` does, because writing over
-	 * work nobody was shown is the thing this verb has to be unable to do.
+	 * Its `etag` travels on the write, so the folder this replaces is the one
+	 * they were shown even if something lands while these files render.
 	 */
-	state: FolderState;
-	fetch?: typeof globalThis.fetch;
-	now?: () => Date;
+	held: FolderContents;
+	fetch: typeof globalThis.fetch;
+	now: () => Date;
 }): Promise<Result<{ files: number }, CheckoutError>> {
-	// The same reading `diff` produced for the person, made again: a pull writes
-	// over everything in it, so applying a list that moved would write over work
-	// nobody was shown.
-	const found = await readFolder(data, data.definition, httpFetch);
-	if (found.error !== null) return Err(found.error);
-	const approved = stateOf(found.data.read);
-	if (!sameState(approved, confirmed)) {
-		return CheckoutError.FolderChanged({ state: approved });
-	}
-
 	// The store's own set of paths: every row it holds is rendered, and a file
 	// the folder holds that the store does not is simply not sent, which is how
 	// a pull sweeps it.
@@ -621,6 +649,7 @@ export async function pull({
 		sources,
 		kv: { contents: kvContents, hash: await contentHash(kvContents) },
 		pulledAt: now().toISOString(),
+		ifMatch: held.etag,
 		fetch: httpFetch,
 	});
 }
@@ -690,6 +719,7 @@ async function writeFolder({
 	sources,
 	kv,
 	pulledAt,
+	ifMatch,
 	fetch: httpFetch,
 }: {
 	data: RenderableData & CheckoutAddress;
@@ -699,6 +729,8 @@ async function writeFolder({
 	kv: { readonly contents: string; readonly hash: string } | undefined;
 	/** When the folder was last made current, which only a pull moves. */
 	pulledAt: string;
+	/** The folder this checkout was built against, which the host requires back. */
+	ifMatch: string;
 	fetch: typeof globalThis.fetch;
 }): Promise<Result<{ files: number }, CheckoutError>> {
 	const files: CheckoutFile[] = [];
@@ -766,7 +798,7 @@ async function writeFolder({
 		{ path: MANIFEST_PATH, contents: `${JSON.stringify(manifest, null, 2)}\n` },
 	);
 
-	const { error } = await sendCheckout(data.dataId, files, httpFetch);
+	const { error } = await sendCheckout(data.dataId, files, ifMatch, httpFetch);
 	return error === null ? Ok({ files: files.length }) : Err(error);
 }
 
@@ -774,6 +806,15 @@ async function writeFolder({
 async function sendCheckout(
 	dataId: string,
 	files: readonly CheckoutFile[],
+	/**
+	 * The folder this checkout was prepared against.
+	 *
+	 * The host compares it in the same slot it sweeps in, so between this and
+	 * the write nothing can land. A 412 is that refusal, and it means the same
+	 * thing the module's own comparison means one layer up: what is there is not
+	 * what somebody read.
+	 */
+	ifMatch: string,
 	httpFetch: typeof globalThis.fetch,
 ): Promise<Result<void, CheckoutError>> {
 	const { data: response, error } = await tryAsync({
@@ -783,11 +824,20 @@ async function sendCheckout(
 				body: files.map(checkoutLine).join(''),
 				credentials: 'same-origin',
 				redirect: 'error',
-				headers: { 'content-type': 'application/x-ndjson' },
+				headers: {
+					'content-type': 'application/x-ndjson',
+					'if-match': ifMatch,
+				},
 			}),
 		catch: (cause) => CheckoutError.HostUnreachable({ cause }),
 	});
 	if (error !== null) return Err(error);
+	if (response.status === 412) {
+		// The folder moved between the reading and this write. The caller reads
+		// it again and shows the next list; this is the same refusal as the
+		// comparison above, made by the side that holds the filesystem.
+		return CheckoutError.FolderMoved();
+	}
 	if (!response.ok) {
 		return CheckoutError.HostRefused({ status: response.status });
 	}
@@ -930,15 +980,6 @@ export type PlannedBody = {
 	 * person before they approve it.
 	 */
 	readonly storeChanged: boolean;
-	/**
-	 * A hash of the text this item is about, which is what `samePlan` compares.
-	 *
-	 * A value item carries both its sides, so a value that moved again makes a
-	 * different plan on its own. A body's text is not in the item, and without
-	 * this an agent editing the same paragraph twice produced a byte-identical
-	 * item while `push` applied text nobody read.
-	 */
-	readonly fileHash: string;
 };
 
 /**
@@ -959,12 +1000,6 @@ export type PlannedAdmission = {
 	readonly kind: 'admission';
 	readonly path: string;
 	readonly table: string;
-	/**
-	 * A hash of the whole file this row is made from, for the same reason a
-	 * body carries one: `push` re-reads the file, so a file that changed after
-	 * the overview would otherwise become a row nobody read.
-	 */
-	readonly fileHash: string;
 	/**
 	 * The row this file used to be, where it had one and the store lost it.
 	 *
@@ -1095,15 +1130,237 @@ function planKey(item: PlanItem): string {
  * | `store == file` | already converged; nothing to do |
  * | all three differ | the file's value, and the overview says the store moved |
  */
-export async function diff({
-	data,
-	fetch: httpFetch = globalThis.fetch,
-}: {
-	data: RenderableData & CheckoutAddress;
-	fetch?: typeof globalThis.fetch;
-}): Promise<Result<FolderState, CheckoutError>> {
-	const found = await readFolder(data, data.definition, httpFetch);
-	return found.error === null ? Ok(stateOf(found.data.read)) : Err(found.error);
+/**
+ * What a pull writes, and what it declined to write.
+ *
+ * `declined` is not a failure: a person reading the list and saying no is the
+ * verb working. It is a status rather than an error so a surface does not have
+ * to tell a refusal from a decision (`error-handling`).
+ */
+export type PullResult =
+	| { readonly status: 'applied'; readonly files: number }
+	| { readonly status: 'declined' };
+
+/**
+ * What a push changed, or why it changed nothing.
+ *
+ * `unchanged` is an empty plan, and `confirm` is not called for it: there is
+ * nothing to approve, and a dialog listing no changes is a question with one
+ * answer. `declined` is a person saying no to a list that had something in it.
+ */
+export type PushResult =
+	| ({ readonly status: 'applied' } & PushOutcome)
+	| { readonly status: 'declined' }
+	| { readonly status: 'unchanged' };
+
+/**
+ * The `~/Epicenter/<data-id>/` folder, bound to one opened store (ADR-0337).
+ *
+ * Two verbs, and each is the whole human sequence: read the folder, show it,
+ * take one approval, read it again, and apply only what was approved
+ * (ADR-0341). Nothing in between is a caller's to hold. A plan used to travel
+ * out to a dialog and back into a verb, and every surface that offered the
+ * button rebuilt the same "it moved while you were reading" loop by hand.
+ *
+ * There is no `diff`. A `confirm` that records its preview and returns `false`
+ * is one, and it cannot drift from what the verbs compare, because it IS what
+ * they compare.
+ */
+export type WorkingCopy = {
+	/**
+	 * Write every file in the folder from these notes, after one approval.
+	 *
+	 * The destructive direction: it writes over everything in the preview, so
+	 * confirming the list IS the discard. `confirm` is asked on every pull
+	 * including one with nothing to lose, because a pull always writes; a
+	 * surface that does not want a dialog for an empty list answers `true`
+	 * without showing one.
+	 */
+	pull(options: {
+		confirm: Confirm<PullPreview>;
+	}): Promise<Result<PullResult, CheckoutError>>;
+	/**
+	 * Apply the folder's edits to the notes, then write back what it touched.
+	 *
+	 * The folder wins, whole, and nothing is validated on the way in
+	 * (ADR-0338). To change any of it, a person cancels, edits the file, and
+	 * pushes again.
+	 */
+	push(options: {
+		confirm: Confirm<PushPreview>;
+	}): Promise<Result<PushResult, CheckoutError>>;
+};
+
+/**
+ * Bind the folder to this store.
+ *
+ * The store states its own address (ADR-0340), so this takes one argument and
+ * there is nothing for a caller to get half right. It holds no resources: the
+ * host owns the folder and the exclusion, and this side owns one question at a
+ * time, which is what `busy` below refuses a second of.
+ */
+export function createWorkingCopy(
+	data: PushableData & CheckoutAddress,
+	{
+		fetch: httpFetch = globalThis.fetch,
+		now = () => new Date(),
+	}: { fetch?: typeof globalThis.fetch; now?: () => Date } = {},
+): WorkingCopy {
+	// One verb at a time, per working copy. `confirm` awaits a person, so the
+	// stretch between a preview and its write is seconds long, and two verbs
+	// running across one folder would each be applying a list read before the
+	// other one wrote.
+	let busy = false;
+
+	/**
+	 * Read, ask, read again, and apply only if nothing moved.
+	 *
+	 * The loop is here rather than at the call site because it is the guard: a
+	 * surface that rebuilt it could forget the second reading, and the failure
+	 * would be silent and destructive. It is human-gated, so it needs no bound:
+	 * every turn costs a click, and an agent that keeps writing produces an
+	 * honest "it moved again" rather than a spin.
+	 */
+	async function run<TPreview, TResult>({
+		preview,
+		confirm,
+		apply,
+	}: {
+		preview: (found: {
+			held: FolderContents;
+			read: Reading;
+		}) => Result<TPreview | undefined, CheckoutError>;
+		confirm: Confirm<TPreview>;
+		apply: (found: {
+			held: FolderContents;
+			read: Reading;
+		}) => Promise<Result<TResult, CheckoutError>>;
+	}): Promise<Result<TResult | { status: 'declined' }, CheckoutError>> {
+		let found = await readFolder(data, data.definition, httpFetch);
+		if (found.error !== null) return Err(found.error);
+		let stale = false;
+
+		for (;;) {
+			const shown = preview(found.data);
+			if (shown.error !== null) return Err(shown.error);
+			// `undefined` is a verb with nothing to do, which is not a question.
+			if (shown.data === undefined) {
+				return (await apply(found.data)) as Result<TResult, CheckoutError>;
+			}
+			if (!(await confirm(shown.data, { stale }))) {
+				return Ok({ status: 'declined' as const });
+			}
+
+			// The second reading, and the reason a preview is never an input: what
+			// gets applied is this, not what the caller was holding.
+			const again = await readFolder(data, data.definition, httpFetch);
+			if (again.error !== null) return Err(again.error);
+			if (!sameReading(found.data, again.data)) {
+				found = again;
+				stale = true;
+				continue;
+			}
+			const applied = await apply(again.data);
+			// The host refused the write because the folder moved between this
+			// reading and the write itself. Nothing landed, so it is the same loop
+			// one turn later rather than a failure. A push that already committed
+			// to the store reports `FolderStale` instead and never reaches here.
+			if (applied.error?.name === 'FolderMoved') {
+				const next = await readFolder(data, data.definition, httpFetch);
+				if (next.error !== null) return Err(next.error);
+				found = next;
+				stale = true;
+				continue;
+			}
+			return applied;
+		}
+	}
+
+	return {
+		async pull({ confirm }) {
+			if (busy) return CheckoutError.Busy();
+			busy = true;
+			try {
+				return await run<PullPreview, PullResult>({
+					// Always a question. A pull writes over the folder whatever the
+					// list says, so there is no arm here that skips the approval.
+					preview: ({ read }) => Ok(previewOf(read)),
+					confirm,
+					apply: async ({ held }) => {
+						const written = await applyPull({
+							data,
+							held,
+							fetch: httpFetch,
+							now,
+						});
+						return written.error === null
+							? Ok({ status: 'applied' as const, files: written.data.files })
+							: Err(written.error);
+					},
+				});
+			} finally {
+				busy = false;
+			}
+		},
+		async push({ confirm }) {
+			if (busy) return CheckoutError.Busy();
+			busy = true;
+			try {
+				return await run<PushPreview, PushResult>({
+					preview: ({ read }) => {
+						if (read.base === undefined) {
+							return CheckoutError.FolderUnwritten();
+						}
+						// Nothing to send and nothing to ask. Not `declined`: nobody
+						// declined anything, the folder simply matches the notes.
+						if (read.plan.length === 0) return Ok(undefined);
+						return Ok({ plan: read.plan });
+					},
+					confirm,
+					apply: async ({ held, read }) => {
+						if (read.base === undefined) {
+							return CheckoutError.FolderUnwritten();
+						}
+						if (read.plan.length === 0) {
+							return Ok({ status: 'unchanged' as const });
+						}
+						const applied = await applyPush({
+							data,
+							held,
+							base: read.base,
+							plan: read.plan,
+							fetch: httpFetch,
+						});
+						return applied.error === null
+							? Ok({ status: 'applied' as const, ...applied.data })
+							: Err(applied.error);
+					},
+				});
+			} finally {
+				busy = false;
+			}
+		},
+	};
+}
+
+/**
+ * Whether two readings are the same folder and the same answer about it.
+ *
+ * Two facts, because they cover different sides. The `etag` is the host's
+ * statement about the whole folder, so it catches a file whose text moved
+ * without changing which items the plan holds: an agent editing the same
+ * paragraph twice used to need a hash on the item itself, and the folder's own
+ * identity answers it for every file at once. The preview catches the other
+ * side, where the folder held still and a note moved in the application.
+ */
+function sameReading(
+	left: { held: FolderContents; read: Reading },
+	right: { held: FolderContents; read: Reading },
+): boolean {
+	return (
+		left.held.etag === right.held.etag &&
+		samePreview(previewOf(left.read), previewOf(right.read))
+	);
 }
 
 /**
@@ -1127,7 +1384,7 @@ export async function diff({
 async function planPush(
 	data: RenderableData,
 	definition: ParsedDataDefinition,
-	held: WorkingCopy,
+	held: FolderContents,
 ): Promise<Reading> {
 	const items: PlanItem[] = [];
 	const base = held.base;
@@ -1250,7 +1507,6 @@ async function planPush(
 						path,
 						...address,
 						storeChanged: inStore !== handed.bodyHash,
-						fileHash: inFile,
 					});
 				}
 			}
@@ -1318,16 +1574,45 @@ type Reading =
 	| { readonly base: undefined; readonly unwritten: readonly string[] };
 
 /**
- * What the folder holds that the notes do not, as a surface reads it.
+ * What a pull is about to write over, as a person reads it before saying yes.
  *
- * The same question both verbs ask, and the one a person is shown before
- * either runs (ADR-0341): a push applies this list, a pull writes over it.
  * `unwritten` is a folder nothing here ever wrote, where there is nothing to
- * compare and every row-shaped file might be work nobody has sent.
+ * compare and every row-shaped file might be work nobody has sent. It is an
+ * arm of the PULL preview and not of the push one, because the two directions
+ * answer it differently: a pull sweeps those files, and a push has no base to
+ * tell an edit from a file that was always there, so it refuses.
+ *
+ * **An output, never an input.** It is handed to `confirm` and never handed
+ * back: what a person approves is the reading the working copy is holding, and
+ * nothing a caller keeps can stand in for it.
  */
-export type FolderState =
+export type PullPreview =
 	| { readonly base: true; readonly plan: PushPlan }
 	| { readonly base: false; readonly unwritten: readonly string[] };
+
+/**
+ * What a push is about to change in the notes.
+ *
+ * No `base` arm: a push against a folder nothing wrote is `FolderUnwritten`
+ * before a person is shown anything, because there is no comparison to print.
+ */
+export type PushPreview = { readonly plan: PushPlan };
+
+/**
+ * The one question either verb asks, answered `true` or `false`.
+ *
+ * It runs before anything is written, so a throw from here is a bug in the
+ * surface rather than an outcome, and it escapes as a rejection rather than
+ * being folded into a `Result`.
+ *
+ * `stale` is true when this list replaced one the person already read: the
+ * folder or the notes moved while they were looking, so nothing was applied
+ * and this is what is true now. A surface says so rather than apologising.
+ */
+export type Confirm<TPreview> = (
+	preview: TPreview,
+	context: { readonly stale: boolean },
+) => Promise<boolean>;
 
 /**
  * Whether this file still says exactly what `pull` handed over.
@@ -1407,12 +1692,7 @@ async function admission(
 	if (file.body !== '' && !readsBack(table, file.body)) {
 		return { kind: 'kept', path, reason: 'body-unreadable' };
 	}
-	return {
-		kind: 'admission',
-		path,
-		table: tableName,
-		fileHash: await contentHash(contents),
-	};
+	return { kind: 'admission', path, table: tableName };
 }
 
 /**
@@ -1491,7 +1771,7 @@ async function readFolder(
 	data: RenderableData & CheckoutAddress,
 	definition: ParsedDataDefinition,
 	httpFetch: typeof globalThis.fetch,
-): Promise<Result<{ held: WorkingCopy; read: Reading }, CheckoutError>> {
+): Promise<Result<{ held: FolderContents; read: Reading }, CheckoutError>> {
 	const held = await readWorkingCopy(data, httpFetch);
 	if (held.error !== null) return Err(held.error);
 	return Ok({
@@ -1501,7 +1781,7 @@ async function readFolder(
 }
 
 /** The reading, as a surface reads it: the manifest itself is nobody else's. */
-function stateOf(read: Reading): FolderState {
+function previewOf(read: Reading): PullPreview {
 	return read.base === undefined
 		? { base: false, unwritten: read.unwritten }
 		: { base: true, plan: read.plan };
@@ -1513,7 +1793,7 @@ function stateOf(read: Reading): FolderState {
  * Both arms are sorted where they are built, so identity is the comparison and
  * a folder read twice is the same folder.
  */
-function sameState(left: FolderState, right: FolderState): boolean {
+function samePreview(left: PullPreview, right: PullPreview): boolean {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -1538,29 +1818,20 @@ function sameState(left: FolderState, right: FolderState): boolean {
  * one durable append and one notification per table, and half a push landing
  * is a folder that matches nothing.
  */
-export async function push({
+async function applyPush({
 	data,
-	plan: confirmed,
-	fetch: httpFetch = globalThis.fetch,
+	held,
+	base,
+	plan,
+	fetch: httpFetch,
 }: {
 	data: PushableData & CheckoutAddress;
-	/** What `diff` said and a person approved, whole. */
+	/** The reading a person approved, re-read and found unmoved. */
+	held: FolderContents;
+	base: CheckoutManifest;
 	plan: PushPlan;
-	fetch?: typeof globalThis.fetch;
+	fetch: typeof globalThis.fetch;
 }): Promise<Result<PushOutcome, CheckoutError>> {
-	const found = await readFolder(data, data.definition, httpFetch);
-	if (found.error !== null) return Err(found.error);
-	const { held, read } = found.data;
-	// The one guard, and it is not about consent to an item: it is that the
-	// list applied is the list somebody read. An agent may still be working
-	// while the overview is open (ADR-0330). A folder nothing ever wrote is the
-	// same refusal rather than its own: what is there is not what was approved,
-	// and the state says which.
-	const state = stateOf(read);
-	if (!sameState(state, { base: true, plan: confirmed })) {
-		return CheckoutError.FolderChanged({ state });
-	}
-	const { base, plan } = read as { base: CheckoutManifest; plan: PushPlan };
 
 	const outcome = {
 		rows: 0,
@@ -1818,6 +2089,7 @@ export async function push({
 		// Only the files this push wrote moved, and each carries its own fresh
 		// entry.
 		pulledAt: base.pulledAt,
+		ifMatch: held.etag,
 		fetch: httpFetch,
 	});
 	return written.error === null
@@ -1864,6 +2136,6 @@ export type PushOutcome = {
 };
 
 /** The text under one file's fence, as the folder holds it right now. */
-function bodyOf(held: WorkingCopy, path: string): string {
+function bodyOf(held: FolderContents, path: string): string {
 	return parseRowFile(held.files.get(path) ?? '')?.body ?? '';
 }

@@ -28,7 +28,7 @@ import type { AppSecretOwner } from './app-secrets.ts';
 import type { BunAppStorage } from './app-storage.ts';
 import { type Application, listApplications } from './applications.ts';
 import {
-	CheckoutFolderBusyError,
+	CheckoutPreconditionFailedError,
 	checkoutFolderPath,
 	readCheckout,
 	writeCheckout,
@@ -404,11 +404,18 @@ export function createHomeServer({
 	app.put(CHECKOUT_ROUTE.pattern, async (c) => {
 		const folder = checkoutFolder(c);
 		if (folder === undefined) return c.text('Invalid checkout path', 400);
+		// Required, not optional. A checkout with no reading behind it is a write
+		// nobody approved, and refusing it here makes that impossible at the wire
+		// rather than only in the library that usually sends one.
+		const ifMatch = c.req.header('if-match');
+		if (ifMatch === undefined) {
+			return c.text('A checkout write must carry If-Match', 428);
+		}
 		try {
-			await writeCheckout(folder, await c.req.text());
+			await writeCheckout(folder, await c.req.text(), ifMatch);
 		} catch (cause) {
-			if (cause instanceof CheckoutFolderBusyError) {
-				return c.text('The folder is busy', 409);
+			if (cause instanceof CheckoutPreconditionFailedError) {
+				return c.text('The folder changed since it was read', 412);
 			}
 			// The folder sits on a filesystem that may be full, read-only, or on a
 			// drive someone unplugged. The store is unaffected, so this is the
@@ -422,8 +429,12 @@ export function createHomeServer({
 		const folder = checkoutFolder(c);
 		if (folder === undefined) return c.text('Invalid checkout path', 400);
 		try {
-			return c.body(await readCheckout(folder), 200, {
+			const { ndjson, etag } = await readCheckout(folder);
+			return c.body(ndjson, 200, {
 				'content-type': 'application/x-ndjson',
+				// What a write has to hand back. Strong, because it is a digest of
+				// the exact bytes below rather than a claim about how fresh they are.
+				etag,
 			});
 		} catch {
 			return c.text('The folder could not be read', 500);

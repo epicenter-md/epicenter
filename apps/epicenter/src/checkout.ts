@@ -10,7 +10,7 @@
  * the one-way rule and goes with it; what stays refused is a host that
  * INTERPRETS a file, which is a narrower promise and the one worth keeping.
  *
- * Three things this module owes.
+ * What this module owes.
  *
  * **A path cannot escape the folder.** Checked twice, because the two checks
  * promise different things. Containment is the host's own promise about its
@@ -33,8 +33,22 @@
  * includes the `AGENTS.md` it generates; a person's own `README.md` and the
  * `drafts/` they keep are not among them and are never written, read back, or
  * removed here.
+ *
+ * **One request at a time, per folder.** A read and a write are chained on the
+ * same promise, so a `GET` never catches a folder half-replaced and two writes
+ * never interleave their sweeps. It is a chain in this process rather than a
+ * lock on disk: the host is the one process that owns `~/Epicenter`
+ * (`tauri-plugin-single-instance`), so a lock file bought exclusion against
+ * nobody and could outlive the process that took it.
+ *
+ * **A write says which folder it was written against.** A read hands back a
+ * digest of the bytes it produced, a write requires it back, and the compare
+ * happens in the same chain slot as the sweep. That is what makes the approval
+ * a person gave describe the folder the write lands on, and it is still bytes:
+ * nothing here reads what the digest is a digest of.
  */
 
+import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import {
 	mkdir,
@@ -44,7 +58,7 @@ import {
 	rm,
 	writeFile,
 } from 'node:fs/promises';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isAppId } from '@epicenter/constants/app-data';
 // One import, and it is the entry point that holds no CRDT: this module writes
 // and reads files and interprets none of them, so nothing here may reach the
@@ -58,8 +72,56 @@ import {
 	parseRowPath,
 } from '@epicenter/data/artifact/format';
 
-export class CheckoutFolderBusyError extends Error {
-	override readonly name = 'CheckoutFolderBusy';
+/**
+ * The folder is not the one the write was prepared against.
+ *
+ * A file landed, an agent moved a note, or a second window pulled, between the
+ * read a person approved and this write. The store is untouched and the repair
+ * is to read the folder again, which is why this is the host's only refusal
+ * that is not a filesystem failure.
+ */
+export class CheckoutPreconditionFailedError extends Error {
+	override readonly name = 'CheckoutPreconditionFailed';
+}
+
+/**
+ * What is in flight for each folder, so the next request chains onto it.
+ *
+ * Keyed by absolute folder, and the entry is dropped when it is the tail, so
+ * this does not grow with the number of folders a session touches. Every
+ * public verb below runs inside `serialize`, reads and writes alike: a read
+ * that ran beside a write would hand back a folder half-swept, and the digest
+ * it returned would describe a state that never existed.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
+
+function serialize<T>(folder: string, task: () => Promise<T>): Promise<T> {
+	const previous = inFlight.get(folder) ?? Promise.resolve();
+	// `then(task, task)` rather than `finally`: one request failing must not
+	// poison the next one in the queue.
+	const running = previous.then(task, task);
+	const settled = running.then(
+		() => undefined,
+		() => undefined,
+	);
+	inFlight.set(folder, settled);
+	void settled.then(() => {
+		if (inFlight.get(folder) === settled) inFlight.delete(folder);
+	});
+	return running;
+}
+
+/**
+ * The folder's identity, as a strong ETag over the bytes a read produced.
+ *
+ * SHA-256, quoted, and it is not a security claim: what it answers is "is this
+ * the folder the write was prepared against". Digesting the NDJSON rather than
+ * the directory is what keeps this side free of meaning, and it covers exactly
+ * what a checkout is responsible for, so a person's own `README.md` changing
+ * does not invalidate a pull they are reading.
+ */
+function checkoutEtag(ndjson: string): string {
+	return `"${createHash('sha256').update(ndjson, 'utf8').digest('hex')}"`;
 }
 
 /**
@@ -186,12 +248,20 @@ async function listCheckoutFiles(absoluteFolder: string): Promise<string[]> {
  * person put in this folder survives a pull, and so does the `AGENTS.md` a
  * pull itself wrote.
  */
-export async function writeCheckout(
+export function writeCheckout(
 	absoluteFolder: string,
 	ndjson: string,
+	ifMatch: string,
 ): Promise<void> {
-	const release = await claimCheckoutFolder(absoluteFolder);
-	try {
+	return serialize(absoluteFolder, async () => {
+		// Inside the chain, so the folder this compares cannot move before the
+		// sweep below reaches it. A check in the route would be a check against
+		// a folder some other request is still writing.
+		if (checkoutEtag(await collectCheckout(absoluteFolder)) !== ifMatch) {
+			throw new CheckoutPreconditionFailedError(
+				`The folder changed since it was read: ${absoluteFolder}`,
+			);
+		}
 		const files: CheckoutFile[] = [];
 		for (const file of parseCheckout(ndjson)) {
 			if (fileInFolder(absoluteFolder, file.path) !== undefined) {
@@ -208,9 +278,7 @@ export async function writeCheckout(
 			const target = fileInFolder(absoluteFolder, file.path);
 			if (target !== undefined) await writeCheckoutFile(target, file.contents);
 		}
-	} finally {
-		await release();
-	}
+	});
 }
 
 function manifestLast(left: CheckoutFile, right: CheckoutFile): number {
@@ -231,7 +299,19 @@ function manifestLast(left: CheckoutFile, right: CheckoutFile): number {
  * unread: the rule here is "everything a checkout produces", and one exception
  * would be a second rule to keep in step with the other side.
  */
-export async function readCheckout(absoluteFolder: string): Promise<string> {
+export function readCheckout(
+	absoluteFolder: string,
+): Promise<{ ndjson: string; etag: string }> {
+	return serialize(absoluteFolder, async () => {
+		const ndjson = await collectCheckout(absoluteFolder);
+		return { ndjson, etag: checkoutEtag(ndjson) };
+	});
+}
+
+/**
+ * The read itself, without the chain, for the two callers already inside one.
+ */
+async function collectCheckout(absoluteFolder: string): Promise<string> {
 	const lines: string[] = [];
 	for (const path of await listCheckoutFiles(absoluteFolder)) {
 		const contents = await readFile(join(absoluteFolder, path), 'utf8').catch(
@@ -239,46 +319,10 @@ export async function readCheckout(absoluteFolder: string): Promise<string> {
 		);
 		// A file listed and then unreadable is one somebody removed between the
 		// two calls. Omitting it says the folder does not have it, which by then
-		// is true.
+		// is true. The digest changes with it, so a write prepared against the
+		// reading that included it is refused rather than silently deleting the
+		// row whose file went missing on the way out.
 		if (contents !== undefined) lines.push(checkoutLine({ path, contents }));
 	}
 	return lines.join('');
-}
-
-/**
- * One writer at a time, per folder.
- *
- * A directory rather than a lock file, because `mkdir` is atomic and its
- * failure mode names itself: `EEXIST` is another writer, and there is no window
- * between testing and taking it.
- *
- * It lives under `<root>/.epicenter/locks/`, not beside the folder it guards.
- * A sibling named `<data-id>.epicenter-lock` is itself a legal data id
- * (`packages/constants/src/app-id.ts`), so an app claiming that id would own
- * another app's lock and delete it on release. A leading dot is refused by that
- * same grammar, which is what makes this name unreachable.
- */
-async function claimCheckoutFolder(
-	absoluteFolder: string,
-): Promise<() => Promise<void>> {
-	const lock = join(
-		dirname(absoluteFolder),
-		'.epicenter',
-		'locks',
-		basename(absoluteFolder),
-	);
-	await mkdir(dirname(lock), { recursive: true });
-	try {
-		await mkdir(lock);
-	} catch (cause) {
-		if (cause instanceof Error && 'code' in cause && cause.code === 'EEXIST') {
-			throw new CheckoutFolderBusyError(
-				`The folder is already being written: ${absoluteFolder}`,
-			);
-		}
-		throw cause;
-	}
-	return async () => {
-		await rm(lock, { recursive: true, force: true });
-	};
 }
