@@ -1,5 +1,5 @@
 /**
- * `#platform/binding` for the trusted Epicenter origin.
+ * `#platform/epicenter` for the trusted Epicenter origin.
  *
  * A Bun-owned file below the Epicenter data root, and a keychain entry over the
  * private sidecar pipe. Honeycrisp owns no file and keeps no secret today, and
@@ -12,6 +12,6 @@
  * from a browser tab.
  */
 
-import { createDesktopBinding } from '@epicenter/app/desktop';
+import { createDesktopEpicenter } from '@epicenter/app/desktop';
 
-export const binding = createDesktopBinding();
+export const createEpicenter = createDesktopEpicenter;

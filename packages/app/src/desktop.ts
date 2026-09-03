@@ -13,11 +13,9 @@
  * party whose answer could mean anything, and a seam with one implementation
  * is not a seam.
  *
- * **This leaf builds a binding, not a handle.** It used to export its own
- * `createEpicenter`, which made the platform a property of the whole handle
- * and put a keychain import in front of an application that wanted notes. What
- * varies by runtime is a Bun-owned file and a keychain, so that is what this
- * exports, and one `createEpicenter` in `@epicenter/app` serves every build.
+ * **This leaf builds the desktop half of the handle.** The common constructor
+ * remains in `@epicenter/app`; this leaf supplies the trusted owner's files and
+ * keychain without putting that platform choice in application code.
  *
  * **SQLite is a Bun-owned file.** The owner maps `(appId, name)` to a path
  * below the one Epicenter data root; the application sends statements and never
@@ -29,12 +27,17 @@
  * entry. Nothing durable lands in the page.
  */
 
+import type { DataDefinition } from '@epicenter/data/definition';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	AppError,
 	type AppSqliteDatabase,
+	createEpicenter,
+	type Epicenter,
 	type EpicenterBinding,
+	type EpicenterDataOptions,
+	type EpicenterScopeOptions,
 	SecretError,
 	type SecretStore,
 } from './index.js';
@@ -51,31 +54,50 @@ export type CreateDesktopBindingOptions = {
 	fetch?: typeof globalThis.fetch;
 };
 
+export type CreateDesktopEpicenterOptions = EpicenterScopeOptions &
+	CreateDesktopBindingOptions;
+
 /**
- * One binding over what the trusted origin owns, for whichever application
- * asks.
- *
- * A function of `appId` rather than a built binding, because that is the shape
- * `createEpicenter` takes: the handle resolves the id and hands it over, so the
- * files and the keychain cannot be scoped to a different application than the
- * store (ADR-0339).
+ * One binding over what the trusted origin owns for one application.
  */
-export function createDesktopBinding(
+function createDesktopBinding(
+	appId: string,
 	options: CreateDesktopBindingOptions = {},
-): (appId: string) => EpicenterBinding {
-	return (appId) => {
-		const request = createOwnerRequest(options);
-		return {
-			open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
-			delete: (name) =>
-				unwrap(
-					request({ kind: 'sqlite-delete', appId, name }),
-					'sqlite-delete',
-					() => undefined,
-				),
-			secrets: createKeychainSecrets(request, appId),
-		};
+): EpicenterBinding {
+	const request = createOwnerRequest(options);
+	return {
+		open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
+		delete: (name) =>
+			unwrap(
+				request({ kind: 'sqlite-delete', appId, name }),
+				'sqlite-delete',
+				() => undefined,
+			),
+		secrets: createKeychainSecrets(request, appId),
 	};
+}
+
+export function createDesktopEpicenter(
+	options: CreateDesktopEpicenterOptions,
+): Epicenter;
+export function createDesktopEpicenter<
+	const TDefinition extends DataDefinition,
+>(
+	options: CreateDesktopEpicenterOptions & EpicenterDataOptions<TDefinition>,
+): Epicenter<TDefinition>;
+export function createDesktopEpicenter<
+	const TDefinition extends DataDefinition,
+>(
+	options: CreateDesktopEpicenterOptions &
+		Partial<EpicenterDataOptions<TDefinition>>,
+): Epicenter<TDefinition> {
+	const { appId, definition, account } = options;
+	return createEpicenter({
+		appId,
+		binding: createDesktopBinding(appId, options),
+		...(definition === undefined ? {} : { definition }),
+		...(account === undefined ? {} : { account }),
+	}) as Epicenter<TDefinition>;
 }
 
 type OwnerRequest = (

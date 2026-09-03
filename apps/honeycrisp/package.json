@@ -12,7 +12,7 @@
 			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
 		},
-		"#platform/binding": {
+		"#platform/epicenter": {
 			"epicenter-host": "./src/lib/platform/binding.epicenter-host.ts",
 			"default": "./src/lib/platform/binding.browser.ts"
 		},

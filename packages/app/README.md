@@ -17,10 +17,12 @@ lifetime.
 ## The runtime is the import path
 
 ```ts
-import { createEpicenter } from '@epicenter/app/browser'; // or '@epicenter/app/desktop'
+import { createBrowserEpicenter } from '@epicenter/app/browser';
+// or: import { createDesktopEpicenter } from '@epicenter/app/desktop';
 ```
 
-Both subpaths export `createEpicenter`, and the name never carries the runtime.
+Each runtime subpath exports its runtime-specific Epicenter constructor. The
+shared core is not a platform choice an application needs to make.
 There is no runtime sniff here and there must not be one: the desktop build runs
 in a WebView, so `typeof window` cannot tell it apart from a browser tab, and the
 two differ in exactly the ways that matter, which are a keychain and a Bun-owned
@@ -30,9 +32,9 @@ to fails to resolve rather than quietly running the wrong owner.
 
 | Import | What it gives you |
 | --- | --- |
-| `@epicenter/app/browser` | `createEpicenter`, over this origin's OPFS and tab memory |
-| `@epicenter/app/desktop` | `createEpicenter`, over the trusted owner's files and the OS keychain |
-| `@epicenter/app` | the types, `AppError`, `SecretError`, the two name mints and their guards, and the `(appId) => binding` form of `createEpicenter` the Bun host's leaf is built on |
+| `@epicenter/app/browser` | `createBrowserEpicenter`, over this origin's OPFS and tab memory |
+| `@epicenter/app/desktop` | `createDesktopEpicenter`, over the trusted owner's files and the OS keychain |
+| `@epicenter/app` | the shared `createEpicenter` core, types, errors, and name mints |
 | `@epicenter/app/protocol` | the request and response shapes both ends of the desktop seam read |
 
 | Leaf | `sqlite` | `secrets` |
@@ -46,7 +48,7 @@ ADR-0227), so `data` is composed above the seam rather than through it.
 ## The surface
 
 ```ts
-const epicenter = createEpicenter({ appId, definition, account });
+const epicenter = createBrowserEpicenter({ appId, definition, account });
 
 epicenter.appId              // string, frozen
 epicenter.sqlite.open(name)  // Promise<Result<AppSqliteDatabase, AppError>>

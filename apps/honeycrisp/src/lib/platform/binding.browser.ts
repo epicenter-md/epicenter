@@ -1,5 +1,5 @@
 /**
- * `#platform/binding` for the web and standalone builds.
+ * `#platform/epicenter` for the web and standalone builds.
  *
  * OPFS files and secrets that live exactly as long as the tab (ADR-0310).
  * Honeycrisp owns no file and keeps no secret today, so nothing here is ever
@@ -11,6 +11,6 @@
  * in `$lib/epicenter.svelte.ts`, once, for both builds.
  */
 
-import { createBrowserBinding } from '@epicenter/app/browser';
+import { createBrowserEpicenter } from '@epicenter/app/browser';
 
-export const binding = createBrowserBinding();
+export const createEpicenter = createBrowserEpicenter;

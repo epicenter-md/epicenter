@@ -33,7 +33,7 @@ test('creates a handle scoped to one application', async () => {
 	const calls: string[] = [];
 	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
-		binding: () => bindingFor(calls),
+		binding: bindingFor(calls),
 	});
 
 	expect(epicenter.appId).toBe('so.epicenter.test');
@@ -49,7 +49,7 @@ test('deleting takes the same name as opening', async () => {
 	const calls: string[] = [];
 	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
-		binding: () => bindingFor(calls),
+		binding: bindingFor(calls),
 	});
 
 	const deleted = await epicenter.sqlite.delete(databaseName('mail'));
@@ -60,7 +60,7 @@ test('deleting takes the same name as opening', async () => {
 test('a handle with no definition has no store and no account', () => {
 	const epicenter = createEpicenter({
 		appId: 'so.epicenter.test',
-		binding: () => bindingFor([]),
+		binding: bindingFor([]),
 	});
 
 	// The type says this already: `[TDefinition] extends [never]` fails
@@ -90,7 +90,7 @@ test('the application id is explicit and independent from the definition id', ()
 	expect(
 		createEpicenter({
 			appId: 'so.epicenter.notes',
-			binding: () => bindingFor([]),
+			binding: bindingFor([]),
 			definition,
 			account,
 		}).appId,
@@ -98,7 +98,7 @@ test('the application id is explicit and independent from the definition id', ()
 	expect(
 		createEpicenter({
 			appId: 'so.epicenter.reader',
-			binding: () => bindingFor([]),
+			binding: bindingFor([]),
 			definition,
 			account,
 		}).appId,
@@ -107,6 +107,6 @@ test('the application id is explicit and independent from the definition id', ()
 
 test('an application id this platform cannot file refuses at construction', () => {
 	expect(() =>
-		createEpicenter({ appId: 'not an app id', binding: () => bindingFor([]) }),
+		createEpicenter({ appId: 'not an app id', binding: bindingFor([]) }),
 	).toThrow('is not valid');
 });

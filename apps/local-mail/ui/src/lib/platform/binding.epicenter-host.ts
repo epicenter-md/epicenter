@@ -1,5 +1,5 @@
 /**
- * `#platform/binding` inside the trusted Epicenter origin.
+ * `#platform/epicenter` inside the trusted Epicenter origin.
  *
  * The host owns the SQLite files and the keychain entries. Selected by the
  * `epicenter-host` build condition, never by a runtime test: this page runs in
@@ -7,6 +7,6 @@
  * tab.
  */
 
-import { createDesktopBinding } from '@epicenter/app/desktop';
+import { createDesktopEpicenter } from '@epicenter/app/desktop';
 
-export const binding = createDesktopBinding();
+export const createEpicenter = createDesktopEpicenter;

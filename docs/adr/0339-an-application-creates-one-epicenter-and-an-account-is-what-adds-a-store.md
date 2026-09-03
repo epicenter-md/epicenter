@@ -298,11 +298,11 @@ each used to export a `createEpicenter` that supplied their own, which made the
 runtime a property of the whole handle:
 
 ```ts
-import { createBrowserBinding } from '@epicenter/app/browser';   // OPFS, tab memory
-import { createDesktopBinding } from '@epicenter/app/desktop';   // Bun file, keychain
-import { createEpicenter } from '@epicenter/app';                // every build
+import { createBrowserEpicenter } from '@epicenter/app/browser';
+import { createDesktopEpicenter } from '@epicenter/app/desktop';
 
-createEpicenter({ appId, definition, account, binding }): Epicenter<typeof definition>
+createBrowserEpicenter({ appId, definition, account }): Epicenter<typeof definition>
+createDesktopEpicenter({ appId, definition, account }): Epicenter<typeof definition>
 ```
 
 The cost of the old shape was paid by the application that needs it least.
@@ -312,22 +312,21 @@ were identical except for one import line, because the only way to obtain a
 handle was through a runtime subpath. Its store never varied by runtime, and it
 inherited a platform axis to reach a keychain it does not use.
 
-So the seam holds the thing that actually varies. `#platform/binding` exports a
-built `binding` value, the way `#platform/auth` exports `auth`, and everything
-composed from it lives in one file for every build:
+So the seam holds the thing that actually varies. `#platform/epicenter` exports
+the runtime-specific constructor, and everything composed from it lives in one
+file for every build:
 
 ```ts
 // apps/honeycrisp/src/lib/epicenter.svelte.ts
-const handle = createEpicenter({ appId, definition, account: auth, binding });
+const handle = createBrowserEpicenter({ appId, definition, account: auth });
 export const epicenter = fromEpicenter(handle);
 if (import.meta.hot) import.meta.hot.dispose(() => void handle.close());
 ```
 
-**`binding` stays required.** It is three closures and a `Map`; nothing it holds
-opens a file, dials the host, or names a keyring entry until a verb is called,
-so requiring one costs an allocation. An optional binding would have bought one
-import line at the price of a second conditional in `Epicenter`, and a default
-one would have been worse: an application that forgot the seam would hold tab
+**The binding is core-only.** Runtime constructors build a concrete binding for
+the explicit `appId` and pass it to the shared core. Application code does not
+carry a callback or construct a binding separately. The host can still call the
+core with its own concrete binding because it owns that runtime directly.
 memory on the desktop, which is a durability difference nothing can observe.
 
 **The leaves are duplicated values, not duplicated singletons.** Two files that
@@ -337,22 +336,18 @@ directly. Two files that export a binding cannot drift into two of anything.
 
 Three lines in this record are corrected by the amendment:
 
-- "The runtime is the import path" now reads as the binding's import path. The
-  name still never carries the runtime, and `createBrowserEpicenter` is still
-  refused, for the reason under Considered alternatives and now also because a
-  handle is not the thing that varies.
-- "Every `createEpicenter` an application calls lives under a runtime subpath"
-  is false. There is one `createEpicenter`, at the root, and every application
-  calls it.
-- The root's contents were already more than types; they are now also the only
-  constructor, which is what the two leaves compose into rather than around.
+- "The runtime is the import path" now names the runtime-specific constructor.
+  The common core remains at the root, and the application enters through its
+  platform constructor.
+- The root's contents were already more than types; they now hold the common
+  constructor that the two runtime constructors compose.
 
 ## Considered alternatives
 
-- **`createBrowserEpicenter` and `createDesktopEpicenter`.** Refused. Putting the
-  runtime in the name is naming the mechanism, which is what ADR-0316 refused
-  `createAppRuntime` for, and it forces a second axis into the name the moment
-  anything else varies. The import path already carries it.
+- **One runtime-neutral constructor for applications.** Refused. It forced
+  application code to pass a callback solely to delay construction of the
+  platform binding. `createBrowserEpicenter` and `createDesktopEpicenter` keep
+  the runtime choice at the import boundary while sharing the core lifecycle.
 - **`AppStorage` beside `Epicenter`, as two constructors.** Refused. The base
   name teaches the wrong lesson: a developer would learn "storage" first and
   "Epicenter" as the upgrade, when the reference application has all four parts
@@ -401,9 +396,7 @@ Three lines in this record are corrected by the amendment:
   everything after it forks into two shapes permanently, and a reader of the type
   holds two pictures of what an epicenter is. The saving is one word at one call
   site.
-- **A binding built beside the application id rather than for it.** Refused, and
-  this record is named for the reason. `createEpicenter({ appId: 'a', binding:
-  createHostBinding({ appId: 'b' }) })` compiled: the handle scoped its store to
-  one application and the binding scoped the files and the keychain to another.
-  The binding is `(appId) => EpicenterBinding` so there is nothing to disagree
-  with.
+- **A binding callback that receives the application id later.** Refused. It
+  added indirection only to avoid constructing the platform binding at the same
+  boundary as the handle. Runtime-specific constructors now build a concrete
+  binding for the explicit id before entering the shared core.

@@ -11,8 +11,7 @@
  * files and the keychain (ADR-0339).
  */
 
-import { createEpicenter } from '@epicenter/app';
 import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
-import { binding } from '#platform/binding';
+import { createEpicenter } from '#platform/epicenter';
 
-export const epicenter = createEpicenter({ appId: LOCAL_MAIL_APP_ID, binding });
+export const epicenter = createEpicenter({ appId: LOCAL_MAIL_APP_ID });

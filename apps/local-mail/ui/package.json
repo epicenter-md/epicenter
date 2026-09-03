@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"imports": {
-		"#platform/binding": {
+		"#platform/epicenter": {
 			"epicenter-host": "./src/lib/platform/binding.epicenter-host.ts",
 			"default": "./src/lib/platform/binding.browser.ts"
 		},

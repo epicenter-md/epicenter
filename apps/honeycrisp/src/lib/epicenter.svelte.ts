@@ -9,7 +9,7 @@
  * an epicenter varies by runtime: the store is client-owned in every build
  * (ADR-0226, ADR-0227), the definition is one file, and the account is already
  * selected next door. What varies is a Bun-owned file and a keychain, so that
- * is what `#platform/binding` selects and all that it holds. The wiring, the
+ * is what `#platform/epicenter` selects and all that it holds. The wiring, the
  * singleton, and the one call that ends it live here, in one copy, where they
  * cannot drift between two leaves that differ on an import line.
  *
@@ -24,10 +24,9 @@
  * and never reads `boot`.
  */
 
-import { createEpicenter } from '@epicenter/app';
 import { fromEpicenter } from '@epicenter/svelte';
 import { auth } from '#platform/auth';
-import { binding } from '#platform/binding';
+import { createEpicenter } from '#platform/epicenter';
 import { honeycrispDefinition } from '$lib/data/index.js';
 
 /**
@@ -42,7 +41,6 @@ const handle = createEpicenter({
 	appId: honeycrispDefinition.id,
 	definition: honeycrispDefinition,
 	account: auth,
-	binding,
 });
 
 export const epicenter = fromEpicenter(handle);

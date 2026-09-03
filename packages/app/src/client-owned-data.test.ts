@@ -12,8 +12,7 @@ import {
 	field,
 	plainText,
 } from '@epicenter/data/definition';
-import { createBrowserBinding } from './browser.js';
-import { createEpicenter } from './index.js';
+import { createBrowserEpicenter } from './browser.js';
 
 /**
  * What an application gets when it passes a definition and an account.
@@ -137,11 +136,10 @@ async function importEmptyGeneration(account: AuthClient): Promise<void> {
 }
 
 function handleFor(account: AuthClient) {
-	return createEpicenter({
+	return createBrowserEpicenter({
 		appId: APP_ID,
 		definition,
 		account,
-		binding: createBrowserBinding(),
 	});
 }
 

@@ -83,10 +83,10 @@ describe('the runtime is the import path', () => {
 		// silent failure this file exists for: the host-served build would reach
 		// for OPFS and tab memory instead of the Bun-owned files and the
 		// keychain, and still build and still start.
-		expect(await leafSource('#platform/binding', 'default')).toContain(
+		expect(await leafSource('#platform/epicenter', 'default')).toContain(
 			"from '@epicenter/app/browser'",
 		);
-		expect(await leafSource('#platform/binding', 'epicenter-host')).toContain(
+		expect(await leafSource('#platform/epicenter', 'epicenter-host')).toContain(
 			"from '@epicenter/app/desktop'",
 		);
 	});

@@ -212,7 +212,7 @@ export type EpicenterDataOptions<TDefinition extends DataDefinition> = {
 	account: AuthClient;
 };
 
-export type CreateEpicenterOptions = {
+export type EpicenterScopeOptions = {
 	/**
 	 * What this application owns ON THIS DEVICE: its IndexedDB prefix, its
 	 * SQLite files, and its keychain scope.
@@ -224,16 +224,17 @@ export type CreateEpicenterOptions = {
 	 * the scope it is opening.
 	 */
 	appId: string;
+};
+
+export type CreateEpicenterOptions = EpicenterScopeOptions & {
 	/**
-	 * The runtime leaf, built for the id this handle resolved.
+	 * The runtime capability owner, already scoped to `appId`.
 	 *
-	 * A function rather than a value, so the two cannot disagree. It used to be
-	 * a built binding beside an `appId`, which is the mismatched pair ADR-0339
-	 * is named for surviving in the one place the binding is still public: the
-	 * handle scoped its store to one application and the binding scoped the
-	 * files and the keychain to another, and it compiled.
+	 * Runtime leaves construct this value. Keeping it concrete means the
+	 * application does not pass a callback merely to thread its id into the
+	 * platform owner.
 	 */
-	binding: (appId: string) => EpicenterBinding;
+	binding: EpicenterBinding;
 };
 
 /**
@@ -318,9 +319,7 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 			close(): Promise<void>;
 		});
 
-export function createEpicenter(
-	options: CreateEpicenterOptions,
-): Epicenter;
+export function createEpicenter(options: CreateEpicenterOptions): Epicenter;
 export function createEpicenter<const TDefinition extends DataDefinition>(
 	options: CreateEpicenterOptions & EpicenterDataOptions<TDefinition>,
 ): Epicenter<TDefinition>;
@@ -332,7 +331,7 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 	if (!isProtocolAppId(appId)) {
 		throw new Error(AppError.InvalidAppId({ appId }).error.message);
 	}
-	const binding = options.binding(appId);
+	const { binding } = options;
 
 	const capabilities = {
 		appId,
