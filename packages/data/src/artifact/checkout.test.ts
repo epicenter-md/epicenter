@@ -1423,3 +1423,86 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 });
+
+describe('the whole cycle, as a person walks it (ADR-0341)', () => {
+	test('pull, an agent edits, push, break a file, push, pull over it', async () => {
+		// Every verb in order, in the sequence a person actually meets them.
+		// Each unit test above pins one rule; this pins that they compose, and
+		// it is the one place the two verbs are seen disagreeing on purpose:
+		// step 5 refuses to destroy a broken file, and step 6 destroys it after
+		// saying so.
+		const host = fakeHost();
+		const { data, noteId } = await notebook();
+		const second = data.tables.notes.create({
+			title: 'Onboarding',
+			pinned: false,
+		});
+		const trashed = data.tables.notes.create({
+			title: 'Standup',
+			pinned: false,
+		});
+
+		// 1. First pull: an empty folder, so nothing to lose and no dialog.
+		const first = await stateOf(host, data);
+		expect(first).toEqual({ base: false, unwritten: [] });
+		expectOk(await pullInto(host, data, first));
+
+		// 2. An agent edits a title, rewrites a body, drops a stray file. A
+		//    person deletes one note's file in Finder.
+		host.folder.set(
+			`notes/${noteId}.md`,
+			(host.folder.get(`notes/${noteId}.md`) as string).replace(
+				'"Groceries"',
+				'"Budget 2026"',
+			),
+		);
+		host.folder.set(
+			`notes/${second.id}.md`,
+			'---\ntitle: "Onboarding"\npinned: false\n---\n\nrewritten by the agent\n',
+		);
+		host.folder.set(
+			'notes/scratch.md',
+			'---\ntitle: "scratch"\npinned: false\n---\n',
+		);
+		host.folder.delete(`notes/${trashed.id}.md`);
+
+		// 3. The push overview names all four, and applies them.
+		const plan = await planOf(host, data);
+		expect(plan.map((i) => i.kind).sort()).toEqual([
+			'admission',
+			'body',
+			'deletion',
+			'value',
+		]);
+		const done = expectOk(
+			await push({ data, definition, plan, fetch: host.fetch }),
+		);
+		expect(done).toMatchObject({ values: 1, bodies: 1, deleted: 1 });
+		expect(data.tables.notes.get(noteId)?.title).toBe('Budget 2026');
+		expect(data.tables.notes.get(trashed.id)).toBeUndefined();
+		expect(host.folder.has('notes/scratch.md')).toBe(false);
+		expect(host.folder.has(`notes/${done.admitted[0]?.rowId}.md`)).toBe(true);
+
+		// 4. Break a fence and paste text under it.
+		const broken = '---\ntitle: "Budget 2026"\n\nthree paragraphs I typed\n';
+		host.folder.set(`notes/${noteId}.md`, broken);
+
+		// 5. The push keeps it, byte for byte, and says so again.
+		const kept = await planOf(host, data);
+		expect(only(kept, 'discard').reason).toBe('unreadable');
+		expectOk(await push({ data, definition, plan: kept, fetch: host.fetch }));
+		expect(host.folder.get(`notes/${noteId}.md`)).toBe(broken);
+		expect(only(await planOf(host, data), 'discard').reason).toBe('unreadable');
+
+		// 6. The pull writes over it, after listing it.
+		const over = await stateOf(host, data);
+		expectOk(await pullInto(host, data, over));
+		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Budget 2026"');
+		expect(host.folder.get(`notes/${noteId}.md`)).not.toContain(
+			'three paragraphs',
+		);
+		// And the folder is clean.
+		expect(await planOf(host, data)).toEqual([]);
+		await data[Symbol.asyncDispose]();
+	});
+});
