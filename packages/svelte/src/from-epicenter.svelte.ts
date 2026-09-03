@@ -21,8 +21,9 @@
  * safe at module scope, which is where an application should put it:
  *
  * ```ts
- * // apps/<app>/src/lib/platform/epicenter.browser.svelte.ts
- * export const notes = fromEpicenter(createEpicenter({ definition, account: auth }));
+ * // apps/<app>/src/lib/epicenter.svelte.ts, one file for every build
+ * const handle = createEpicenter({ definition, account: auth, binding });
+ * export const epicenter = fromEpicenter(handle);
  * ```
  *
  * One call site by construction, so there is no question about who owns the
@@ -116,10 +117,38 @@ export type EpicenterBoot<TData extends AdaptableData, TError, TEraseError> =
 			eraseReplica(): Promise<Result<void, TEraseError>>;
 	  };
 
-/** Adapt one application handle's store into Svelte reactivity. */
-export function fromEpicenter<TData extends AdaptableData, TError, TEraseError>(
-	epicenter: AdaptableEpicenter<TData, TError, TEraseError>,
-): { readonly boot: EpicenterBoot<TData, TError, TEraseError> } {
+/**
+ * Adapt one application handle into Svelte reactivity: the same epicenter,
+ * with its store rendered as a boot.
+ *
+ * Everything else the handle carries is forwarded untouched, because nothing
+ * else about it has states. `sqlite` and `secrets` are verbs that are ready
+ * the instant the handle exists, and an application should hold ONE thing
+ * called `epicenter` rather than a reactive store beside unrelated storage
+ * exports; reactivity is a property of one member, not a reason to split the
+ * object.
+ *
+ * Three members do not come across. `data` is what `boot` replaces. `close` is
+ * left behind on purpose, so the only reference to it is the module local that
+ * built the handle, which is the one place a hot reload can reach and no route
+ * can (ADR-0340). `eraseReplica` rides on the `failed` variant instead, where
+ * it is the one state it can succeed in.
+ *
+ * The forwarding copies property DESCRIPTORS rather than spreading. A spread
+ * reads getters, and `data` is a lazy getter whose read starts the open: a
+ * signed-out person would claim a Web Lock at module load, which is exactly
+ * what the laziness exists to prevent.
+ */
+export function fromEpicenter<
+	TData extends AdaptableData,
+	TError,
+	TEraseError,
+	TEpicenter extends object,
+>(
+	epicenter: AdaptableEpicenter<TData, TError, TEraseError> & TEpicenter,
+): Omit<TEpicenter, 'data' | 'close' | 'eraseReplica'> & {
+	readonly boot: EpicenterBoot<TData, TError, TEraseError>;
+} {
 	// Latched, not tracked. One read, at construction, for the reason above.
 	const signedOut = epicenter.account.state.status === 'signed-out';
 	let settled = $state.raw<EpicenterBoot<TData, TError, TEraseError>>(
@@ -129,44 +158,59 @@ export function fromEpicenter<TData extends AdaptableData, TError, TEraseError>(
 	// which is exactly what a rune may not be.
 	let started = false;
 
-	return Object.freeze({
-		get boot() {
-			if (!signedOut && !started) {
-				started = true;
-				// Reading `data` starts the open. Nothing is written to a signal
-				// here; `settled` already says `opening`, and the `.then` below runs
-				// in a microtask, off the render path.
-				epicenter.data.then(
-					(opened) => {
-						if (!isOk(opened)) {
-							settled = {
-								status: 'failed',
-								error: opened.error,
-								eraseReplica: () => epicenter.eraseReplica(),
-							};
-							return;
-						}
-						// Awake before it is handed over, so an application receives one
-						// object once. `fromData` walks every table, which is why it
-						// happens here in a microtask and not in a getter a `$derived`
-						// might reach (`state_unsafe_mutation`).
-						//
-						// It reads the store, so a store closed between the open and
-						// this line throws. The only way there is a close before
-						// anything read `state`, which is a hot reload replacing this
-						// module: the page is going, and `opening` is what it should
-						// show on the way out.
-						try {
-							settled = { status: 'ready', data: fromData(opened.data) };
-						} catch {}
-					},
-					// No rejection arm, because the handle resolves a `Result`: a
-					// promise that rejects here is an opener that threw, and one that
-					// does leaves this rendering `opening` forever, which is why the
-					// opener contains its own throws rather than passing them on.
-				);
-			}
-			return settled;
-		},
-	});
+	const forwarded: PropertyDescriptorMap = {};
+	for (const key of Reflect.ownKeys(epicenter)) {
+		if (key === 'data' || key === 'close' || key === 'eraseReplica') continue;
+		const descriptor = Object.getOwnPropertyDescriptor(epicenter, key);
+		if (descriptor !== undefined) forwarded[key as string] = descriptor;
+	}
+
+	return Object.freeze(
+		Object.defineProperties({} as Record<string, unknown>, {
+			...forwarded,
+			boot: {
+				enumerable: true,
+				get() {
+					if (!signedOut && !started) {
+						started = true;
+						// Reading `data` starts the open. Nothing is written to a signal
+						// here; `settled` already says `opening`, and the `.then` below runs
+						// in a microtask, off the render path.
+						epicenter.data.then(
+							(opened) => {
+								if (!isOk(opened)) {
+									settled = {
+										status: 'failed',
+										error: opened.error,
+										eraseReplica: () => epicenter.eraseReplica(),
+									};
+									return;
+								}
+								// Awake before it is handed over, so an application receives one
+								// object once. `fromData` walks every table, which is why it
+								// happens here in a microtask and not in a getter a `$derived`
+								// might reach (`state_unsafe_mutation`).
+								//
+								// It reads the store, so a store closed between the open and
+								// this line throws. The only way there is a close before
+								// anything read `state`, which is a hot reload replacing this
+								// module: the page is going, and `opening` is what it should
+								// show on the way out.
+								try {
+									settled = { status: 'ready', data: fromData(opened.data) };
+								} catch {}
+							},
+							// No rejection arm, because the handle resolves a `Result`: a
+							// promise that rejects here is an opener that threw, and one that
+							// does leaves this rendering `opening` forever, which is why the
+							// opener contains its own throws rather than passing them on.
+						);
+					}
+					return settled;
+				},
+			},
+		}),
+	) as Omit<TEpicenter, 'data' | 'close' | 'eraseReplica'> & {
+		readonly boot: EpicenterBoot<TData, TError, TEraseError>;
+	};
 }

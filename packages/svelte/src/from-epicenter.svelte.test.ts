@@ -101,6 +101,44 @@ test('constructing opens nothing, and the first read of boot is what starts it',
 	expect(held.reads()).toBe(1);
 });
 
+test('the rest of the handle comes across, and reading it opens nothing', () => {
+	const held = handle('signed-in', never);
+	// Descriptors, not a spread: a spread here would read `data` and start the
+	// open in the test's own setup.
+	const full = Object.defineProperties(
+		{
+			appId: 'so.epicenter.notes',
+			sqlite: { open: async () => Ok('opened') },
+			secrets: { get: async () => Ok(null) },
+			close: async () => undefined,
+		},
+		Object.getOwnPropertyDescriptors(held.epicenter),
+	);
+	const epicenter = fromEpicenter(full as never) as unknown as {
+		appId: string;
+		sqlite: { open(): Promise<unknown> };
+		secrets: { get(): Promise<unknown> };
+		close?: unknown;
+		data?: unknown;
+		eraseReplica?: unknown;
+	};
+
+	// One `epicenter`, not a boot beside unrelated storage exports.
+	expect(epicenter.appId).toBe('so.epicenter.notes');
+	expect(typeof epicenter.sqlite.open).toBe('function');
+	expect(typeof epicenter.secrets.get).toBe('function');
+
+	// Reading the verbs is not reading the store. A spread would have evaluated
+	// the lazy `data` getter here and claimed a Web Lock on a page that only
+	// wanted a file name.
+	expect(held.reads()).toBe(0);
+
+	// Ending the store is the module local's, and erasing rides on `failed`.
+	expect('close' in epicenter).toBe(false);
+	expect('data' in epicenter).toBe(false);
+	expect('eraseReplica' in epicenter).toBe(false);
+});
+
 test('a signed-out person never touches the store at all', () => {
 	const held = handle('signed-out', never);
 	const store = fromEpicenter(held.epicenter);
