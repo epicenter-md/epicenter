@@ -135,9 +135,9 @@ async function openStore<const TDatabase extends DataDefinition>(
 ) {
 	const opened = await openDatabase<TDatabase>(...args);
 	if (opened.error !== null) return opened;
-	const { data, close } = opened.data;
+	const { store, close } = opened.data;
 	return Ok(
-		Object.assign(Object.create(data) as typeof data, {
+		Object.assign(Object.create(store) as typeof store, {
 			[Symbol.asyncDispose]: close,
 		}),
 	);

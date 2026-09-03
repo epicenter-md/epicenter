@@ -52,7 +52,7 @@ export async function openSkillsRuntime({
 	});
 	if (opened.error !== null) throw opened.error;
 	// The store and the thing that ends it, separately (ADR-0340).
-	const { data, close } = opened.data;
+	const { store: data, close } = opened.data;
 
 	try {
 		signal?.throwIfAborted();

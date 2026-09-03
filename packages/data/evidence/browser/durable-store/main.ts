@@ -110,7 +110,7 @@ Object.assign(globalThis, {
 			};
 		}
 		// The probe never closes: the page reload IS the close it is testing.
-		db = opened.data.data;
+		db = opened.data.store;
 		show({ opened: name, dataId: workspace.id });
 		return { ok: true };
 	},

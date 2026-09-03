@@ -154,7 +154,7 @@ async function openAccountRuntime({
 	if (opened.error !== null) throw opened.error;
 	// The store and the thing that ends it, separately (ADR-0340): what has to
 	// be released here is more than the document.
-	const { data, close } = opened.data;
+	const { store: data, close } = opened.data;
 
 	let sync: SyncConnection | undefined;
 	try {

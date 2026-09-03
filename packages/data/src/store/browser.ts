@@ -627,7 +627,7 @@ function isGeneration(value: number): boolean {
  * application is given cannot end itself.
  */
 export type OpenedDatabase<TDatabase extends DataDefinition> = {
-	readonly data: ReplicaData<TDatabase>;
+	readonly store: ReplicaData<TDatabase>;
 	close(): Promise<void>;
 };
 
@@ -852,7 +852,7 @@ export async function openDatabase<const TDatabase extends DataDefinition>(
 	// free one of the three and leave a connection running against a document
 	// whose every verb throws.
 	return Ok({
-		data: Object.freeze({
+		store: Object.freeze({
 			...(parts.view as DataView<TDatabase>),
 			...parts.store,
 			appId,
