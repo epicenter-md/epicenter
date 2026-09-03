@@ -187,10 +187,15 @@ async function openAccountReplica({
 			const status = connection.status();
 			return status.denied ? undefined : status;
 		},
+		// The store states its own address (ADR-0340), so a verb takes the store
+		// and nothing else describing it. This used to assemble a
+		// `folderArguments` object out of the data and a generation kept beside
+		// it, which is the last place a folder could have been addressed at a
+		// generation the store is not.
 		pull: ({ discardEdits = false } = {}) =>
-			pull({ ...folderArguments(data, generation), discardEdits }),
-		diff: () => diff(folderArguments(data, generation)),
-		push: ({ plan }) => push({ ...folderArguments(data, generation), plan }),
+			pull({ data, definition: honeycrispDefinition, discardEdits }),
+		diff: () => diff({ data, definition: honeycrispDefinition }),
+		push: ({ plan }) => push({ data, definition: honeycrispDefinition, plan }),
 		async [Symbol.asyncDispose]() {
 			stopHideFlush();
 			connection[Symbol.dispose]();
@@ -221,28 +226,6 @@ export async function resolveAccountGeneration(
 	});
 	if (resolved.error !== null) throw resolved.error;
 	return resolved.data.generation;
-}
-
-/**
- * What every folder verb needs, spelled once (ADR-0337).
- *
- * The manifest records which store and which generation it was written from,
- * so a component supplies none of it and this file supplies all of it.
- */
-function folderArguments(
-	data: ReplicaData<typeof honeycrispDefinition>,
-	generation: number,
-) {
-	return {
-		data,
-		definition: honeycrispDefinition,
-		store: {
-			dataId: honeycrispDefinition.id,
-			generation,
-			baseURL: data.baseURL,
-			principalId: data.principalId,
-		},
-	};
 }
 
 /** The account half of every call in this file, spelled once. */

@@ -88,13 +88,15 @@ export {
 /**
  * Which store a folder is a working copy of, and which history of it.
  *
- * The four facts the manifest records and every later comparison is against,
- * carried as one value because they are one fact: this folder belongs to that
- * account's copy of that database at that number. Passed separately they were
- * four positional strings at three call sites, and a caller could supply half a
- * provenance.
+ * The four facts the manifest records and every later comparison is against.
+ * They used to arrive as their own argument, assembled by the caller out of a
+ * store and a generation kept beside it, and that is how a folder came to be
+ * addressable at a generation the store is not. An opened store states its own
+ * address now (ADR-0340), so this is a slice of the data handed in rather than
+ * a second description of it, and there is nothing left for a caller to get
+ * half right.
  */
-export type CheckoutStore = {
+type CheckoutAddress = {
 	readonly dataId: string;
 	readonly generation: number;
 	readonly baseURL: string;
@@ -349,7 +351,7 @@ type WorkingCopy = {
  * deletion.
  */
 async function readWorkingCopy(
-	store: CheckoutStore,
+	store: CheckoutAddress,
 	httpFetch: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<Result<WorkingCopy, CheckoutError>> {
 	const { data: response, error } = await tryAsync({
@@ -563,14 +565,12 @@ function agentsFile(definition: ParsedDataDefinition): string {
 export async function pull({
 	data,
 	definition,
-	store,
 	discardEdits = false,
 	fetch: httpFetch = globalThis.fetch,
 	now = () => new Date(),
 }: {
-	data: RenderableData;
+	data: RenderableData & CheckoutAddress;
 	definition: DataDefinition;
-	store: CheckoutStore;
 	/** The person saw the unpushed edits and asked for them to go. */
 	discardEdits?: boolean;
 	fetch?: typeof globalThis.fetch;
@@ -587,7 +587,7 @@ export async function pull({
 		});
 	}
 	if (!discardEdits) {
-		const held = await readWorkingCopy(store, httpFetch);
+		const held = await readWorkingCopy(data, httpFetch);
 		if (held.error !== null) return Err(held.error);
 		// The same plan `diff` produces, because it is the same question asked
 		// at the other end: what does this folder hold that the store does not?
@@ -656,7 +656,10 @@ export async function pull({
 	if (failures.length > 0) return CheckoutError.Unrenderable({ failures });
 
 	const manifest: CheckoutManifest = {
-		...store,
+		dataId: data.dataId,
+		generation: data.generation,
+		baseURL: data.baseURL,
+		principalId: data.principalId,
 		pulledAt: now().toISOString(),
 		rows,
 		kvHash,
@@ -669,7 +672,7 @@ export async function pull({
 		},
 	);
 
-	const { error } = await sendCheckout(store.dataId, files, httpFetch);
+	const { error } = await sendCheckout(data.dataId, files, httpFetch);
 	return error === null ? Ok({ files: files.length }) : Err(error);
 }
 
@@ -980,12 +983,10 @@ function planKey(item: PlanItem): string {
 export async function diff({
 	data,
 	definition,
-	store,
 	fetch: httpFetch = globalThis.fetch,
 }: {
-	data: RenderableData;
+	data: RenderableData & CheckoutAddress;
 	definition: DataDefinition;
-	store: CheckoutStore;
 	fetch?: typeof globalThis.fetch;
 }): Promise<Result<PushPlan, CheckoutError>> {
 	const parsed = compileData(definition);
@@ -996,7 +997,7 @@ export async function diff({
 			],
 		});
 	}
-	const held = await readWorkingCopy(store, httpFetch);
+	const held = await readWorkingCopy(data, httpFetch);
 	if (held.error !== null) return Err(held.error);
 	const read = await planPush(data, parsed.data, held.data);
 	return read.base
@@ -1354,14 +1355,12 @@ function samePlan(left: PushPlan, right: PushPlan): boolean {
 export async function push({
 	data,
 	definition,
-	store,
 	plan: confirmed,
 	fetch: httpFetch = globalThis.fetch,
 	now = () => new Date(),
 }: {
-	data: PushableData;
+	data: PushableData & CheckoutAddress;
 	definition: DataDefinition;
-	store: CheckoutStore;
 	/** What `diff` said and a person approved, whole. */
 	plan: PushPlan;
 	fetch?: typeof globalThis.fetch;
@@ -1375,7 +1374,7 @@ export async function push({
 			],
 		});
 	}
-	const held = await readWorkingCopy(store, httpFetch);
+	const held = await readWorkingCopy(data, httpFetch);
 	if (held.error !== null) return Err(held.error);
 	const read = await planPush(data, parsed.data, held.data);
 	if (!read.base) {
@@ -1555,7 +1554,6 @@ export async function push({
 	const pulled = await pull({
 		data,
 		definition,
-		store,
 		discardEdits: true,
 		fetch: httpFetch,
 		now,

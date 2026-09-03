@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-02
-- **Unbuilt:** all of it. `ReplicaData` carries `baseURL` and `principalId` and nothing else about which store it is; `attachStoreSync` takes `dataId` and `generation` as arguments; `pull`, `diff`, and `push` take a `CheckoutStore` the caller assembles; and nothing but a connection object a caller holds can report whether sync is up.
+- **Unbuilt:** nothing. Built in `feat(data): a store knows which store it is` and `feat(data): the folder verbs read the store's own address`.
 - **Relates:** [ADR-0339](0339-an-application-creates-one-epicenter-and-an-account-is-what-adds-a-store.md) (which needs this and does not govern it), [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md), [ADR-0292](0292-a-database-opens-an-exact-generation-cache-first-and-bootstraps-account-misses.md), [ADR-0324](0324-a-database-address-is-its-data-id-and-generation-and-the-declaration-declares-its-authority.md), [ADR-0233](0233-a-route-owns-one-runtime-and-disposes-it.md)
 
 ## Context

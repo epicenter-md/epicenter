@@ -66,12 +66,37 @@ const DATA_ID = definition.id;
 const CLOUD = 'https://api.epicenter.so';
 
 /** Which store these files are a working copy of, spelled once. */
-const STORE = {
+const STORE: {
+	dataId: string;
+	generation: number;
+	baseURL: string;
+	principalId: string;
+} = {
 	dataId: DATA_ID,
 	generation: 7,
 	baseURL: CLOUD,
 	principalId: 'alice',
 };
+
+/**
+ * A store that states its own address, the way an opener stamps one
+ * (ADR-0340).
+ *
+ * `openMemory` composes a store with no authority behind it, so these tests
+ * put the four facts on it here. A test that wants a folder written from
+ * somewhere else overrides one of them, which is the only way left to describe
+ * a different store: the verbs read the address off the data.
+ */
+function addressed<TData>(
+	data: TData,
+	overrides: Partial<typeof STORE> = {},
+): TData & typeof STORE {
+	return Object.assign(
+		Object.create(data as object),
+		STORE,
+		overrides,
+	) as TData & typeof STORE;
+}
 
 /**
  * A host that holds one folder in memory.
@@ -125,7 +150,7 @@ function fakeHost(initial: Iterable<CheckoutFile> = []) {
 }
 
 async function notebook() {
-	const data = await openMemory(definition);
+	const data = addressed(await openMemory(definition));
 	const note = data.tables.notes.create({ title: 'Groceries', pinned: false });
 	const held = data.tables.notes.get(note.id);
 	if (held === undefined) throw new Error('the row has no content');
@@ -145,7 +170,6 @@ async function pullInto(
 	return pull({
 		data,
 		definition,
-		store: STORE,
 		fetch: host.fetch,
 		now: () => new Date('2026-09-02T10:00:00.000Z'),
 		...options,
@@ -419,8 +443,10 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		folder.set(path, (folder.get(path) as string).replace(line, next));
 	}
 
-	const planOf = (host: ReturnType<typeof fakeHost>, data: PushableData) =>
-		diff({ data, definition, store: STORE, fetch: host.fetch });
+	const planOf = (
+		host: ReturnType<typeof fakeHost>,
+		data: PushableData & typeof STORE,
+	) => diff({ data, definition, fetch: host.fetch });
 
 	test('a value the person changed and the store did not is applied', async () => {
 		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
@@ -488,7 +514,6 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			await push({
 				data,
 				definition,
-				store: STORE,
 				plan,
 				fetch: host.fetch,
 			}),
@@ -549,13 +574,12 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			},
 		});
 		const host = fakeHost();
-		const data = await openMemory(refusing);
+		const data = addressed(await openMemory(refusing));
 		const note = data.tables.notes.create({ title: 'x', pinned: false });
 		expectOk(
 			await pull({
 				data,
 				definition: refusing,
-				store: STORE,
 				fetch: host.fetch,
 			}),
 		);
@@ -567,7 +591,6 @@ describe('diff plans what push would do (ADR-0337)', () => {
 			await diff({
 				data,
 				definition: refusing,
-				store: STORE,
 				fetch: host.fetch,
 			}),
 		);
@@ -668,19 +691,20 @@ describe('push sends the values back and re-renders', () => {
 		return { host, data, noteId };
 	}
 
-	const planOf = (host: ReturnType<typeof fakeHost>, data: PushableData) =>
-		diff({ data, definition, store: STORE, fetch: host.fetch });
+	const planOf = (
+		host: ReturnType<typeof fakeHost>,
+		data: PushableData & typeof STORE,
+	) => diff({ data, definition, fetch: host.fetch });
 
 	const sendBack = (
 		host: ReturnType<typeof fakeHost>,
-		data: PushableData,
+		data: PushableData & typeof STORE,
 		plan: PushPlan,
 		now = () => new Date('2026-09-02T11:00:00.000Z'),
 	) =>
 		push({
 			data,
 			definition,
-			store: STORE,
 			plan,
 			fetch: host.fetch,
 			now,
@@ -978,13 +1002,12 @@ describe('push sends the values back and re-renders', () => {
 			},
 		});
 		const host = fakeHost();
-		const data = await openMemory(exploding);
+		const data = addressed(await openMemory(exploding));
 		const note = data.tables.notes.create({ title: 'x', pinned: false });
 		expectOk(
 			await pull({
 				data,
 				definition: exploding,
-				store: STORE,
 				fetch: host.fetch,
 			}),
 		);
@@ -996,7 +1019,6 @@ describe('push sends the values back and re-renders', () => {
 			await diff({
 				data,
 				definition: exploding,
-				store: STORE,
 				fetch: host.fetch,
 			}),
 		);
@@ -1035,11 +1057,13 @@ describe('push sends the values back and re-renders', () => {
 		// the one before this describes rows that are not these rows, and
 		// reading it as a base would call every one of them a deletion.
 		const { host, data } = await edited(['"Groceries"', '"Shopping"']);
+		// The same folder, read by a store that is the next generation. Nothing
+		// can address the folder at a generation any more, so this is a store
+		// standing where the newer one would.
 		const refused = expectErr(
 			await diff({
-				data,
+				data: addressed(data, { generation: STORE.generation + 1 }),
 				definition,
-				store: { ...STORE, generation: STORE.generation + 1 },
 				fetch: host.fetch,
 			}),
 		);
@@ -1112,7 +1136,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 	});
 
 	async function agentsFor(
-		data: PushableData,
+		data: PushableData & typeof STORE,
 		of: typeof definition | typeof shapes = definition,
 	) {
 		const host = fakeHost();
@@ -1120,7 +1144,6 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 			await pull({
 				data,
 				definition: of,
-				store: { ...STORE, dataId: of.id },
 				fetch: host.fetch,
 			}),
 		);
@@ -1131,8 +1154,11 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		// Derived from the definition rather than compared to a fixture, so the
 		// test says the rule (everything that exists is named) instead of
 		// pinning today's markdown.
-		const data = await openMemory(shapes);
-		const { agents } = await agentsFor(data as unknown as PushableData, shapes);
+		const data = addressed(await openMemory(shapes), { dataId: shapes.id });
+		const { agents } = await agentsFor(
+			data as unknown as PushableData & typeof STORE,
+			shapes,
+		);
 		for (const [name, table] of Object.entries(shapes.tables)) {
 			expect(agents).toContain(`### ${name}/`);
 			for (const fieldName of Object.keys(table)) {
@@ -1149,8 +1175,11 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 	test('every outcome an agent can cause has a line saying what it costs', async () => {
 		// The file is the one place an agent learns what happens to each of its
 		// edits, and every one of these is silent in the folder itself.
-		const data = await openMemory(shapes);
-		const { agents } = await agentsFor(data as unknown as PushableData, shapes);
+		const data = addressed(await openMemory(shapes), { dataId: shapes.id });
+		const { agents } = await agentsFor(
+			data as unknown as PushableData & typeof STORE,
+			shapes,
+		);
 		// Keyed by the plan's own vocabulary, so a kind added to `PlanItem` or a
 		// reason added to `DiscardReason` fails to compile until this file says
 		// what it costs. The file has twice been left behind by a wave that
@@ -1185,9 +1214,15 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		// a pull from making Time Machine and Spotlight see the whole folder as
 		// new. A generated file that carried a timestamp would break that for
 		// every folder, every time.
-		const data = await openMemory(shapes);
-		const first = await agentsFor(data as unknown as PushableData, shapes);
-		const second = await agentsFor(data as unknown as PushableData, shapes);
+		const data = addressed(await openMemory(shapes), { dataId: shapes.id });
+		const first = await agentsFor(
+			data as unknown as PushableData & typeof STORE,
+			shapes,
+		);
+		const second = await agentsFor(
+			data as unknown as PushableData & typeof STORE,
+			shapes,
+		);
 		expect(second.agents).toBe(first.agents);
 		await data[Symbol.asyncDispose]();
 	});
