@@ -45,9 +45,11 @@ app.persistence.get() === 'blocked';     // this device stopped saving
 
 ### `fromEpicenter`
 
-Adapts one `@epicenter/app` handle's store into four states a route renders
-from: `signed-out`, `opening`, `ready` (carrying the data), and `failed`
-(carrying the error). The store is a field on the `ready` variant, so a read
+Adapts one `@epicenter/app` handle's store into the four states a route renders
+from, on one member, `boot`: `signed-out`, `opening`, `ready` (carrying the
+data), and `failed` (carrying the error and the erase). One property rather
+than a `status` beside a `data`, because TypeScript narrows a union and cannot
+correlate two properties: flat, `data` would be optional at every read. The store is a field on the `ready` variant, so a read
 before it is open does not compile.
 
 Signed-out is answered from one read of `account.state` BEFORE anything opens,
@@ -75,14 +77,14 @@ export const notes = fromEpicenter(createEpicenter({ definition, account: auth }
 ```
 
 ```svelte
-{#if notes.state.status === 'signed-out'}
+{#if notes.boot.status === 'signed-out'}
   <SignInGate />
-{:else if notes.state.status === 'opening'}
+{:else if notes.boot.status === 'opening'}
   <Loading />
-{:else if notes.state.status === 'ready'}
-  <Notes data={notes.state.data} />
+{:else if notes.boot.status === 'ready'}
+  <Notes data={notes.boot.data} />
 {:else}
-  <BootFailure error={notes.state.error} erase={notes.state.eraseReplica} />
+  <BootFailure error={notes.boot.error} erase={notes.boot.eraseReplica} />
 {/if}
 ```
 

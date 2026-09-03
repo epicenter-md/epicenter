@@ -47,8 +47,8 @@ usable offline; one that holds none fetches the generation whole before
 returning, so a fresh account never renders empty while its state is arriving.
 
 The leaf exports ONE name, `honeycrisp`, which is `fromEpicenter` composed over
-the handle: `signed-out | opening | ready | failed`, with the store on `ready`
-and the error and the erase on `failed`. Signed-out is answered before anything
+the handle. Its one member is `boot`: `signed-out | opening | ready | failed`,
+with the store on `ready` and the error and the erase on `failed`. Signed-out is answered before anything
 opens, and it is a state rather than a failure, so the gate never sniffs an
 error to choose between "sign in" and "something broke". Both halves are lazy,
 so importing the leaf opens nothing: `/auth/callback` never reads `state` and

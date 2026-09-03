@@ -17,15 +17,15 @@
 	// its URL, and the post-sign-in reload lands where the link pointed.
 </script>
 
-{#if honeycrisp.state.status === 'signed-out'}
+{#if honeycrisp.boot.status === 'signed-out'}
 	<AccountGate />
-{:else if honeycrisp.state.status === 'opening'}
+{:else if honeycrisp.boot.status === 'opening'}
 	<Loading class="h-dvh" label="Opening your notes…" />
-{:else if honeycrisp.state.status === 'ready'}
-	<StoreShell data={honeycrisp.state.data} />
+{:else if honeycrisp.boot.status === 'ready'}
+	<StoreShell data={honeycrisp.boot.data} />
 {:else}
 	<AccountGate
-		error={honeycrisp.state.error}
-		erase={honeycrisp.state.eraseReplica}
+		error={honeycrisp.boot.error}
+		erase={honeycrisp.boot.eraseReplica}
 	/>
 {/if}

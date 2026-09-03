@@ -2,11 +2,19 @@
  * A Svelte 5 adapter over one application handle's store: four states, and the
  * data rides on `ready`.
  *
+ * The member is `boot` rather than `state`, because that is what these four
+ * are: signed-out, opening, ready, failed is a boot sequence, and `state.status`
+ * read as "the state's status". They stay ONE property rather than a `status`
+ * beside a `data`, and that is not taste: TypeScript narrows a discriminated
+ * union and cannot correlate two properties, so a flat pair would leave `data`
+ * optional at every read site and "you cannot read the store before it is open"
+ * would stop being a rule the compiler keeps.
+ *
  * `epicenter.data` is a promise that settles once. This is what a route renders
  * from while it is settling, and what it renders from afterwards.
  *
  * **Nothing opens until something reads.** The handle's `data` is a lazy getter
- * and so is this: the first read of `state` starts the open, and it writes no
+ * and so is this: the first read of `boot` starts the open, and it writes no
  * signal synchronously, because the value it would write is the `opening` it
  * already holds. That is what makes it safe inside a `$derived` (unlike
  * `fromData`, which walks every row and is eager for exactly that reason), and
@@ -45,21 +53,21 @@
  * away. The auth adapter next door does use `createSubscriber`, because an auth
  * client is that kind of source, so the two differ on purpose.
  *
- * **There is no `data` accessor beside `state`.** The opened store is a field
+ * **There is no `data` accessor beside `boot`.** The opened store is a field
  * on the `ready` variant, so a read before the store is open does not compile.
  * A top-level accessor could only be a runtime throw, which is a type turned
  * into an invariant, and it could not be read from a `$derived` while opening.
  *
  * @example
  * ```svelte
- * {#if notes.state.status === 'signed-out'}
+ * {#if notes.boot.status === 'signed-out'}
  *   <SignInGate />
- * {:else if notes.state.status === 'opening'}
+ * {:else if notes.boot.status === 'opening'}
  *   <Loading />
- * {:else if notes.state.status === 'ready'}
- *   <Notes data={notes.state.data} />
+ * {:else if notes.boot.status === 'ready'}
+ *   <Notes data={notes.boot.data} />
  * {:else}
- *   <BootFailure error={notes.state.error} erase={notes.state.eraseReplica} />
+ *   <BootFailure error={notes.boot.error} erase={notes.boot.eraseReplica} />
  * {/if}
  * ```
  */
@@ -86,7 +94,7 @@ type AdaptableEpicenter<TData extends AdaptableData, TError, TEraseError> = {
 };
 
 /**
- * The four answers a route renders from.
+ * The four answers a route renders from: the boot, as a state.
  *
  * `ready` carries the store and `failed` carries the error, because each is
  * only meaningful in its own state, and a variant is how that stops being a
@@ -98,7 +106,7 @@ type AdaptableEpicenter<TData extends AdaptableData, TError, TEraseError> = {
  * released its claim before it returned, which makes `failed` the one state
  * where the verb can succeed.
  */
-export type EpicenterState<TData extends AdaptableData, TError, TEraseError> =
+export type EpicenterBoot<TData extends AdaptableData, TError, TEraseError> =
 	| { readonly status: 'signed-out' }
 	| { readonly status: 'opening' }
 	| { readonly status: 'ready'; readonly data: ReactiveData<TData> }
@@ -108,17 +116,13 @@ export type EpicenterState<TData extends AdaptableData, TError, TEraseError> =
 			eraseReplica(): Promise<Result<void, TEraseError>>;
 	  };
 
-export type EpicenterStore<TData extends AdaptableData, TError, TEraseError> = {
-	readonly state: EpicenterState<TData, TError, TEraseError>;
-};
-
 /** Adapt one application handle's store into Svelte reactivity. */
 export function fromEpicenter<TData extends AdaptableData, TError, TEraseError>(
 	epicenter: AdaptableEpicenter<TData, TError, TEraseError>,
-): EpicenterStore<TData, TError, TEraseError> {
+): { readonly boot: EpicenterBoot<TData, TError, TEraseError> } {
 	// Latched, not tracked. One read, at construction, for the reason above.
 	const signedOut = epicenter.account.state.status === 'signed-out';
-	let settled = $state.raw<EpicenterState<TData, TError, TEraseError>>(
+	let settled = $state.raw<EpicenterBoot<TData, TError, TEraseError>>(
 		signedOut ? { status: 'signed-out' } : { status: 'opening' },
 	);
 	// A plain closure variable rather than a rune: it is written during a read,
@@ -126,7 +130,7 @@ export function fromEpicenter<TData extends AdaptableData, TError, TEraseError>(
 	let started = false;
 
 	return Object.freeze({
-		get state() {
+		get boot() {
 			if (!signedOut && !started) {
 				started = true;
 				// Reading `data` starts the open. Nothing is written to a signal

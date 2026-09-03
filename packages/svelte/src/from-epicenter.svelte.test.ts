@@ -87,17 +87,17 @@ function handle(status: 'signed-in' | 'signed-out', settle: Promise<Opened>) {
 
 const never = new Promise<Opened>(() => {});
 
-test('constructing opens nothing, and the first read of state is what starts it', () => {
+test('constructing opens nothing, and the first read of boot is what starts it', () => {
 	const held = handle('signed-in', never);
 	const store = fromEpicenter(held.epicenter);
 	expect(held.reads()).toBe(0);
 
-	expect(store.state.status).toBe('opening');
+	expect(store.boot.status).toBe('opening');
 	expect(held.reads()).toBe(1);
 
 	// A second read joins the first. The handle memoizes too, but this must not
 	// depend on that: an application reads `state` on every render.
-	expect(store.state.status).toBe('opening');
+	expect(store.boot.status).toBe('opening');
 	expect(held.reads()).toBe(1);
 });
 
@@ -105,8 +105,8 @@ test('a signed-out person never touches the store at all', () => {
 	const held = handle('signed-out', never);
 	const store = fromEpicenter(held.epicenter);
 
-	expect(store.state.status).toBe('signed-out');
-	expect(store.state.status).toBe('signed-out');
+	expect(store.boot.status).toBe('signed-out');
+	expect(store.boot.status).toBe('signed-out');
 	// No Web Lock, no IndexedDB, no round trip. Signed-out is answered from one
 	// read of the account, before anything opens.
 	expect(held.reads()).toBe(0);
@@ -116,29 +116,29 @@ test('the store rides on ready, awake, with everything else intact', async () =>
 	const opened = store('epicenter/v4/app/data/1');
 	const held = handle('signed-in', Promise.resolve(Ok(opened)));
 	const wrapper = fromEpicenter(held.epicenter);
-	expect(wrapper.state.status).toBe('opening');
+	expect(wrapper.boot.status).toBe('opening');
 
 	await Bun.sleep(1);
-	if (wrapper.state.status !== 'ready') throw new Error('expected ready');
+	if (wrapper.boot.status !== 'ready') throw new Error('expected ready');
 	// Adapted, not narrowed: every member the store had is still there, which is
 	// what lets one object be handed over once instead of a store and a view of
 	// it. The address is the member the folder verbs read.
-	expect(wrapper.state.data.address).toBe('epicenter/v4/app/data/1');
-	expect(wrapper.state.data.transact(() => 'ran')).toBe('ran');
+	expect(wrapper.boot.data.address).toBe('epicenter/v4/app/data/1');
+	expect(wrapper.boot.data.transact(() => 'ran')).toBe('ran');
 });
 
 test('a failure carries the error and the erase, and nothing else does', async () => {
 	const held = handle('signed-in', Promise.resolve(Err('BoundElsewhere')));
 	const store = fromEpicenter(held.epicenter);
-	void store.state;
+	void store.boot;
 
 	await Bun.sleep(1);
-	if (store.state.status !== 'failed') throw new Error('expected a failure');
-	expect(store.state.error).toBe('BoundElsewhere');
+	if (store.boot.status !== 'failed') throw new Error('expected a failure');
+	expect(store.boot.error).toBe('BoundElsewhere');
 
 	// Erasing takes the same claim an open takes, so it can only succeed in the
 	// state that hands it over: a failed open released its claim before it
 	// returned.
-	await store.state.eraseReplica();
+	await store.boot.eraseReplica();
 	expect(held.erases()).toBe(1);
 });
