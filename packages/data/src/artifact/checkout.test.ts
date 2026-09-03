@@ -1368,7 +1368,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 			discard: 'is left alone',
 		};
 		const perReason: Record<DiscardReason, string> = {
-			'row-gone': 'a file whose row was deleted in the',
+			'row-gone': 'a file whose row was deleted',
 			'kv-changed': '`kv.json` is read only',
 			unreadable: 'Keep the `---` block',
 			'table-undeclared': 'The tables',
@@ -1413,7 +1413,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 		const { data } = await notebook();
 		expectOk(await pullInto(host, data));
 		expect(host.folder.get(AGENTS_PATH)).toContain(
-			'Keep anything of your own under a different name',
+			'A pull replaces every one of them, including this file.',
 		);
 
 		host.folder.set(AGENTS_PATH, 'my own words');

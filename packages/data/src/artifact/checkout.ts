@@ -217,10 +217,11 @@ export const CheckoutError = defineErrors({
 	 * folder rather than one refusal per file: the repair for every one of them
 	 * is the same `pull`.
 	 *
-	 * `unwritten` is the row-shaped paths found there anyway. It is what makes
-	 * this `pull`'s refusal rather than its ordinary first run, since a pull
-	 * would overwrite them; `diff` and `push` refuse an unwritten folder
-	 * whether or not it holds any, because there is nothing to compare.
+	 * `unwritten` is the row-shaped paths found there anyway, and every one of
+	 * them is work a pull writes over. `diff` reports this state rather than
+	 * failing on it (ADR-0341), because it is an answer about the folder; only
+	 * `push` refuses it, since nothing in such a folder can be told from what
+	 * the store already has.
 	 */
 	FolderUnwritten: ({ unwritten }: { unwritten: readonly string[] }) => ({
 		message: `nothing wrote this folder, and it holds ${unwritten.length} file(s) that look like rows`,
@@ -446,8 +447,10 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		`# ${definition.id}`,
 		'',
 		'These files are a working copy of a database, written by Epicenter.',
-		'**Every time the application writes this folder it replaces them,',
-		'including this file.** Keep anything of your own under a different name.',
+		'**A pull replaces every one of them, including this file. A push',
+		'replaces only the files it changed.** Anything of your own goes at a',
+		'path that is neither `<table>/<row-id>.md` nor one of the three names',
+		'below: nothing here ever touches those.',
 		'',
 		'## The layout',
 		'',
@@ -457,6 +460,25 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'kv.json                    settings. Read only.',
 		`<table>/<row-id>${ROW_FILE_EXTENSION}        one row: frontmatter, then its text`,
 		'```',
+		'',
+		'## The two verbs, and which one moves this folder',
+		'',
+		'**A pull writes every file here from the database.** It rewrites every',
+		'row file, `kv.json`, this file, and the manifest, and it REMOVES every',
+		'row-shaped file the database has no row for, including one you created',
+		'and nobody pushed. Before it runs, the person is shown every unpushed',
+		'edit it would write over, and chooses. So an edit you have not had',
+		'pushed survives only until somebody makes that choice: push before you',
+		'stop, or say plainly what is still unpushed.',
+		'',
+		'**A pull is also the only thing that makes this folder current.**',
+		'`pulledAt` in `.epicenter/manifest.json` moves only at a pull. A push',
+		'rewrites the manifest without moving it, so if `pulledAt` changed,',
+		're-read every file: all of them may have changed, including the one you',
+		'were editing.',
+		'',
+		'A write you make while the person is reading either list makes that verb',
+		'refuse and re-read, so it is not lost quietly.',
 		'',
 		'## What happens to what you edit',
 		'',
@@ -514,8 +536,10 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'  as unreadable and the repair is this file. `id` and the text below the',
 		'  block are not frontmatter lines, and writing one does nothing at all.',
 		'- **A file the push cannot read is left alone**, and nothing else in the',
-		'  push is affected. So is a file whose row was deleted in the',
-		'  application, and there the next pull removes the file.',
+		'  push is affected. Where only the text under the `---` block cannot be',
+		'  read, the frontmatter values in that same file still go in and the',
+		'  file is still left as you wrote it. So is a file whose row was deleted',
+		'  in the application, and there the next pull removes the file.',
 		'- **`kv.json` is read only.** A push never sends it and never rewrites',
 		'  it; an edit there is reported at every push, and the next pull',
 		'  replaces it.',
@@ -1120,9 +1144,12 @@ async function planPush(
 	// folder rather than one item per file, because the answer to all of them
 	// is the same and it is `pull`.
 	if (base === undefined) {
-		const unwritten = [...held.files.keys()].filter(
-			(path) => parseRowPath(path) !== undefined || path === 'kv.json',
-		);
+		// Sorted for the reason the plan is: a person approves this list and a
+		// verb compares what it reads against it, and the host's directory order
+		// is the filesystem's business.
+		const unwritten = [...held.files.keys()]
+			.filter((path) => parseRowPath(path) !== undefined || path === 'kv.json')
+			.sort();
 		return { base: undefined, unwritten };
 	}
 

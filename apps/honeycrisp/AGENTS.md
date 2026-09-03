@@ -74,8 +74,9 @@ verb is `pull` from `src/lib/folder.ts`, which is the library's verb with this
 application's definition supplied. It needs nothing else, because the store
 states its own address and that is what the manifest records (ADR-0340).
 
-A pull refuses a folder holding edits nobody sent back, and shows them. Sending
-them back or discarding them are both second deliberate acts. It also refuses
+A pull shows every edit in the folder it is about to write over and takes one
+approval. Confirming the list IS the discard (ADR-0341); there is no second
+gesture. It also refuses
 where there is no folder at all, which is every ordinary browser tab: a page
 has no filesystem, and the copy says so rather than offering a retry.
 
@@ -109,9 +110,9 @@ minted rather than chosen. That is in the overview before a person approves it,
 and in the `AGENTS.md` a pull writes, so an agent knows to re-read the folder
 after a push.
 
-One thing is not a plan at all: a folder nothing ever wrote. `pull` and `push`
-both answer it with `FolderUnwritten`, and the surface says so once for the
-folder rather than once per file.
+One thing is not a plan at all: a folder nothing ever wrote. `diff` reports it
+as a state rather than failing, `push` refuses it, and `pull` writes over it
+after showing the paths once for the folder rather than once per file.
 
 ## Three builds, one store shape
 

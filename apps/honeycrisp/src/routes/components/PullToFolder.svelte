@@ -5,7 +5,7 @@
 	import FolderDownIcon from '@lucide/svelte/icons/folder-down';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import type { FolderVerbs } from '$lib/folder.js';
-	import { renderPlan } from '$lib/folder-overview.js';
+	import { irreversible, renderPlan } from '$lib/folder-overview.js';
 	import { reportBackgroundError } from '$lib/report.js';
 
 	let {
@@ -37,7 +37,7 @@
 	let running = $state(false);
 	let confirm = $state<HTMLButtonElement | null>(null);
 
-	/** Whether this folder holds anything a pull would write over. */
+	/** How much of this folder a pull writes over. */
 	const wouldLose = $derived(
 		shown === undefined
 			? 0
@@ -45,6 +45,14 @@
 				? shown.plan.length
 				: shown.unwritten.length,
 	);
+	/** How much of that cannot be put back afterwards. */
+	const cannotUndo = $derived(
+		shown === undefined || !shown.base
+			? (shown?.base === false ? shown.unwritten.length : 0)
+			: irreversible(shown.plan, honeycrisp.tables.notes, 'pull'),
+	);
+	/** Whether this list replaced one that stopped being true. */
+	let stale = $state(false);
 
 	/** Read the folder, and show it when there is anything to lose. */
 	async function open() {
@@ -66,6 +74,7 @@
 				await write(data);
 				return;
 			}
+			stale = false;
 			shown = data;
 		} catch (cause) {
 			reportBackgroundError(cause);
@@ -80,6 +89,14 @@
 		running = true;
 		try {
 			const { data, error } = await pull({ state });
+			if (error !== null && error.name === 'FolderChanged') {
+				// What the refusal carries IS the next list. The folder moved
+				// while they were reading, so they read the version that is true
+				// now and approve that.
+				shown = error.state;
+				stale = true;
+				return;
+			}
 			shown = undefined;
 			outcome =
 				error === null
@@ -88,6 +105,17 @@
 							message: `${data.files} file${data.files === 1 ? '' : 's'} written to your Epicenter folder.`,
 						}
 					: { tone: 'refused', message: refusal(error) };
+		} catch (cause) {
+			// The library reports every refusal it plans for as a `Result`, so a
+			// throw here is a bug rather than an outcome, and it must not leave
+			// the dialog open over a list that may no longer be true.
+			reportBackgroundError(cause);
+			shown = undefined;
+			outcome = {
+				tone: 'refused',
+				message:
+					'Something went wrong partway through writing the folder. Read it again to see what landed.',
+			};
 		} finally {
 			running = false;
 		}
@@ -126,7 +154,7 @@
 	const wouldGo = $derived.by(() => {
 		if (shown === undefined) return '';
 		if (!shown.base) return shown.unwritten.map((path) => `  ${path}`).join('\n');
-		return renderPlan(shown.plan, honeycrisp.tables.notes);
+		return renderPlan(shown.plan, honeycrisp.tables.notes, 'pull');
 	});
 
 </script>
@@ -171,13 +199,19 @@
 	>
 		<AlertDialog.Header>
 			<AlertDialog.Title>
-				Save notes as files, and {wouldLose} edit{wouldLose === 1 ? '' : 's'} in your
-				folder go
+				{shown?.base === false
+					? `Write over ${wouldLose} file${wouldLose === 1 ? '' : 's'} nothing here wrote`
+					: `Write over ${wouldLose} edit${wouldLose === 1 ? '' : 's'} in your folder`}{cannotUndo >
+					0 && shown?.base !== false
+					? `, ${cannotUndo} you cannot get back`
+					: ''}
 			</AlertDialog.Title>
 			<AlertDialog.Description>
-				{shown?.base === false
-					? 'Nothing here wrote this folder, so nothing in it can be told apart from your notes. Saving replaces every file below.'
-					: 'Every file is written from your notes. These are the edits in your folder that have not been pushed back, and saving replaces them.'}
+				{stale
+					? 'Your folder or your notes changed while you were reading, so nothing was written. This is what is true now.'
+					: shown?.base === false
+						? 'Nothing here wrote this folder, so nothing in it can be told apart from your notes. Every file below is replaced or removed.'
+						: 'Every file is written from your notes. These are the edits in your folder that have not been pushed back.'}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 
@@ -189,9 +223,10 @@
 			<AlertDialog.Action
 				bind:ref={confirm}
 				class={buttonVariants({ variant: 'destructive' })}
+				disabled={running}
 				onclick={() => shown !== undefined && write(shown)}
 			>
-				Save all
+				Write over them
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

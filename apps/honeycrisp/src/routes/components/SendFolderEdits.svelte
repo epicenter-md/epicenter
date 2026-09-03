@@ -35,7 +35,11 @@
 	let stale = $state(false);
 
 	/** How many of these changes cannot be put back afterwards. */
-	const cannotUndo = $derived(plan === undefined ? 0 : irreversible(plan));
+	const cannotUndo = $derived(
+		plan === undefined
+			? 0
+			: irreversible(plan, honeycrisp.tables.notes, 'push'),
+	);
 
 	/**
 	 * The whole push as one block of plain text.
@@ -45,7 +49,9 @@
 	 * surface would have styled is a word here instead.
 	 */
 	const overview = $derived(
-		plan === undefined ? '' : renderPlan(plan, honeycrisp.tables.notes),
+		plan === undefined
+			? ''
+			: renderPlan(plan, honeycrisp.tables.notes, 'push'),
 	);
 
 	async function open() {
