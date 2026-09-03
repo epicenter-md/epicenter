@@ -732,17 +732,9 @@ describe('push sends the values back and re-renders', () => {
 		host: ReturnType<typeof fakeHost>,
 		data: PushableData & typeof STORE,
 		plan: PushPlan,
-		now = () => new Date('2026-09-02T11:00:00.000Z'),
-	) =>
-		push({
-			data,
-			definition,
-			plan,
-			fetch: host.fetch,
-			now,
-		});
+	) => push({ data, definition, plan, fetch: host.fetch });
 
-	test('an applied value reaches the store, and the folder is clean after', async () => {
+	test('an applied value reaches the store, and its file is rewritten', async () => {
 		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
 		const plan = expectOk(await planOf(host, data));
 
@@ -756,9 +748,14 @@ describe('push sends the values back and re-renders', () => {
 		});
 		expect(data.tables.notes.get(noteId)?.title).toBe('Shopping');
 
-		// The re-render is what makes the folder never dirty after a push, so a
-		// second pull asks nobody anything.
-		expect(manifestOf(host.folder).pulledAt).toBe('2026-09-02T11:00:00.000Z');
+		// The file this push touched carries the new value, and the folder is
+		// clean, so a second pull asks nobody anything.
+		expect(host.folder.get(`notes/${noteId}.md`)).toContain('"Shopping"');
+		expect(expectOk(await planOf(host, data))).toEqual([]);
+		// The manifest still says when the folder was PULLED. A push is not a
+		// re-render, so nothing about the folder got more current except the
+		// files it wrote (ADR-0341).
+		expect(manifestOf(host.folder).pulledAt).toBe('2026-09-02T10:00:00.000Z');
 		expectOk(await pullInto(host, data));
 		await data[Symbol.asyncDispose]();
 	});
@@ -840,6 +837,57 @@ describe('push sends the values back and re-renders', () => {
 		const refused = expectErr(await sendBack(host, data, plan));
 		expect(refused.name).toBe('PlanStale');
 		expect(data.tables.notes.ids()).toHaveLength(1);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a file the push could not read is left exactly as it was', async () => {
+		// A push writes only what it touched (ADR-0341), so the file is not
+		// rewritten and nothing typed into it is destroyed. Its manifest entry is
+		// carried forward, which is what keeps the next push from reading a
+		// value the STORE changed as an edit this person made.
+		const { host, data, noteId } = await edited(['"Groceries"', '"Shopping"']);
+		const broken = '---\ntitle: "Shopping"\n\nthree paragraphs I typed\n';
+		host.folder.set(`notes/${noteId}.md`, broken);
+		const before = manifestOf(host.folder).rows[`notes/${noteId}`];
+		const plan = expectOk(await planOf(host, data));
+		expect(only(plan, 'discard').reason).toBe('unreadable');
+
+		expectOk(await sendBack(host, data, plan));
+		expect(host.folder.get(`notes/${noteId}.md`)).toBe(broken);
+		expect(manifestOf(host.folder).rows[`notes/${noteId}`]).toEqual(
+			before as never,
+		);
+		// And it says so again at the next push, until the frame is fixed.
+		expect(only(expectOk(await planOf(host, data)), 'discard').reason).toBe(
+			'unreadable',
+		);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a file this push did not touch is sent back as it was', async () => {
+		// The folder does not update itself. A note another device changed
+		// reaches this folder at the next pull, not under the person's hands
+		// while they push something else.
+		const host = fakeHost();
+		const { data, noteId } = await notebook();
+		const other = data.tables.notes.create({
+			title: 'Untouched',
+			pinned: false,
+		});
+		expectOk(await pullInto(host, data));
+		host.folder.set(
+			`notes/${noteId}.md`,
+			(host.folder.get(`notes/${noteId}.md`) as string).replace(
+				'"Groceries"',
+				'"Shopping"',
+			),
+		);
+		// The other note moves in the application while the folder sits there.
+		data.tables.notes.update(other.id, { title: 'Changed elsewhere' });
+		const plan = expectOk(await planOf(host, data));
+
+		expectOk(await sendBack(host, data, plan));
+		expect(host.folder.get(`notes/${other.id}.md`)).toContain('"Untouched"');
 		await data[Symbol.asyncDispose]();
 	});
 

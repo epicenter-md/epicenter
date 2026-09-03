@@ -598,7 +598,7 @@ export async function pull({
 		// against, every row-shaped file there might be work nobody has ever
 		// sent, and a pull would write over it. An EMPTY one is the ordinary
 		// first pull and is not refused.
-		if (!read.base) {
+		if (read.base === undefined) {
 			if (read.unwritten.length > 0) {
 				return CheckoutError.FolderUnwritten({ unwritten: read.unwritten });
 			}
@@ -670,6 +670,127 @@ export async function pull({
 			path: MANIFEST_PATH,
 			contents: `${JSON.stringify(manifest, null, 2)}\n`,
 		},
+	);
+
+	const { error } = await sendCheckout(data.dataId, files, httpFetch);
+	return error === null ? Ok({ files: files.length }) : Err(error);
+}
+
+/**
+ * Send the folder back as it was, with the files this push touched replaced
+ * (ADR-0341).
+ *
+ * **Not a re-render.** A push used to end by rendering the whole store over the
+ * folder, which is what destroyed a file it could not carry: the same act that
+ * pushed overwrote the file, and the overview's only job was to warn about it.
+ * Here every path the push did not touch is sent with the bytes the folder
+ * already holds, and keeps the manifest entry it already had.
+ *
+ * **Carrying the entry forward is not optional.** A base that advanced past a
+ * file that did not move would read every value the store changed since as an
+ * edit the person made, and the next push would write those stale values back
+ * over newer ones.
+ *
+ * The set of paths is still the whole checkout, because the host sweeps what a
+ * checkout does not name (ADR-0337). Sending held bytes for an untouched path
+ * costs nothing: the host skips a write whose bytes already match.
+ */
+async function writeBack({
+	data,
+	definition,
+	held,
+	base,
+	touched,
+	dropped,
+	fetch: httpFetch,
+}: {
+	data: RenderableData & CheckoutAddress;
+	definition: ParsedDataDefinition;
+	held: WorkingCopy;
+	base: CheckoutManifest;
+	/** Rows this push changed, whose files are rendered again. */
+	touched: readonly { readonly table: string; readonly rowId: string }[];
+	/**
+	 * Paths this push consumed: a deleted row's file, and the name a person
+	 * gave a file that became a row, which now lives at its minted id.
+	 */
+	dropped: ReadonlySet<string>;
+	fetch: typeof globalThis.fetch;
+}): Promise<Result<{ files: number }, CheckoutError>> {
+	const files: CheckoutFile[] = [];
+	const failures: RenderError[] = [];
+	const rows: Record<string, { values: JsonObject; bodyHash: string }> = {};
+	const rendered = new Set(
+		touched.map(({ table, rowId }) => rowPath(table, rowId)),
+	);
+
+	for (const [path, contents] of held.files) {
+		if (path === AGENTS_PATH || path === MANIFEST_PATH) continue;
+		if (dropped.has(path) || rendered.has(path)) continue;
+		const address = parseRowPath(path);
+		// Not a place a checkout owns, so not a file this write is responsible
+		// for. The host leaves it alone either way.
+		if (address === undefined && path !== 'kv.json') continue;
+		files.push({ path, contents });
+		if (address === undefined) continue;
+		// A file nobody ever pulled has no entry to carry, and should not get
+		// one: it is still a file nobody pulled, and the next plan says so.
+		const entry = base.rows[`${address.table}/${address.rowId}`];
+		if (entry !== undefined) rows[`${address.table}/${address.rowId}`] = entry;
+	}
+
+	for (const address of touched) {
+		const row = await renderRow(data, definition, address.table, address.rowId);
+		if (row.error !== null) {
+			failures.push(row.error);
+			continue;
+		}
+		// A row this push wrote and then could not find is an invariant break,
+		// not a fact about the folder.
+		if (row.data.contents === undefined) continue;
+		const parsed = parseRowFile(row.data.contents);
+		if (parsed === undefined) {
+			failures.push(
+				RenderError.BodyUnwritable({
+					table: address.table,
+					rowId: address.rowId,
+					cause: 'the rendered file could not be read back',
+				}).error,
+			);
+			continue;
+		}
+		files.push({ path: row.data.path, contents: row.data.contents });
+		rows[`${address.table}/${address.rowId}`] = {
+			values: parsed.fields,
+			bodyHash: await contentHash(parsed.body),
+		};
+	}
+	if (failures.length > 0) return CheckoutError.Unrenderable({ failures });
+
+	// `kv.json` holds still like everything else, and its hash with it. A folder
+	// missing it gets it back, because a checkout is complete.
+	if (!held.files.has('kv.json')) {
+		files.push({
+			path: 'kv.json',
+			contents: `${JSON.stringify(data.stored().kv, null, 2)}`,
+		});
+	}
+
+	const manifest: CheckoutManifest = {
+		dataId: data.dataId,
+		generation: data.generation,
+		baseURL: base.baseURL,
+		principalId: base.principalId,
+		// Unchanged, because the folder is still current as of the last pull.
+		// Only the files this push wrote moved, and each of those carries its own
+		// fresh entry above.
+		pulledAt: base.pulledAt,
+		rows,
+		kvHash: base.kvHash,
+	};
+	files.push(
+		{ path: AGENTS_PATH, contents: agentsFile(definition) },
+		{ path: MANIFEST_PATH, contents: `${JSON.stringify(manifest, null, 2)}\n` },
 	);
 
 	const { error } = await sendCheckout(data.dataId, files, httpFetch);
@@ -1004,9 +1125,9 @@ export async function diff({
 	const held = await readWorkingCopy(data, httpFetch);
 	if (held.error !== null) return Err(held.error);
 	const read = await planPush(data, parsed.data, held.data);
-	return read.base
-		? Ok(read.plan)
-		: CheckoutError.FolderUnwritten({ unwritten: read.unwritten });
+	return read.base === undefined
+		? CheckoutError.FolderUnwritten({ unwritten: read.unwritten })
+		: Ok(read.plan);
 }
 
 /**
@@ -1045,7 +1166,7 @@ async function planPush(
 		const unwritten = [...held.files.keys()].filter(
 			(path) => parseRowPath(path) !== undefined || path === 'kv.json',
 		);
-		return { base: false, unwritten };
+		return { base: undefined, unwritten };
 	}
 
 	const onDisk = held.files.get('kv.json');
@@ -1178,7 +1299,7 @@ async function planPush(
 	// of the three sources are already deterministic; the third is the host's
 	// directory listing, whose order is the filesystem's business.
 	return {
-		base: true,
+		base,
 		plan: items.sort((left, right) =>
 			planKey(left) < planKey(right) ? -1 : 1,
 		),
@@ -1193,8 +1314,8 @@ async function planPush(
  * sentence and a `pull`.
  */
 type Reading =
-	| { readonly base: true; readonly plan: PushPlan }
-	| { readonly base: false; readonly unwritten: readonly string[] };
+	| { readonly base: CheckoutManifest; readonly plan: PushPlan }
+	| { readonly base: undefined; readonly unwritten: readonly string[] };
 
 /**
  * Whether this file still says exactly what `pull` handed over.
@@ -1379,14 +1500,12 @@ export async function push({
 	definition,
 	plan: confirmed,
 	fetch: httpFetch = globalThis.fetch,
-	now = () => new Date(),
 }: {
 	data: PushableData & CheckoutAddress;
 	definition: DataDefinition;
 	/** What `diff` said and a person approved, whole. */
 	plan: PushPlan;
 	fetch?: typeof globalThis.fetch;
-	now?: () => Date;
 }): Promise<Result<PushOutcome, CheckoutError>> {
 	const parsed = compileData(definition);
 	if (parsed.error !== null) {
@@ -1399,10 +1518,10 @@ export async function push({
 	const held = await readWorkingCopy(data, httpFetch);
 	if (held.error !== null) return Err(held.error);
 	const read = await planPush(data, parsed.data, held.data);
-	if (!read.base) {
+	if (read.base === undefined) {
 		return CheckoutError.FolderUnwritten({ unwritten: read.unwritten });
 	}
-	const plan = read.plan;
+	const { base, plan } = read;
 	// The one guard left, and it is not about consent to an item: it is that
 	// the list applied is the list somebody read. An agent may still be working
 	// while the overview is open (ADR-0330).
@@ -1569,20 +1688,39 @@ export async function push({
 	// landed still stand; what is reported is that not all of them did.
 	if (failure !== undefined) return unapplied(failure);
 
-	// The folder is re-rendered from the store the push just changed, so what a
-	// person reads next is what is true. `discardEdits` because the plan was
-	// carried whole: every difference this folder held is either applied above
-	// or is a file the re-render overwrites, which IS the discard.
-	const pulled = await pull({
+	// The folder goes back as it was, with the files this push touched replaced
+	// (ADR-0341). Not a re-render: a file the push could not read is untouched
+	// because the push only writes what it touched, and a change another device
+	// made reaches this folder at the next pull rather than under the person's
+	// hands.
+	const touched = [
+		...new Map(
+			plan.flatMap((item) =>
+				item.kind === 'value' || item.kind === 'body'
+					? [[item.path, { table: item.table, rowId: item.rowId }] as const]
+					: [],
+			),
+		).values(),
+		...outcome.admitted.map(({ table, rowId }) => ({ table, rowId })),
+	];
+	// A deleted row's file and the name a person gave a file that became a row.
+	// Both are paths the push consumed, and the host sweeps what is not sent.
+	const dropped = new Set([
+		...plan.flatMap((item) => (item.kind === 'deletion' ? [item.path] : [])),
+		...outcome.admitted.map(({ path }) => path),
+	]);
+	const written = await writeBack({
 		data,
-		definition,
-		discardEdits: true,
+		definition: parsed.data,
+		held: held.data,
+		base,
+		touched,
+		dropped,
 		fetch: httpFetch,
-		now,
 	});
-	return pulled.error === null
+	return written.error === null
 		? Ok(outcome)
-		: CheckoutError.FolderStale({ ...outcome, cause: pulled.error });
+		: CheckoutError.FolderStale({ ...outcome, cause: written.error });
 }
 
 /**
