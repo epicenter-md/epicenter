@@ -872,7 +872,7 @@ export type PlanItem =
 	| PlannedBody
 	| PlannedAdmission
 	| PlannedDeletion
-	| PlannedDiscard;
+	| PlannedKeep;
 
 /**
  * One value the push sets, and the one it is replacing.
@@ -1016,13 +1016,13 @@ export type PlannedDeletion = {
  * What is wrong is said so a person can cancel, fix it, and read the folder
  * again, which costs nothing.
  */
-export type PlannedDiscard = {
-	readonly kind: 'discard';
+export type PlannedKeep = {
+	readonly kind: 'kept';
 	readonly path: string;
-	readonly reason: DiscardReason;
+	readonly reason: KeepReason;
 };
 
-export type DiscardReason =
+export type KeepReason =
 	/** The row was removed from the store after the folder was written. */
 	| 'row-gone'
 	/** `kv.json` is pulled to read and never pushed (ADR-0337). */
@@ -1066,7 +1066,7 @@ function planKey(item: PlanItem): string {
 			return `${item.path}#${CONTENT_FIELD}`;
 		case 'admission':
 		case 'deletion':
-		case 'discard':
+		case 'kept':
 			return item.path;
 	}
 }
@@ -1155,15 +1155,15 @@ async function planPush(
 
 	const onDisk = held.files.get('kv.json');
 	if (onDisk !== undefined && (await contentHash(onDisk)) !== base.kvHash) {
-		items.push({ kind: 'discard', path: 'kv.json', reason: 'kv-changed' });
+		items.push({ kind: 'kept', path: 'kv.json', reason: 'kv-changed' });
 	}
 
 	for (const [key, handed] of Object.entries(base.rows)) {
 		const address = parseRowPath(`${key}${ROW_FILE_EXTENSION}`);
 		if (address === undefined) continue;
 		const path = rowPath(address.table, address.rowId);
-		const discard = (reason: DiscardReason) =>
-			items.push({ kind: 'discard', path, reason });
+		const keep = (reason: KeepReason) =>
+			items.push({ kind: 'kept', path, reason });
 
 		const contents = held.files.get(path);
 		if (contents === undefined) {
@@ -1174,9 +1174,9 @@ async function planPush(
 			if (declared === undefined) {
 				// No handle to delete through, and its rows still render
 				// (ADR-0240), so the re-render puts this file back. That is what a
-				// discard is, and it is the honest thing to say about a table this
+				// keeping is, and it is the honest thing to say about a table this
 				// release no longer declares.
-				discard('table-undeclared');
+				keep('table-undeclared');
 				continue;
 			}
 			// `rowFile` rather than `renderedRow`: what is asked here is whether
@@ -1194,7 +1194,7 @@ async function planPush(
 		}
 		const file = readRowFile(contents);
 		if (file === undefined) {
-			discard('unreadable');
+			keep('unreadable');
 			continue;
 		}
 		// **A file nobody touched says nothing, whatever the store did.** The
@@ -1211,12 +1211,12 @@ async function planPush(
 		if (await untouched(file, handed)) continue;
 		const table = definition.tables.get(address.table);
 		if (table === undefined) {
-			discard('table-undeclared');
+			keep('table-undeclared');
 			continue;
 		}
 		const stored = await renderedRow(data, definition, address);
 		if (stored === undefined) {
-			discard('row-gone');
+			keep('row-gone');
 			continue;
 		}
 
@@ -1228,7 +1228,7 @@ async function planPush(
 			const inStore = await contentHash(stored.body);
 			if (inStore !== inFile) {
 				if (!readsBack(table, file.body)) {
-					discard('body-unreadable');
+					keep('body-unreadable');
 				} else {
 					items.push({
 						kind: 'body',
@@ -1378,19 +1378,19 @@ async function admission(
 	tableName: string,
 	path: string,
 	contents: string,
-): Promise<PlannedAdmission | PlannedDiscard> {
+): Promise<PlannedAdmission | PlannedKeep> {
 	const table = definition.tables.get(tableName);
 	if (table === undefined) {
-		return { kind: 'discard', path, reason: 'table-undeclared' };
+		return { kind: 'kept', path, reason: 'table-undeclared' };
 	}
 	const file = readRowFile(contents);
 	if (file === undefined) {
-		return { kind: 'discard', path, reason: 'unreadable' };
+		return { kind: 'kept', path, reason: 'unreadable' };
 	}
 	// Defensive on the codec, which `compileData` refuses a table without: an
 	// empty body needs none, because `create` mints an empty node.
 	if (file.body !== '' && !readsBack(table, file.body)) {
-		return { kind: 'discard', path, reason: 'body-unreadable' };
+		return { kind: 'kept', path, reason: 'body-unreadable' };
 	}
 	return {
 		kind: 'admission',
@@ -1562,7 +1562,7 @@ export async function push({
 		const codec = parsed.data.tables.get(item.table)?.content;
 		// No codec and an empty body is a row whose file IS its frontmatter,
 		// and `create` mints the empty node for it. A body with no codec was
-		// already a discard at plan time.
+		// already kept at plan time.
 		if (codec === undefined) {
 			admitting.push({ item, fields: file.fields, node: undefined });
 			continue;
@@ -1615,7 +1615,7 @@ export async function push({
 					perRow.set(item.path, held);
 				}
 				for (const { item, fields } of perRow.values()) {
-					// The table is there: `planPush` discarded every row whose
+					// The table is there: `planPush` kept every file whose
 					// table this definition does not declare, and this runs with
 					// no await since the plan was made.
 					const written = data.tables[item.table]?.update(item.rowId, fields);
@@ -1695,7 +1695,7 @@ export async function push({
 	// person typed in the same act that carried their value, which is the loss
 	// ADR-0341 exists to end.
 	const kept = new Set(
-		plan.flatMap((item) => (item.kind === 'discard' ? [item.path] : [])),
+		plan.flatMap((item) => (item.kind === 'kept' ? [item.path] : [])),
 	);
 	const touched = [
 		...new Map(

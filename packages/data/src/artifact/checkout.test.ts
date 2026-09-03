@@ -26,9 +26,9 @@ import {
 	type CheckoutManifest,
 	checkoutLine,
 	contentHash,
-	type DiscardReason,
 	diff,
 	type FolderState,
+	type KeepReason,
 	MANIFEST_PATH,
 	type PlanItem,
 	type PushableData,
@@ -463,7 +463,7 @@ describe('a pull shows what it writes over, and a person says yes', () => {
 			folder.set('kv.json', '{"theme":"dark"}');
 		});
 		expect(await planOf(host, data)).toEqual([
-			{ kind: 'discard', path: 'kv.json', reason: 'kv-changed' },
+			{ kind: 'kept', path: 'kv.json', reason: 'kv-changed' },
 		]);
 		await data[Symbol.asyncDispose]();
 	});
@@ -638,7 +638,7 @@ describe('diff plans what push would do (ADR-0337)', () => {
 				fetch: host.fetch,
 			}),
 		);
-		expect(only(plan, 'discard').reason).toBe('body-unreadable');
+		expect(only(plan, 'kept').reason).toBe('body-unreadable');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -668,8 +668,8 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		});
 		data.tables.notes.delete(noteId);
 
-		expect(only(await planOf(host, data), 'discard')).toEqual({
-			kind: 'discard',
+		expect(only(await planOf(host, data), 'kept')).toEqual({
+			kind: 'kept',
 			path: `notes/${noteId}.md`,
 			reason: 'row-gone',
 		});
@@ -889,7 +889,7 @@ describe('push sends the values back and re-renders', () => {
 		host.folder.set(`notes/${noteId}.md`, broken);
 		const before = manifestOf(host.folder).rows[`notes/${noteId}`];
 		const plan = await planOf(host, data);
-		expect(only(plan, 'discard').reason).toBe('unreadable');
+		expect(only(plan, 'kept').reason).toBe('unreadable');
 
 		expectOk(await sendBack(host, data, plan));
 		expect(host.folder.get(`notes/${noteId}.md`)).toBe(broken);
@@ -897,7 +897,7 @@ describe('push sends the values back and re-renders', () => {
 			before as never,
 		);
 		// And it says so again at the next push, until the frame is fixed.
-		expect(only(await planOf(host, data), 'discard').reason).toBe('unreadable');
+		expect(only(await planOf(host, data), 'kept').reason).toBe('unreadable');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -1141,7 +1141,7 @@ describe('push sends the values back and re-renders', () => {
 				fetch: host.fetch,
 			}),
 		);
-		expect(only(plan, 'discard').reason).toBe('body-unreadable');
+		expect(only(plan, 'kept').reason).toBe('body-unreadable');
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -1186,7 +1186,7 @@ describe('push sends the values back and re-renders', () => {
 		const plan = planIn(
 			await diff({ data, definition: exploding, fetch: host.fetch }),
 		);
-		expect(only(plan, 'discard').reason).toBe('body-unreadable');
+		expect(only(plan, 'kept').reason).toBe('body-unreadable');
 		expect(only(plan, 'value')).toMatchObject({
 			name: 'title',
 			file: 'changed by hand',
@@ -1357,7 +1357,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 			shapes,
 		);
 		// Keyed by the plan's own vocabulary, so a kind added to `PlanItem` or a
-		// reason added to `DiscardReason` fails to compile until this file says
+		// reason added to `KeepReason` fails to compile until this file says
 		// what it costs. The file has twice been left behind by a wave that
 		// changed what a push does.
 		const perKind: Record<PlanItem['kind'], string> = {
@@ -1365,9 +1365,9 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 			body: 'replaces the note',
 			admission: 'becomes a row, and is RENAMED',
 			deletion: 'deletes the row, for good',
-			discard: 'is left alone',
+			kept: 'is left alone',
 		};
-		const perReason: Record<DiscardReason, string> = {
+		const perReason: Record<KeepReason, string> = {
 			'row-gone': 'a file whose row was deleted',
 			'kv-changed': '`kv.json` is read only',
 			unreadable: 'Keep the `---` block',
@@ -1489,10 +1489,10 @@ describe('the whole cycle, as a person walks it (ADR-0341)', () => {
 
 		// 5. The push keeps it, byte for byte, and says so again.
 		const kept = await planOf(host, data);
-		expect(only(kept, 'discard').reason).toBe('unreadable');
+		expect(only(kept, 'kept').reason).toBe('unreadable');
 		expectOk(await push({ data, definition, plan: kept, fetch: host.fetch }));
 		expect(host.folder.get(`notes/${noteId}.md`)).toBe(broken);
-		expect(only(await planOf(host, data), 'discard').reason).toBe('unreadable');
+		expect(only(await planOf(host, data), 'kept').reason).toBe('unreadable');
 
 		// 6. The pull writes over it, after listing it.
 		const over = await stateOf(host, data);
