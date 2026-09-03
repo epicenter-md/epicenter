@@ -600,6 +600,40 @@ describe('diff plans what push would do (ADR-0337)', () => {
 		await data[Symbol.asyncDispose]();
 	});
 
+	test('a note deleted in the application does not make the folder dirty', async () => {
+		// Nobody touched the folder. Before the file was compared to its base,
+		// the store was consulted first, the row was gone, and a file the person
+		// had never opened came back as `row-gone`, so the next pull refused
+		// with work they were about to lose that they had never done.
+		const host = fakeHost();
+		const { data, noteId } = await notebook();
+		expectOk(await pullInto(host, data));
+		data.tables.notes.delete(noteId);
+
+		expect(expectOk(await planOf(host, data))).toEqual([]);
+		// And the pull it was blocking goes through.
+		expectOk(await pullInto(host, data));
+		expect(host.folder.has(`notes/${noteId}.md`)).toBe(false);
+		await data[Symbol.asyncDispose]();
+	});
+
+	test('a file the person edited whose row is gone is rewritten from the store', async () => {
+		// The other side of the same gate: they DID touch it, and there is no
+		// row to carry it to. The re-render puts the store's answer back, which
+		// for a deleted row is no file at all.
+		const { host, data, noteId } = await pulledThenEdited((folder, id) => {
+			setField(folder, `notes/${id}.md`, '"Groceries"', '"Shopping"');
+		});
+		data.tables.notes.delete(noteId);
+
+		expect(only(expectOk(await planOf(host, data)), 'discard')).toEqual({
+			kind: 'discard',
+			path: `notes/${noteId}.md`,
+			notes: [{ reason: 'row-gone', name: undefined }],
+		});
+		await data[Symbol.asyncDispose]();
+	});
+
 	test('a deletion deletes and a new file is admitted', async () => {
 		// The manifest is what tells them apart: a file it named and the folder
 		// no longer holds is somebody deleting a note, and one it never named is

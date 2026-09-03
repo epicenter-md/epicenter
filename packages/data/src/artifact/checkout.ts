@@ -1101,6 +1101,18 @@ async function planPush(
 			flush();
 			continue;
 		}
+		// **A file nobody touched says nothing, whatever the store did.** The
+		// same rule the value three-way applies per field ("the person did not
+		// touch it; the store's value stands"), applied one level up, at the
+		// file. Without it, deleting a note in the application made the NEXT
+		// pull refuse: the store was consulted first, the row was gone, and a
+		// file the person had never opened was reported as work they were about
+		// to lose.
+		//
+		// It is also the only real cost win in this pass. An untouched folder
+		// is the common case, and it now costs one hash per file rather than a
+		// render and a codec `encode` per row.
+		if (await untouched(file, handed)) continue;
 		const table = definition.tables.get(address.table);
 		if (table === undefined) {
 			discard('table-undeclared');
@@ -1195,6 +1207,28 @@ async function planPush(
 type Reading =
 	| { readonly base: true; readonly plan: PushPlan }
 	| { readonly base: false; readonly unwritten: readonly string[] };
+
+/**
+ * Whether this file still says exactly what `pull` handed over.
+ *
+ * Both halves, because both are what was handed over: every value the manifest
+ * recorded, compared the way the push compares them, and the body against its
+ * hash. Absent and `null` are the same value here for the same reason they are
+ * everywhere else in this module (`same`), so a line deleted from a file that
+ * recorded `null` is still untouched.
+ */
+async function untouched(
+	file: ParsedRowFile,
+	handed: { values: JsonObject; bodyHash: string },
+): Promise<boolean> {
+	for (const name of new Set([
+		...Object.keys(handed.values),
+		...Object.keys(file.fields),
+	])) {
+		if (!same(file.fields[name] ?? null, handed.values[name])) return false;
+	}
+	return (await contentHash(file.body)) === handed.bodyHash;
+}
 
 /**
  * Whether this table's codec can read this text, with a throw counted as no.
