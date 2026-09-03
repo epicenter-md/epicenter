@@ -56,6 +56,25 @@ list on disk is not lying to anyone. An application that puts a person's own
 work in a SQLite file to survive the tab is breaking this rule, and the rule is
 the thing to enforce, not the capability.
 
+**A trial holds its blobs in memory, because an OPFS root is an address.**
+`createOpfsBlobs` is rooted at a store's address, and an ephemeral store has
+none. A trial that wrote audio to OPFS would leave files on disk after the tab
+that owned the rows was gone: durable audio nothing points at, which is worse
+than losing it. In-memory bounds a trial by RAM, and a trial is a demonstration
+rather than a recorder for an afternoon.
+
+**A secret goes to the home its KIND has, and there are two kinds.** A
+credential the device holds on an application's behalf, like an OAuth refresh
+token bound to this install, is `epicenter.secrets`: scoped by application and
+device, never synced, and in a browser it is tab memory on purpose (ADR-0310).
+A credential a PERSON brings and expects on every machine, like a provider API
+key, is not that, and moving one into `epicenter.secrets` would make a web
+build ask for it again after every reload. It lives device-local while there is
+no account, which is the layer Whispering already ships, and it belongs in the
+owner's vault once there is one (ADR-0074). The trial has no account, so it has
+no keyring, so device-local is not a compromise there; it is the only thing
+that exists.
+
 **Because a refresh loses everything, a trial has to push its work out.** The
 export that already exists is the affordance: copy, download, markdown. A
 banner that says nothing is being saved is the other half, and it is not an
@@ -83,6 +102,15 @@ owns. A folder is a working copy, not a store, so this adds no kind.
   follow-up.
 - The signed-out panel in the account popover keeps its job, and gains a
   second: it is where a trial converts.
+- Whispering's provider keys do not move onto the handle. `epicenter.secrets`
+  is the desktop keychain for a credential an install owns, and Local Mail's
+  Gmail token is what that is for. Whispering's keys stay in `deviceConfig`
+  until the owner vault lands, and the facade in
+  `apps/whispering/src/lib/state/secrets.svelte.ts` is what makes that a
+  storage swap rather than a rewrite.
+- Nothing in Whispering reads `epicenter.sqlite`, in either mode. It is handed
+  over because it costs an allocation and withholding it would fork the handle
+  type, not because there is a caller waiting.
 
 ## Considered alternatives
 
