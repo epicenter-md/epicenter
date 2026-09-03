@@ -4,7 +4,7 @@
 - **Date:** 2026-09-02
 - **Amends:** [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md) at its verb table, where `push` no longer ends in a re-render, and at `pull`'s refusal, which becomes an approval. Its cycle, its manifest, its completeness rule, and absence as a fact are unchanged. [ADR-0338](0338-the-folder-wins-and-a-push-is-one-approval.md) at "a file that cannot be read: rewritten from the store", which becomes kept as the person left it, and at its Consequences claim that a push ends by re-rendering the whole folder. Its one approval, its refusal to validate, and its ranking of the overview are unchanged, and this record gives the second verb the same shape.
 - **Relates:** [ADR-0330](0330-an-agent-uses-the-surfaces-a-person-uses.md) (who edits and who pushes), [ADR-0216](0216-a-name-addressed-location-is-the-only-safe-place-for-a-write-two-devices-both-make.md) (why an admitted file is renamed, which is the one write a push owes the folder), [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md) (why there is no remote in this picture), [ADR-0125](0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md) and [ADR-0240](0240-an-application-declares-one-workspace-and-an-opened-runtime-holds-exactly-one-definition.md) (the lens)
-- **Built:** all of it. One writer both verbs share (`writeFolder`, whose one parameter is whose set of paths the checkout is), one reader all three share (`readFolder`), a push that sends the folder back with only what it touched replaced, `pull`'s approval, `FolderState` from `diff`, `PlannedKeep`, an edited file whose note is gone coming back as an admission, and one refusal, `FolderChanged`, in place of `PlanStale`, `FolderUnwritten`, `WorkingCopyDirty`, and `discardEdits`.
+- **Built:** all of it. One writer both verbs share (`writeFolder`, whose one parameter is whose set of paths the checkout is), one reader both share (`readFolder`), a push that sends the folder back with only what it touched replaced, `pull`'s approval, the preview each verb shows, `PlannedKeep`, and an edited file whose note is gone coming back as an admission.
 
 ## Context
 
@@ -44,7 +44,8 @@ pull    here is what changes in your folder     confirm  →  every file is rewr
 push    here is what changes in your notes      confirm  →  what it could not read is left alone
 ```
 
-`diff` prints either without changing anything. Neither verb runs on its own,
+Either list can be read without changing anything, by declining it. Neither verb
+runs on its own,
 and between them the folder holds still. That is the whole cycle, and the same
 renderer prints both lists.
 
@@ -106,18 +107,18 @@ and only one of them is unreadable.
   is left is one reading, one writer, and one refusal, because both verbs ask
   one question and both fail the same way.
 - **Almost none of this is reachable without breaking a file**, and the two
-  exceptions are worth naming: deleting a note in the application and then
-  editing its file, which brings it back as a new note, and editing `kv.json`,
-  which is never pushed. Everything else here needs a file edited into a state
-  the folder's own `AGENTS.md` documents as wrong.
+  exception is worth naming: deleting a note in the application and then
+  editing its file, which brings it back as a new note. Everything else here
+  needs a file edited into a state the folder's own `AGENTS.md` documents as
+  wrong.
 - **An agent gets a folder that holds still.** ADR-0330 gives an agent the
   surfaces a person uses; a surface that rewrites itself under a working agent
   is one an agent cannot reason about, and a file it left half-written survives
   a push it did not make.
-- **The `kv.json` edit is kept rather than reported and overwritten**, which is
-  honest and also permanent until kv becomes pushable (ADR-0338's `Unbuilt:`).
-  A person editing settings in the folder now has a file that nags forever, and
-  that is the argument for finishing kv rather than an argument against this.
+- **A `kv.json` this side cannot read is kept rather than overwritten**, on the
+  same rule as a row file whose fence somebody broke. A `kv.json` it CAN read
+  is pushed like any other value now (ADR-0338), so the file that used to nag
+  forever nags only while it is unparseable.
 
 ## Considered alternatives
 
