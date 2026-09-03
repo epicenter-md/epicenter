@@ -215,7 +215,7 @@ export const CheckoutError = defineErrors({
 	 * The values reached the store and the folder could not be rewritten.
 	 *
 	 * Its own outcome because the repair is its own: the push WORKED, and what
-	 * failed is the re-render that makes the folder stop showing the old
+	 * failed is the write that makes the folder stop showing the old
 	 * values. Reporting the write failure alone would send a person looking for
 	 * work that already landed, and the next pull would offer to discard edits
 	 * that are no longer edits.
@@ -229,7 +229,7 @@ export const CheckoutError = defineErrors({
 		cause,
 	}: PushOutcome & {
 		/**
-		 * The `CheckoutError` the re-render answered with.
+		 * The `CheckoutError` the write answered with.
 		 *
 		 * Typed structurally rather than as `CheckoutError`, because naming it
 		 * inside the set that defines it is a circular type. What a surface
@@ -397,7 +397,7 @@ function parseManifest(text: string | undefined): CheckoutManifest | undefined {
  * a list of things not to do, because doing any of them stopped the whole push
  * until a person opened Finder. Now every edit lands: a new file becomes a
  * row, an edited body replaces the note's text, a deleted file deletes the
- * row, and a file the push cannot read is rewritten from the store. The honest
+ * row, and a file the push cannot read is left exactly as it is. The honest
  * thing to say is what each one costs. If this file and the plan ever disagree,
  * this file is wrong, because the plan is what runs.
  *
@@ -504,6 +504,9 @@ function agentsFile(definition: ParsedDataDefinition): string {
 		'  read at all. Nothing here refuses either: the application shows the row',
 		'  as unreadable and the repair is this file. `id` and the text below the',
 		'  block are not frontmatter lines, and writing one does nothing at all.',
+		'- **A note this release cannot write out leaves its file alone.** The',
+		'  file is fine; the row is what cannot be read, so there is nothing in',
+		'  the file to fix.',
 		'- **A file the push cannot read is left alone**, and nothing else in the',
 		'  push is affected. Where only the text under the `---` block cannot be',
 		'  read, the frontmatter values in that same file still go in and the',
@@ -621,6 +624,30 @@ export async function pull({
 		pulledAt: now().toISOString(),
 		fetch: httpFetch,
 	});
+}
+
+/**
+ * The entry a kept file carries forward, with anything this push applied to it.
+ *
+ * **A base that advanced past a file that did not move is the failure this
+ * exists to prevent, and a base that did NOT advance past a value that DID
+ * move is the same failure from the other side.** A file whose body a codec
+ * refused still had its frontmatter values written, so the store holds them
+ * and the file on disk says them; an entry still naming the pulled value would
+ * read that file as an edit at the next push and write it back over whatever
+ * another device had done since.
+ *
+ * The body's hash is the base's, because the body is the part that did not go.
+ */
+function carried(
+	base: CheckoutManifest,
+	address: { table: string; rowId: string },
+	applied: ReadonlyMap<string, JsonObject>,
+): ManifestRow | undefined {
+	const entry = base.rows[`${address.table}/${address.rowId}`];
+	const wrote = applied.get(rowPath(address.table, address.rowId));
+	if (entry === undefined || wrote === undefined) return entry;
+	return { values: { ...entry.values, ...wrote }, bodyHash: entry.bodyHash };
 }
 
 /** One row's entry in the manifest: what was handed over for that file. */
@@ -919,7 +946,7 @@ export type PlannedBody = {
  * A file the manifest never named, which becomes a row (ADR-0337).
  *
  * The push mints a row id, creates the row from the file's frontmatter with
- * its body decoded into the node, and the re-render writes it out at its id.
+ * its body decoded into the node, and the push writes it out at its id.
  * **So the file is renamed**, and there is no way around that: a row id is
  * minted and never chosen (`packages/data/src/store/handles.ts`), because two
  * devices creating one address produce two containers and one loses every
@@ -977,7 +1004,7 @@ export type PlannedDeletion = {
 };
 
 /**
- * Something in this file the push cannot carry, so the re-render overwrites it.
+ * Something in this file the push cannot carry, so the push leaves it alone.
  *
  * **One reason, and it is not always the whole file.** Four of the five stop
  * the file dead, and `body-unreadable` does not: a body this table's codec
@@ -1003,6 +1030,15 @@ export type PlannedKeep = {
 export type KeepReason =
 	/** `kv.json` is pulled to read and never pushed (ADR-0337). */
 	| 'kv-changed'
+	/**
+	 * The row is there and this release cannot write it out.
+	 *
+	 * A codec that throws, or a row whose shape `render.ts` refuses. Its own
+	 * reason rather than `unreadable`, because the file is fine and telling
+	 * somebody to fix a `---` block that is not broken sends them at the wrong
+	 * thing: what cannot be read is the NOTE.
+	 */
+	| 'row-unwritable'
 	/** The frontmatter frame is gone, so nothing here can be read. */
 	| 'unreadable'
 	/**
@@ -1143,7 +1179,7 @@ async function planPush(
 			const declared = definition.tables.get(address.table);
 			if (declared === undefined) {
 				// No handle to delete through, and its rows still render
-				// (ADR-0240), so the re-render puts this file back. That is what a
+				// (ADR-0240), so the next pull puts this file back. That is what a
 				// keeping is, and it is the honest thing to say about a table this
 				// release no longer declares.
 				keep('table-undeclared');
@@ -1204,9 +1240,9 @@ async function planPush(
 		}
 		const stored = await renderedRow(data, definition, address);
 		if (stored === undefined) {
-			// Present and unrenderable, which `pull` fails closed on and a push
-			// has no values to compare against. The file stays as it is.
-			keep('unreadable');
+			// Present and unwritable, which `pull` fails closed on and a push has
+			// no values to compare against. The file stays as it is.
+			keep('row-unwritable');
 			continue;
 		}
 
@@ -1399,7 +1435,7 @@ async function admission(
  * reserved at the parser. `create` and `update` THROW on all three rather than
  * returning, so with nothing validated on the way in (ADR-0338) this is what
  * keeps a line somebody invented in a text editor from being the one thing a
- * push cannot survive. The line goes nowhere and the re-render sweeps it,
+ * push cannot survive. The line goes nowhere and the next pull sweeps it,
  * which is what a name nothing reads has always done.
  */
 function readRowFile(contents: string): ParsedRowFile | undefined {
@@ -1736,6 +1772,17 @@ export async function push({
 	// deleted row needs no entry here: its file was already gone, which is what
 	// made it a deletion.
 	const dropped = new Set(outcome.admitted.map(({ path }) => path));
+	// The values this push wrote, by path, so a file it kept can still record
+	// what LANDED. A kept file is one the push took something from and did not
+	// rewrite: the body was unreadable, the values were not.
+	const applied = new Map<string, JsonObject>();
+	for (const item of plan) {
+		if (item.kind !== 'value') continue;
+		applied.set(item.path, {
+			...applied.get(item.path),
+			[item.name]: item.file,
+		});
+	}
 	// The folder's own set of paths, with the rows this push wrote rendered
 	// again and everything else kept exactly as it was.
 	const rendered = new Set(
@@ -1752,11 +1799,7 @@ export async function push({
 		// leaves it alone either way.
 		if (address === undefined) continue;
 		sources.push({
-			keep: {
-				path,
-				contents,
-				entry: base.rows[`${address.table}/${address.rowId}`],
-			},
+			keep: { path, contents, entry: carried(base, address, applied) },
 		});
 	}
 	for (const address of touched) {

@@ -44,7 +44,7 @@ export type FolderVerbs = {
 	 */
 	diff(): Promise<Result<FolderState, CheckoutError>>;
 	/**
-	 * Apply the folder's edits, then re-render.
+	 * Apply the folder's edits, then write back the files it touched.
 	 *
 	 * `plan` is what `diff` said and a person agreed to, and a push that finds
 	 * it is no longer true refuses rather than applying an answer to a question
@@ -57,7 +57,8 @@ export type FolderVerbs = {
 
 export function folderVerbs(data: HoneycrispData): FolderVerbs {
 	return {
-		pull: ({ state }) => pull({ data, definition: honeycrispDefinition, state }),
+		pull: ({ state }) =>
+			pull({ data, definition: honeycrispDefinition, state }),
 		diff: () => diff({ data, definition: honeycrispDefinition }),
 		push: ({ plan }) => push({ data, definition: honeycrispDefinition, plan }),
 	};

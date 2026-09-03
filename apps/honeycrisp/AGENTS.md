@@ -86,7 +86,8 @@ back. Every pull replaces it, and it says so on its first line, so a person
 keeping notes to themselves keeps them under another name.
 
 `SendFolderEdits.svelte` is the other direction: `diff` shows what a push would
-do, and `push` applies it and re-renders. **The folder wins, and a push is one
+do, and `push` applies it and writes back the files it touched. **The folder
+wins, and a push is one
 approval** (ADR-0338). Nothing is asked per item and nothing is validated on the
 way in: a value goes in whatever it says, a body replaces the note's text, a new
 file becomes a note, and a deleted file deletes one. To change any of it, cancel,

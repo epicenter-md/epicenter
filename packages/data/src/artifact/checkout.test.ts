@@ -1222,6 +1222,14 @@ describe('push sends the values back and re-renders', () => {
 		// read (ADR-0341). Re-rendering it here would destroy the text the
 		// person typed in the same act that carried their value.
 		expect(host.folder.get(`notes/${note.id}.md`)).toContain('new text');
+		// And the entry carried forward records the value that LANDED, not the
+		// one the folder was pulled at. A base that still said `x` would read
+		// this file as an edit at the next push and write it over whatever
+		// another device had done since.
+		const manifest = manifestOf(host.folder);
+		expect(manifest.rows[`notes/${note.id}`]?.values.title).toBe(
+			'changed by hand',
+		);
 		await data[Symbol.asyncDispose]();
 	});
 
@@ -1390,6 +1398,7 @@ describe('the folder explains itself (ADR-0337, ADR-0330)', () => {
 			kept: 'is left alone',
 		};
 		const perReason: Record<KeepReason, string> = {
+			'row-unwritable': 'cannot write out leaves its file alone',
 			'kv-changed': '`kv.json` is read only',
 			unreadable: 'Keep the `---` block',
 			'table-undeclared': 'The tables',

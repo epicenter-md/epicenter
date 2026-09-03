@@ -59,10 +59,12 @@ Three consequences fall out of that sentence, and none of them is a mechanism:
 
 - **A file the push could not read is untouched**, because the push only
   replaces what it touched. Nothing decided to spare it.
-- **Its manifest entry is carried forward**, which is not optional. A base that
-  advanced past a file that did not move would read every value the store
-  changed since as an edit the person made, and the next push would write stale
-  values over newer ones.
+- **Its manifest entry is carried forward**, which is not optional, **with
+  anything the push did apply to it.** A base that advanced past a file that
+  did not move would read every value the store changed since as an edit the
+  person made; a base that did not advance past a value that DID move is the
+  same failure from the other side, because the file whose body was refused
+  still had its values written.
 - **The folder does not update itself.** A change another device made reaches
   the folder at the next pull, and not before.
 
@@ -77,7 +79,10 @@ not a warning about what is about to be destroyed. The folder is dirty exactly
 where the overview said it would be, and the one verb that can clear it is the
 one a person picks.
 
-**An edited file whose row is gone comes back as a note.** The folder wins
+**An edited file whose row is gone comes back as a note**, under a new id,
+because a row id is minted and never chosen (ADR-0216). `PlannedAdmission`
+carries `replaces` so a surface can say that rather than printing the path as
+though somebody had written the file from nothing. The folder wins
 (ADR-0338), so a file somebody typed into and a store with nowhere to put it is
 an admission, minting a new id like any other file nobody pulled. It fires only
 because the file was touched: a file identical to its base says nothing, whatever
@@ -100,9 +105,11 @@ and only one of them is unreadable.
   `FolderUnwritten`, the `row-gone` reason, and `push`'s call to `pull`. What
   is left is one reading, one writer, and one refusal, because both verbs ask
   one question and both fail the same way.
-- **A person who never breaks a file never meets any of this.** Every new
-  concept here is reachable only by editing a file into a state the folder's own
-  `AGENTS.md` documents as wrong.
+- **Almost none of this is reachable without breaking a file**, and the two
+  exceptions are worth naming: deleting a note in the application and then
+  editing its file, which brings it back as a new note, and editing `kv.json`,
+  which is never pushed. Everything else here needs a file edited into a state
+  the folder's own `AGENTS.md` documents as wrong.
 - **An agent gets a folder that holds still.** ADR-0330 gives an agent the
   surfaces a person uses; a surface that rewrites itself under a working agent
   is one an agent cannot reason about, and a file it left half-written survives
