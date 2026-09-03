@@ -68,10 +68,10 @@ describe('the folder is a build fact', () => {
 		// filesystem, so the browser build has no button rather than one that
 		// always refuses (ADR-0337).
 		expect(await leafSource('#platform/folder', 'default')).toContain(
-			'HAS_FOLDER = false',
+			'openWorkingCopy: typeof createWorkingCopy | undefined = undefined',
 		);
 		expect(await leafSource('#platform/folder', 'epicenter-host')).toContain(
-			'HAS_FOLDER = true',
+			'createWorkingCopy as openWorkingCopy',
 		);
 	});
 });

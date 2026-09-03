@@ -1,44 +1,42 @@
 <script lang="ts">
-	import type { PushPlan } from '@epicenter/data/artifact/checkout';
+	import type {
+		PushPreview,
+		PushResult,
+		WorkingCopy,
+	} from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderUpIcon from '@lucide/svelte/icons/folder-up';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
-	import type { FolderVerbs } from '$lib/folder.js';
-	import {
-		irreversible,
-		renderPlan,
-	} from '$lib/folder-overview.js';
+	import { irreversible, renderPlan } from '$lib/folder-overview.js';
 	import { reportBackgroundError } from '$lib/report.js';
 
-	let {
-		diff,
-		push,
-	}: { diff: FolderVerbs['diff']; push: FolderVerbs['push'] } = $props();
+	let { folder }: { folder: WorkingCopy } = $props();
 
 	const honeycrisp = getHoneycrisp();
 
 	/**
-	 * The plan a person is looking at, or nothing.
+	 * The overview a person is looking at, and how to answer it.
 	 *
-	 * It travels back into `push`, which recomputes its own and refuses if the
-	 * two disagree. A plan is a statement about one instant, and between the
-	 * overview and the click a file can land or an agent can still be working.
+	 * The working copy asks: it holds the reading this list came from, reads
+	 * the folder again after the answer, and asks once more if anything moved
+	 * (ADR-0341). Nothing here travels back into `push`, so there is no plan to
+	 * keep and no staleness to track.
 	 */
-	let plan = $state<PushPlan | undefined>(undefined);
+	let asking = $state<
+		{ preview: PushPreview; stale: boolean; answer: (yes: boolean) => void } | undefined
+	>(undefined);
 	let outcome = $state<{ tone: 'held' | 'refused'; message: string } | undefined>(
 		undefined,
 	);
 	let running = $state(false);
 	let confirm = $state<HTMLButtonElement | null>(null);
-	/** Whether this overview replaced one that stopped being true. */
-	let stale = $state(false);
 
 	/** How many of these changes cannot be put back afterwards. */
 	const cannotUndo = $derived(
-		plan === undefined
+		asking === undefined
 			? 0
-			: irreversible(plan, honeycrisp.tables.notes, 'push'),
+			: irreversible(asking.preview.plan, honeycrisp.tables.notes, 'push'),
 	);
 
 	/**
@@ -49,73 +47,35 @@
 	 * surface would have styled is a word here instead.
 	 */
 	const overview = $derived(
-		plan === undefined
+		asking === undefined
 			? ''
-			: renderPlan(plan, honeycrisp.tables.notes, 'push'),
+			: renderPlan(asking.preview.plan, honeycrisp.tables.notes, 'push'),
 	);
 
-	async function open() {
+	async function send() {
 		running = true;
 		outcome = undefined;
 		try {
-			const { data, error } = await diff();
+			const { data, error } = await folder.push({
+				confirm: (preview, { stale }) =>
+					new Promise<boolean>((answer) => {
+						asking = { preview, stale, answer };
+					}),
+			});
+			asking = undefined;
 			if (error !== null) {
 				outcome = { tone: 'refused', message: unavailable(error.name) };
 				return;
 			}
-			if (!data.base) {
-				outcome = { tone: 'refused', message: unavailable('FolderUnwritten') };
-				return;
-			}
-			if (data.plan.length === 0) {
-				outcome = { tone: 'held', message: 'Your folder matches your notes.' };
-				return;
-			}
-			stale = false;
-			plan = data.plan;
-		} catch (cause) {
-			reportBackgroundError(cause);
-			outcome = { tone: 'refused', message: unavailable('') };
-		} finally {
-			running = false;
-		}
-	}
-
-	async function send() {
-		const confirmed = plan;
-		if (confirmed === undefined) return;
-		running = true;
-		try {
-			const { data, error } = await push({ plan: confirmed });
-			if (error !== null && error.name === 'FolderChanged') {
-				// Not an outcome and not an apology: what the refusal carries IS
-				// the next overview. The folder moved while they were reading, so
-				// they read the version that is true now and approve that.
-				if (!error.state.base) {
-					plan = undefined;
-					outcome = {
-						tone: 'refused',
-						message: unavailable('FolderUnwritten'),
-					};
-					return;
-				}
-				plan = error.state.plan;
-				stale = true;
-				return;
-			}
-			plan = undefined;
-			outcome =
-				error === null
-					? { tone: 'held', message: landed(data) }
-					: { tone: 'refused', message: unavailable(error.name) };
+			outcome = { tone: 'held', message: said(data) };
 		} catch (cause) {
 			// The library reports every refusal it plans for as a `Result`, so a
 			// throw here is a bug rather than an outcome. It still cannot leave
-			// the dialog open over a plan that may no longer be true, and it must
+			// the dialog open over a list that may no longer be true, and it must
 			// not leave a person believing nothing happened: some of the push may
 			// have landed.
 			reportBackgroundError(cause);
-			plan = undefined;
+			asking = undefined;
 			outcome = {
 				tone: 'refused',
 				message:
@@ -126,18 +86,22 @@
 		}
 	}
 
+	/** Close the dialog with an answer, which is what the working copy is waiting on. */
+	function answer(yes: boolean) {
+		const open = asking;
+		asking = undefined;
+		open?.answer(yes);
+	}
+
 	/**
 	 * What a push did, and what to do next where the answer is not "nothing".
 	 *
 	 * A file that became a note was renamed to an id nobody chose, so anything
 	 * still working in that folder is looking at a name that is gone.
 	 */
-	function landed(done: {
-		values: number;
-		bodies: number;
-		deleted: number;
-		admitted: readonly unknown[];
-	}): string {
+	function said(done: PushResult): string {
+		if (done.status === 'unchanged') return 'Your folder matches your notes.';
+		if (done.status === 'declined') return 'Nothing was sent back.';
 		const parts: string[] = [];
 		if (done.deleted > 0) {
 			parts.push(
@@ -146,6 +110,11 @@
 		}
 		if (done.values > 0) {
 			parts.push(`${done.values} value${done.values === 1 ? '' : 's'} changed`);
+		}
+		if (done.settings > 0) {
+			parts.push(
+				`${done.settings} setting${done.settings === 1 ? '' : 's'} changed`,
+			);
 		}
 		if (done.bodies > 0) {
 			parts.push(`${done.bodies} note${done.bodies === 1 ? '' : 's'} rewritten`);
@@ -163,12 +132,14 @@
 		switch (name) {
 			case 'HostUnreachable':
 				return 'This copy of Honeycrisp has no Epicenter folder to read.';
+			case 'HostUnstated':
+				return 'Your Epicenter folder answered in a way this version of Honeycrisp does not understand. Restarting Epicenter may fix it.';
 			case 'HostRefused':
-				return 'Your Epicenter folder could not be read. It may be on a drive that is not there, or already being written.';
+				return 'Your Epicenter folder could not be read. It may be on a drive that is not there.';
 			case 'FolderUnwritten':
 				return 'Nothing here wrote this folder, so nothing in it can be told apart from what you already have. Save notes as files first.';
-			case 'FolderChanged':
-				return 'The folder or your notes changed while you were looking. Read it again.';
+			case 'Busy':
+				return 'Your folder is already being read. Finish that first.';
 			case 'PushUnapplied':
 				return 'Part of the push could not be applied, and part of it may have landed. Read the folder again to see what did.';
 			case 'FolderStale':
@@ -186,7 +157,7 @@
 		class="justify-start gap-2 text-xs text-muted-foreground"
 		disabled={running}
 		tooltip="Bring changes you made to those files back into your notes"
-		onclick={open}
+		onclick={send}
 	>
 		<FolderUpIcon class="size-3.5" />
 		{running ? 'Reading folder…' : 'Push folder edits back'}
@@ -203,9 +174,12 @@
 </div>
 
 <AlertDialog.Root
-	open={plan !== undefined}
+	open={asking !== undefined}
 	onOpenChange={(isOpen) => {
-		if (!isOpen) plan = undefined;
+		// Closing by any route is an answer, and the answer is no. A dialog that
+		// vanished without one would leave the push waiting on a promise nothing
+		// resolves, and the folder marked busy behind it.
+		if (!isOpen) answer(false);
 	}}
 >
 	<AlertDialog.Content
@@ -220,12 +194,13 @@
 	>
 		<AlertDialog.Header>
 			<AlertDialog.Title>
-				Push {plan?.length ?? 0} change{plan?.length === 1 ? '' : 's'}{cannotUndo > 0
-					? `, ${cannotUndo} you cannot get back`
-					: ''}
+				Push {asking?.preview.plan.length ?? 0} change{asking?.preview.plan
+					.length === 1
+					? ''
+					: 's'}{cannotUndo > 0 ? `, ${cannotUndo} you cannot get back` : ''}
 			</AlertDialog.Title>
 			<AlertDialog.Description>
-				{stale
+				{asking?.stale
 					? 'The folder or your notes changed while you were reading, so nothing was pushed. This is what is true now.'
 					: 'Everything below is applied together. Only the files listed here are rewritten; everything else in your folder stays exactly as it is. To change any of it: cancel, edit the file, push again.'}
 			</AlertDialog.Description>
@@ -239,8 +214,7 @@
 			<AlertDialog.Action
 				bind:ref={confirm}
 				class={buttonVariants()}
-				disabled={running}
-				onclick={send}
+				onclick={() => answer(true)}
 			>
 				Push all
 			</AlertDialog.Action>

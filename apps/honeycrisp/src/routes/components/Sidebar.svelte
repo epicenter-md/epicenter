@@ -8,24 +8,20 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '#platform/auth';
-	import { HAS_FOLDER } from '#platform/folder';
+	import type { WorkingCopy } from '@epicenter/data/artifact/checkout';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 	import PullToFolder from './PullToFolder.svelte';
 	import SendFolderEdits from './SendFolderEdits.svelte';
-	import type { FolderVerbs } from '$lib/folder.js';
 
 	let {
 		syncStatus,
-		pull,
-		diff,
-		push,
+		folder,
 	}: {
 		syncStatus: () => SyncConnectionStatus | undefined;
-		pull: FolderVerbs['pull'];
-		diff: FolderVerbs['diff'];
-		push: FolderVerbs['push'];
+		/** The `~/Epicenter` folder, or nothing in a build with no filesystem. */
+		folder: WorkingCopy | undefined;
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -132,9 +128,9 @@
 	</Sidebar.Content>
 
 	<Sidebar.Footer>
-		{#if HAS_FOLDER}
-			<SendFolderEdits {diff} {push} />
-			<PullToFolder {diff} {pull} />
+		{#if folder}
+			<SendFolderEdits {folder} />
+			<PullToFolder {folder} />
 		{/if}
 		{#if sync}
 			<div

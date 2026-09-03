@@ -4,7 +4,7 @@
 	import type { ReactiveData } from '@epicenter/svelte';
 	import { createHoneycrisp, setHoneycrisp } from '$lib/app.svelte.js';
 	import type { HoneycrispData } from '$lib/data/index.js';
-	import { folderVerbs } from '$lib/folder.js';
+	import { openWorkingCopy } from '#platform/folder';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import CommandPalette from './CommandPalette.svelte';
 	import NoteBodyPane from './NoteBodyPane.svelte';
@@ -33,8 +33,11 @@
 		const status = data.sync.status();
 		return status?.denied === false ? status : undefined;
 	};
+	// Nothing to construct in a build with no filesystem: the seam hands out
+	// the capability rather than a flag, so a browser build has no working copy
+	// and the components that take one are never mounted (ADR-0337).
 	/* svelte-ignore state_referenced_locally */
-	const { pull, diff, push } = folderVerbs(data);
+	const folder = openWorkingCopy?.(data);
 </script>
 
 <svelte:window
@@ -53,12 +56,12 @@
 />
 
 <SidebarProvider>
-	<HoneycrispSidebar {syncStatus} {pull} {diff} {push} />
+	<HoneycrispSidebar {syncStatus} {folder} />
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
 			<Resizable.Pane defaultSize={35} minSize={20}>
-				<NoteList />
+				<NoteList hasFolder={folder !== undefined} />
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">

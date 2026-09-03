@@ -3,11 +3,15 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { HAS_FOLDER } from '#platform/folder';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import { getDateLabel } from '$lib/date-label.js';
 	import NoteCard from '../components/NoteCard.svelte';
+
+	// Whether there is a folder to send somebody to, which the shell knows
+	// because it is the one that opened it. Read as a fact rather than as the
+	// capability itself: what this list needs is a sentence, not a verb.
+	let { hasFolder }: { hasFolder: boolean } = $props();
 
 	const honeycrisp = getHoneycrisp();
 
@@ -204,7 +208,7 @@
 						</div>
 					{/each}
 					<p class="px-3 pt-1 text-xs text-muted-foreground">
-						{#if HAS_FOLDER}
+						{#if hasFolder}
 							Nothing has been lost. Save these notes as files, fix the lines
 							above in your Epicenter folder, and send the edits back.
 						{:else}

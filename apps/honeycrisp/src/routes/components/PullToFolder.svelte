@@ -1,17 +1,17 @@
 <script lang="ts">
-	import type { FolderState } from '@epicenter/data/artifact/checkout';
+	import type {
+		PullPreview,
+		PullResult,
+		WorkingCopy,
+	} from '@epicenter/data/artifact/checkout';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import FolderDownIcon from '@lucide/svelte/icons/folder-down';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
-	import type { FolderVerbs } from '$lib/folder.js';
 	import { irreversible, renderPlan } from '$lib/folder-overview.js';
 	import { reportBackgroundError } from '$lib/report.js';
 
-	let {
-		diff,
-		pull,
-	}: { diff: FolderVerbs['diff']; pull: FolderVerbs['pull'] } = $props();
+	let { folder }: { folder: WorkingCopy } = $props();
 
 	const honeycrisp = getHoneycrisp();
 
@@ -28,89 +28,74 @@
 	/**
 	 * The folder a person is looking at before they write over it.
 	 *
-	 * The same shape the push dialog reads, because it is the same question
-	 * asked from the other end (ADR-0341): a push applies this list, a pull
-	 * writes over it. It travels back into `pull`, which reads the folder again
-	 * and refuses if the two disagree.
+	 * The pull is already running when this appears: it holds the reading this
+	 * list came from and is waiting on the answer, so nothing here is a list
+	 * that could go stale in a component's hands (ADR-0341).
 	 */
-	let shown = $state<FolderState | undefined>(undefined);
+	let asking = $state<
+		{ preview: PullPreview; stale: boolean; answer: (yes: boolean) => void } | undefined
+	>(undefined);
 	let running = $state(false);
 	let confirm = $state<HTMLButtonElement | null>(null);
 
 	/** How much of this folder a pull writes over. */
-	const wouldLose = $derived(
-		shown === undefined
-			? 0
-			: shown.base
-				? shown.plan.length
-				: shown.unwritten.length,
-	);
+	const wouldLose = $derived.by(() => {
+		const preview = asking?.preview;
+		if (preview === undefined) return 0;
+		return preview.base ? preview.plan.length : preview.unwritten.length;
+	});
 	/** How much of that cannot be put back afterwards. */
-	const cannotUndo = $derived(
-		shown === undefined || !shown.base
-			? (shown?.base === false ? shown.unwritten.length : 0)
-			: irreversible(shown.plan, honeycrisp.tables.notes, 'pull'),
-	);
-	/** Whether this list replaced one that stopped being true. */
-	let stale = $state(false);
+	const cannotUndo = $derived.by(() => {
+		const preview = asking?.preview;
+		if (preview === undefined) return 0;
+		return preview.base
+			? irreversible(preview.plan, honeycrisp.tables.notes, 'pull')
+			: preview.unwritten.length;
+	});
 
-	/** Read the folder, and show it when there is anything to lose. */
-	async function open() {
+	/**
+	 * What the pull would write over, as the block the push dialog renders.
+	 *
+	 * One renderer for both directions: this is the same plan read from the
+	 * other end, and two renderers meant two answers to what a note is called.
+	 */
+	const wouldGo = $derived.by(() => {
+		const preview = asking?.preview;
+		if (preview === undefined) return '';
+		if (!preview.base) return preview.unwritten.map((path) => `  ${path}`).join('\n');
+		return renderPlan(preview.plan, honeycrisp.tables.notes, 'pull');
+	});
+
+	async function write() {
 		running = true;
 		outcome = undefined;
 		try {
-			const { data, error } = await diff();
+			const { data, error } = await folder.pull({
+				confirm: (preview, { stale }) =>
+					// Nothing here is anybody's work, so there is nothing to
+					// approve, and a dialog listing no changes is a question with
+					// one answer. The library asks on every pull because a pull
+					// always writes; deciding not to show it is this side's.
+					preview.base && preview.plan.length === 0
+						? Promise.resolve(true)
+						: !preview.base && preview.unwritten.length === 0
+							? Promise.resolve(true)
+							: new Promise<boolean>((answer) => {
+									asking = { preview, stale, answer };
+								}),
+			});
+			asking = undefined;
 			if (error !== null) {
-				outcome = { tone: 'refused', message: refusal(error) };
+				outcome = { tone: 'refused', message: refusal(error.name) };
 				return;
 			}
-			// Nothing here is anybody's work, so there is nothing to approve.
-			// A pull with an empty list is the ordinary way a folder catches up.
-			if (data.base && data.plan.length === 0) {
-				await write(data);
-				return;
-			}
-			if (!data.base && data.unwritten.length === 0) {
-				await write(data);
-				return;
-			}
-			stale = false;
-			shown = data;
-		} catch (cause) {
-			reportBackgroundError(cause);
-			outcome = { tone: 'refused', message: refusal({ name: '' }) };
-		} finally {
-			running = false;
-		}
-	}
-
-	/** Write the folder from the notes, over the list they approved. */
-	async function write(state: FolderState) {
-		running = true;
-		try {
-			const { data, error } = await pull({ state });
-			if (error !== null && error.name === 'FolderChanged') {
-				// What the refusal carries IS the next list. The folder moved
-				// while they were reading, so they read the version that is true
-				// now and approve that.
-				shown = error.state;
-				stale = true;
-				return;
-			}
-			shown = undefined;
-			outcome =
-				error === null
-					? {
-							tone: 'held',
-							message: `${data.files} file${data.files === 1 ? '' : 's'} written to your Epicenter folder.`,
-						}
-					: { tone: 'refused', message: refusal(error) };
+			outcome = { tone: 'held', message: said(data) };
 		} catch (cause) {
 			// The library reports every refusal it plans for as a `Result`, so a
 			// throw here is a bug rather than an outcome, and it must not leave
 			// the dialog open over a list that may no longer be true.
 			reportBackgroundError(cause);
-			shown = undefined;
+			asking = undefined;
 			outcome = {
 				tone: 'refused',
 				message:
@@ -121,42 +106,45 @@
 		}
 	}
 
+	/** Close the dialog with an answer, which is what the working copy is waiting on. */
+	function answer(yes: boolean) {
+		const open = asking;
+		asking = undefined;
+		open?.answer(yes);
+	}
+
+	function said(done: PullResult): string {
+		if (done.status === 'declined') return 'Nothing was written.';
+		const { files } = done;
+		return `${files} file${files === 1 ? '' : 's'} written to your Epicenter folder.`;
+	}
+
 	/**
 	 * What a person reads when a pull does not happen.
 	 *
-	 * `HostUnreachable` should be unreachable: `#platform/folder` keeps this
-	 * whole component out of a build with no filesystem. It keeps an arm anyway,
-	 * because the honest sentence for "the folder is not there" is not the one
-	 * for "the folder said no", and a build seam that slipped would otherwise
-	 * tell somebody their disk was full.
+	 * `HostUnreachable` should be unreachable: `#platform/folder` hands out no
+	 * working copy in a build with no filesystem, so this component is never
+	 * mounted there. It keeps an arm anyway, because the honest sentence for
+	 * "the folder is not there" is not the one for "the folder said no", and a
+	 * build seam that slipped would otherwise tell somebody their disk was
+	 * full.
 	 */
-	function refusal(error: { name: string; failures?: readonly unknown[] }): string {
-		switch (error.name) {
+	function refusal(name: string): string {
+		switch (name) {
 			case 'HostUnreachable':
 				return 'This copy of Honeycrisp has no Epicenter folder to write to.';
+			case 'HostUnstated':
+				return 'Your Epicenter folder answered in a way this version of Honeycrisp does not understand. Restarting Epicenter may fix it.';
 			case 'HostRefused':
-				return 'Your Epicenter folder could not be written to. It may be full, read only, or already being written.';
+				return 'Your Epicenter folder could not be written to. It may be full, read only, or on a drive that is not there.';
+			case 'Busy':
+				return 'Your folder is already being written. Finish that first.';
 			case 'Unrenderable':
-				return `${error.failures?.length ?? 0} note(s) could not be written as files, so nothing was written. Nothing on this device changed.`;
-			case 'FolderChanged':
-				return 'Your folder changed while you were reading it. Read it again.';
+				return 'Some notes could not be written as files, so nothing was written. Nothing on this device changed.';
 			default:
 				return 'Your notes could not be written to the folder.';
 		}
 	}
-
-	/**
-	 * What the pull would write over, as the block the push dialog renders.
-	 *
-	 * One renderer for both directions: this is the same plan read from the
-	 * other end, and two renderers meant two answers to what a note is called.
-	 */
-	const wouldGo = $derived.by(() => {
-		if (shown === undefined) return '';
-		if (!shown.base) return shown.unwritten.map((path) => `  ${path}`).join('\n');
-		return renderPlan(shown.plan, honeycrisp.tables.notes, 'pull');
-	});
-
 </script>
 
 <div class="flex flex-col gap-1 px-2 pb-1">
@@ -166,7 +154,7 @@
 		class="justify-start gap-2 text-xs text-muted-foreground"
 		disabled={running}
 		tooltip="Write these notes into your Epicenter folder as files"
-		onclick={open}
+		onclick={write}
 	>
 		<FolderDownIcon class="size-3.5" />
 		{running ? 'Writing files…' : 'Save notes as files'}
@@ -183,9 +171,12 @@
 </div>
 
 <AlertDialog.Root
-	open={shown !== undefined}
+	open={asking !== undefined}
 	onOpenChange={(isOpen) => {
-		if (!isOpen) shown = undefined;
+		// Closing by any route is an answer, and the answer is no. A dialog that
+		// vanished without one would leave the pull waiting on a promise nothing
+		// resolves, and the folder marked busy behind it.
+		if (!isOpen) answer(false);
 	}}
 >
 	<AlertDialog.Content
@@ -199,17 +190,17 @@
 	>
 		<AlertDialog.Header>
 			<AlertDialog.Title>
-				{shown?.base === false
+				{asking?.preview.base === false
 					? `Write over ${wouldLose} file${wouldLose === 1 ? '' : 's'} nothing here wrote`
 					: `Write over ${wouldLose} edit${wouldLose === 1 ? '' : 's'} in your folder`}{cannotUndo >
-					0 && shown?.base !== false
+					0 && asking?.preview.base !== false
 					? `, ${cannotUndo} you cannot get back`
 					: ''}
 			</AlertDialog.Title>
 			<AlertDialog.Description>
-				{stale
+				{asking?.stale
 					? 'Your folder or your notes changed while you were reading, so nothing was written. This is what is true now.'
-					: shown?.base === false
+					: asking?.preview.base === false
 						? 'Nothing here wrote this folder, so nothing in it can be told apart from your notes. Every file below is replaced or removed.'
 						: 'Every file is written from your notes. These are the edits in your folder that have not been pushed back.'}
 			</AlertDialog.Description>
@@ -223,8 +214,7 @@
 			<AlertDialog.Action
 				bind:ref={confirm}
 				class={buttonVariants({ variant: 'destructive' })}
-				disabled={running}
-				onclick={() => shown !== undefined && write(shown)}
+				onclick={() => answer(true)}
 			>
 				Write over them
 			</AlertDialog.Action>
