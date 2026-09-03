@@ -90,14 +90,6 @@ describe('the runtime is the import path', () => {
 			"from '@epicenter/app/desktop'",
 		);
 	});
-
-	test('the handle itself is not a platform seam', async () => {
-		// Nothing about an epicenter varies by runtime, so composing one is not a
-		// leaf: the store is client-owned in every build, and the only axis is
-		// the binding above. Re-adding `#platform/epicenter` would put a keychain
-		// import back in front of an application that wanted notes.
-		expect(Object.keys(imports)).not.toContain('#platform/epicenter');
-	});
 });
 
 describe('storage ownership', () => {

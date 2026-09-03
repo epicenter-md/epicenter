@@ -73,7 +73,12 @@ package does not depend on `@epicenter/app`.
 
 ```ts
 // apps/<app>/src/lib/platform/epicenter.browser.svelte.ts
-export const notes = fromEpicenter(createEpicenter({ appId, definition, account: auth }));
+import { createBrowserEpicenter } from '@epicenter/app/browser';
+import { fromEpicenter } from '@epicenter/svelte';
+
+export const notes = fromEpicenter(
+	createBrowserEpicenter({ appId, definition, account: auth }),
+);
 ```
 
 ```svelte

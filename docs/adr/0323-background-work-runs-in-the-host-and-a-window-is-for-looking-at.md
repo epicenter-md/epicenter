@@ -57,7 +57,7 @@ changes here is duration, not the boundary.
 
 **The application's code does not change, because the seam already carries the
 difference.** Runtime-specific constructors have browser and desktop leaves.
-This adds a third, where `openSqlite` is the host's own storage owner and
+The host composes the shared core directly, where `openSqlite` is the host's own storage owner and
 `secrets` is the native keychain. The same Local Mail package runs in a browser
 tab, in a window, or inside the host, and only the binding differs. ADR-0273
 wanted the code to stay the same between being watched and not; that survives,

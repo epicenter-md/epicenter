@@ -4,8 +4,7 @@
  * Semantic Gmail calls stay app-owned; what is here is the handle they file
  * and store credentials with.
  *
- * One `createEpicenter`, composed here rather than in two platform leaves that
- * differed on an import line. No `definition` and no `account`: Local Mail
+ * One runtime-selected `createEpicenter`. No `definition` and no `account`: Local Mail
  * holds no Epicenter Data, so its handle has no `data` and no `account` to
  * read, and the seam holds the only thing that varies, which is who owns the
  * files and the keychain (ADR-0339).

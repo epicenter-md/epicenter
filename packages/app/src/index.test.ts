@@ -7,8 +7,12 @@ import {
 	secretLabel,
 } from './index.js';
 
-function bindingFor(calls: string[]): EpicenterBinding {
+function bindingFor(
+	calls: string[],
+	appId = 'so.epicenter.test',
+): EpicenterBinding {
 	return {
+		appId,
 		open: async (name) => {
 			calls.push(name);
 			return Ok({
@@ -90,7 +94,7 @@ test('the application id is explicit and independent from the definition id', ()
 	expect(
 		createEpicenter({
 			appId: 'so.epicenter.notes',
-			binding: bindingFor([]),
+			binding: bindingFor([], 'so.epicenter.notes'),
 			definition,
 			account,
 		}).appId,
@@ -98,7 +102,7 @@ test('the application id is explicit and independent from the definition id', ()
 	expect(
 		createEpicenter({
 			appId: 'so.epicenter.reader',
-			binding: bindingFor([]),
+			binding: bindingFor([], 'so.epicenter.reader'),
 			definition,
 			account,
 		}).appId,
@@ -109,4 +113,30 @@ test('an application id this platform cannot file refuses at construction', () =
 	expect(() =>
 		createEpicenter({ appId: 'not an app id', binding: bindingFor([]) }),
 	).toThrow('is not valid');
+});
+
+test('a binding cannot belong to another application', () => {
+	expect(() =>
+		createEpicenter({
+			appId: 'so.epicenter.other',
+			binding: bindingFor([]),
+		}),
+	).toThrow("scoped to 'so.epicenter.test'");
+});
+
+test('definition and account are both required when adding a store', () => {
+	const binding = bindingFor([]);
+	const definition = { id: 'so.epicenter.test' } as never;
+	const account = {} as never;
+
+	expect(() =>
+		createEpicenter({
+			appId: 'so.epicenter.test',
+			binding,
+			definition,
+		} as never),
+	).toThrow('definition and account');
+	expect(() =>
+		createEpicenter({ appId: 'so.epicenter.test', binding, account } as never),
+	).toThrow('definition and account');
 });

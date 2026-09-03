@@ -78,7 +78,7 @@ optional `account?` parameter disappears from `openDatabase`,
 
 **Where the app id comes from: the scoped handle, and it is self-claimed.**
 This record put the opening application in the address and did not say what
-supplies it. `createEpicenter({ appId, binding })` already scopes an
+supplies it. The runtime-specific constructor already scopes an
 application's SQLite files and its secrets by that id
 (`packages/app/src/index.ts`), so `openData` fills the segment from the handle
 and an application never writes its own id twice. An application that calls
@@ -86,7 +86,8 @@ and an application never writes its own id twice. An application that calls
 `appId`; one that holds the handle states it once, at construction
 (`packages/app/src/index.ts`).
 
-Nothing verifies it, at either call site.
+The shared core verifies that the concrete binding carries the same `appId` as
+the handle, so the two local-storage scopes cannot silently diverge.
 [ADR-0334](0334-a-deployed-app-is-a-trusted-app-because-deploying-it-was-the-consent.md)
 decided that "the app id in a broker request is self-claimed, so an app that
 claims another's id reaches that app's SQLite files and its secrets," and this

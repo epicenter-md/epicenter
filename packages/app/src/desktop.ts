@@ -48,24 +48,25 @@ import {
 	isAppStorageResponse,
 } from './protocol.js';
 
-export type CreateDesktopBindingOptions = {
+type DesktopBindingOptions = {
 	/** The trusted origin that owns the files and the keychain entries. */
 	baseURL?: string;
 	fetch?: typeof globalThis.fetch;
 };
 
 export type CreateDesktopEpicenterOptions = EpicenterScopeOptions &
-	CreateDesktopBindingOptions;
+	DesktopBindingOptions;
 
 /**
  * One binding over what the trusted origin owns for one application.
  */
 function createDesktopBinding(
 	appId: string,
-	options: CreateDesktopBindingOptions = {},
+	options: DesktopBindingOptions = {},
 ): EpicenterBinding {
 	const request = createOwnerRequest(options);
 	return {
+		appId,
 		open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 		delete: (name) =>
 			unwrap(
@@ -94,7 +95,10 @@ export function createDesktopEpicenter<
 	const { appId, definition, account } = options;
 	return createEpicenter({
 		appId,
-		binding: createDesktopBinding(appId, options),
+		binding: createDesktopBinding(appId, {
+			baseURL: options.baseURL,
+			fetch: options.fetch,
+		}),
 		...(definition === undefined ? {} : { definition }),
 		...(account === undefined ? {} : { account }),
 	}) as Epicenter<TDefinition>;
@@ -107,7 +111,7 @@ type OwnerRequest = (
 function createOwnerRequest({
 	baseURL = globalThis.location?.origin,
 	fetch: fetchImplementation = globalThis.fetch,
-}: CreateDesktopBindingOptions): OwnerRequest {
+}: DesktopBindingOptions): OwnerRequest {
 	if (!baseURL || !fetchImplementation) {
 		throw new Error('The desktop binding needs an origin and fetch.');
 	}

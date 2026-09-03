@@ -38,6 +38,7 @@ import {
 function createBrowserBinding(appId: string): EpicenterBinding {
 	const sqlite = createBrowserSqliteOwner();
 	return {
+		appId,
 		open: (name) =>
 			tryAsync({
 				try: () => sqlite.open(appId, name),

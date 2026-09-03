@@ -7,22 +7,17 @@
  * SQLite, a native path, a keychain, or a host IPC mechanism, because none of
  * those names appear on this surface.
  *
- * **There is one constructor, and the platform is a binding it takes.**
- * `@epicenter/app/browser` and `@epicenter/app/desktop` each export a binding,
- * and an application composes one through the `#platform/*` condition its
- * build already uses for auth. There is no `typeof window` test here and there
- * must not be one: the desktop build runs in a WebView, so a runtime sniff
- * cannot tell it apart from a browser tab, and the two differ in exactly the
- * ways that matter (a keychain, a Bun-owned file). A build that forgot to
- * declare the condition fails to resolve rather than silently running the
- * wrong owner.
+ * The browser and desktop subpaths export runtime-specific constructors. They
+ * enter this shared lifecycle core with a concrete, app-scoped binding. There
+ * is no `typeof window` test here and there must not be one: the desktop build
+ * runs in a WebView, so a runtime sniff cannot tell it apart from a browser
+ * tab. A build that forgot to declare its condition fails to resolve rather
+ * than silently running the wrong owner.
  *
- * The leaves used to export a `createEpicenter` each, which made the runtime a
- * property of the whole handle: an application that owned no file and no
- * secret still selected a constructor through a seam, and its store, which is
- * client-owned in every runtime, inherited a platform axis it does not have
- * (ADR-0226, ADR-0227). Nothing about an epicenter varies by runtime. A
- * Bun-owned file and a keychain do, so those are what the leaves are.
+ * The store is client-owned in every runtime (ADR-0226, ADR-0227), so it is
+ * composed here rather than behind the runtime seam. The runtime leaves own
+ * only the capabilities that actually differ: a Bun-owned file and a
+ * keychain.
  *
  * The binding is also what the Bun host's own leaf composes
  * (`apps/epicenter/src/app-binding.ts`), with a storage root and a secrets
@@ -182,6 +177,8 @@ export type SecretStore = {
  * and that is all that is left here.
  */
 export type EpicenterBinding = {
+	/** The application scope used by every capability in this binding. */
+	readonly appId: string;
 	open(name: DatabaseName): Promise<Result<AppSqliteDatabase, AppError>>;
 	delete(name: DatabaseName): Promise<Result<void, AppError>>;
 	secrets: SecretStore;
@@ -332,6 +329,11 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 		throw new Error(AppError.InvalidAppId({ appId }).error.message);
 	}
 	const { binding } = options;
+	if (binding.appId !== appId) {
+		throw new Error(
+			`The Epicenter binding is scoped to '${binding.appId}', not '${appId}'.`,
+		);
+	}
 
 	const capabilities = {
 		appId,
@@ -347,8 +349,13 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 		}),
 	};
 
-	if (definition === undefined || account === undefined) {
+	if (definition === undefined && account === undefined) {
 		return Object.freeze(capabilities) as Epicenter<TDefinition>;
+	}
+	if (definition === undefined || account === undefined) {
+		throw new Error(
+			'The Epicenter definition and account must be provided together.',
+		);
 	}
 
 	/**

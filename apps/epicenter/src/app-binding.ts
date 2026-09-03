@@ -4,9 +4,10 @@
  * An application's background work runs here rather than in a window, because a
  * window nobody is looking at is suspended after a few minutes and a compiled
  * Bun process is not (ADR-0323). What makes that affordable is that the
- * application's code does not change: `createEpicenter` takes a binding, the
- * browser and desktop leaves already exist, and this is the third. The same
- * package runs in a tab, in a window, or here, and only the binding differs.
+ * application's code does not change: the browser and desktop constructors
+ * already share the same core, and this host composes that core with its own
+ * binding. The same package runs in a tab, in a window, or here, and only the
+ * owner differs.
  *
  * This leaf is shorter than the desktop one, and the reason is the point. The
  * desktop leaf sends `sqlite-run` over HTTP so the host can reach the file; the
@@ -40,6 +41,7 @@ export function createHostBinding({
 	secrets,
 }: HostBindingOptions): EpicenterBinding {
 	return {
+		appId,
 		open: async (name) => {
 			try {
 				return Ok(await storage.open(appId, name));

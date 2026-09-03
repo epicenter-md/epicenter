@@ -1,11 +1,12 @@
 # 0339. An application creates one epicenter, and an account is what adds a store
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-02
 - **Unbuilt:** nothing. Built with two corrections this record now carries: the two names an application mints are branded, and the root is not types only.
 - **Amends:** [ADR-0316](0316-an-application-creates-one-scoped-epicenter-handle.md) at "the composition is `openData`, `openSqlite`, and `secrets`" and at the handle's argument list. The scoped handle, its one name, and its refusal of `createAppRuntime` stand.
 - **Relates:** [ADR-0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) (account and store are one yes/no), [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md), [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md), [ADR-0325](0325-a-database-is-bound-to-one-authority-and-re-homing-is-export-and-import.md), [ADR-0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md)
 - **2026-09-02, amended in place:** every handle now states its opening `appId` explicitly, including when it matches `definition.id`. The one-handle and one-store decisions stand; only the constructor convenience default is withdrawn.
+- **2026-09-03, amended in place:** browser and desktop subpaths now export runtime-specific constructors that build concrete bindings. The shared core verifies that a binding carries the same `appId` as the handle.
 
 ## Context
 
@@ -44,14 +45,14 @@ declares none, has no `@epicenter/auth` dependency, and uses `openSqlite` and
 
 **An application creates one epicenter, and an account is what adds a store.**
 
-The runtime is the import path. The name never carries it. (Amended below: the
-import path that carries it is the binding's, not the handle's.)
+The runtime is the import path. The runtime constructor enters the shared core;
+the application never constructs or passes a binding.
 
 ```ts
-import { createEpicenter } from '@epicenter/app/browser';   // or '@epicenter/app/desktop'
+import { createBrowserEpicenter } from '@epicenter/app/browser';
 
-createEpicenter({ appId }): Epicenter
-createEpicenter({ appId, definition, account }): Epicenter<typeof definition>
+createBrowserEpicenter({ appId }): Epicenter
+createBrowserEpicenter({ appId, definition, account }): Epicenter<typeof definition>
 ```
 
 ```ts
@@ -109,7 +110,7 @@ is one change made at once.** `data` becomes a record keyed by the
 application's own words rather than by data ids:
 
 ```ts
-createEpicenter({
+createBrowserEpicenter({
 	appId: VOCAB_APP_ID,          // stated again: two definitions, no single default
 	account,
 	data: { own: vocabDefinition, notes: honeycrispDefinition },
