@@ -6,8 +6,8 @@
  * declares it. Those were three literals in three files, which is three places
  * for one identity to drift; the value has an owner now and they import it.
  *
- * Reverse domain because every composed application here is spelled that way.
- * It is a convention rather than a grammar: `isAppId` admits a bare label too,
- * because an admitted folder's name is its id (ADR-0179).
+ * Reverse domain is the grammar, not a convention: `isAppId` in
+ * `@epicenter/constants/app-id` requires two or more dot-separated lowercase
+ * labels and refuses a bare one (ADR-0204).
  */
 export const APP_ID = 'so.epicenter.vocab';
