@@ -110,8 +110,10 @@ const auth = createOAuthAppAuth({
 Apps rarely call `createOAuthAppAuth` directly. `createHostedBrowserRedirectAuth`
 in `@epicenter/auth` packages the convention every hosted web app repeats: the
 persisted-grant key, the issuer, the redirect, the resource, and where PKCE
-state lives. It takes only what varies per app (namespace, client id, the
-hosted API origin) and returns a plain `AuthClient`. A Tauri build keeps its
+state lives. It takes only what varies per app (the application id, the OAuth client id,
+and the hosted API origin) and returns a plain `AuthClient`. The application id
+is the one `createEpicenter` takes, because it is the same application: it
+scopes the persisted grant to `<appId>.auth.persisted`. A Tauri build keeps its
 own deep-link launcher and uses this for its web build alone (ADR-0078).
 
 The public surface lives in one package plus a Svelte subpath:
@@ -120,7 +122,7 @@ The public surface lives in one package plus a Svelte subpath:
   refresh, refresh-token revocation, `/api/session` verification, the network
   gate, authenticated fetch, and WebSocket opening. There is no headless or
   terminal surface: every credential model here is driven by an app.
-- `@epicenter/auth/svelte`: one adapter, `reactive(auth)`, plus a re-export of
+- `@epicenter/auth/svelte`: one adapter, `fromAuth(authClient)`, plus a re-export of
   `reloadOnAuthChange`. It mirrors `auth.state` and `connection.status`
   through `createSubscriber` so templates and `$derived` reads are reactive,
   and returns `ReactiveAuthClient`, which is `AuthClient` plus a wellcrafted
@@ -131,7 +133,13 @@ The public surface lives in one package plus a Svelte subpath:
 
   It holds no conventions. A composition that has nothing to do with a
   framework belongs in `@epicenter/auth`, and a platform leaf is the line that
-  puts the two together: `reactive(createHostedBrowserRedirectAuth({ … }))`.
+  puts the two together, and it names both halves so a boot reader and a
+  component ask for different things:
+
+  ```ts
+  export const authClient = createHostedBrowserRedirectAuth({ appId: APP_ID, oauthClientId, baseURL });
+  export const auth = fromAuth(authClient);
+  ```
 
 The API server composes Better Auth like this:
 
