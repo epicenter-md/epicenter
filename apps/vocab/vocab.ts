@@ -9,8 +9,9 @@ import { field } from '@epicenter/data/definition';
  * sync; forking a field shape breaks sync compatibility with peers running the
  * canonical workspace.
  *
- * Composition lives in `src/lib/runtime.ts`, which decides which of these two
- * documents a generation writes.
+ * Composition lives in `src/lib/epicenter.svelte.ts`: one `createEpicenter`
+ * over this definition and the account, which the one route opens explicitly
+ * (ADR-0339, ADR-0344).
  */
 
 import type { AgentMessage } from '@epicenter/agent';

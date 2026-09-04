@@ -15,7 +15,7 @@ vocabDefinition
   -> openVocabBrowser() opens with a browser connection
 ```
 
-**UI state**: split by lifetime. `src/routes/+page.svelte` owns the page-local conversation list, active id, and CRUD. The per-conversation runtime lives in `ConversationView.svelte`, mounted via `{#key activeConversationId}`, so each conversation gets a real component lifecycle. `ConversationView` reads the active row's `content` node and hands it to the shared chat controller, which streams the live turn into `$state`, persists finished messages, and exposes `messages` / `isThinking` / `isGenerating` / `error` plus `send` / `stop` / `retry`.
+**UI state**: split by lifetime. `src/routes/components/VocabShell.svelte` owns the page-local conversation list, active id, and CRUD. The per-conversation runtime lives in `ConversationView.svelte`, mounted via `{#key activeConversationId}`, so each conversation gets a real component lifecycle. `ConversationView` reads the active row's `content` node and hands it to the shared chat controller, which streams the live turn into `$state`, persists finished messages, and exposes `messages` / `isThinking` / `isGenerating` / `error` plus `send` / `stop` / `retry`.
 
 **Auth**: Google OAuth through the shared Epicenter auth path. Sign-in is optional: Vocab boots into the local workspace first, then uses principal-scoped storage and sync on signed-in boots. `AccountPopover` is the account surface.
 
@@ -27,7 +27,8 @@ vocabDefinition
 src/
   lib/
     platform/auth.ts       # OAuth auth client
-    vocab.ts               # openVocabBrowser singleton + Vocab state
+    platform/binding.ts    # who owns this build's SQLite files and secrets
+    epicenter.svelte.ts    # the one handle: createEpicenter + fromEpicenter
     state/
       dictation.svelte.ts              # dictation state and interruption handling
       inference-connections.svelte.ts  # hosted/custom inference connection registry
@@ -41,19 +42,27 @@ src/
   routes/
     +layout.svelte         # Root layout with Toaster
     +layout.ts             # SSR disabled (CSR only)
-    +page.svelte             # Main layout: chat state, sidebar + chat area + readings toggle
+    +page.svelte             # Opens the store, and renders its four states
     auth/callback/+page.svelte # OAuth callback return to app shell
     components/
+      VocabShell.svelte        # Main layout: chat state, sidebar + chat area + readings toggle
       ConversationView.svelte  # Keyed per-conversation view; binds the message store to the inference stream
       ReadingMarkdown.svelte   # Renders one settled message with its deterministic reading overlay
       DictationButton.svelte   # Speech input control
       VocabSidebar.svelte      # Sidebar conversation list with create/switch/delete
 vocab.ts                    # Shared isomorphic model (tables, KV, VocabMessage shape, row content)
-vocab.browser.ts            # openVocabBrowser runtime wiring
 ```
 
 ## Key decisions
 
+- The store is opened explicitly. `$lib/epicenter.svelte.ts` composes one
+  `createEpicenter` over the definition and the account and adapts it with
+  `fromEpicenter`; `routes/+page.svelte` calls `epicenter.open()` once after
+  reading auth and renders `closed | opening | ready | failed`, handing
+  `state.data` to `VocabShell` (ADR-0339, ADR-0344). Vocab's own opener is
+  gone, and with it the flush-on-hide listener it never had: the shared opener
+  asks the page for a flush before it goes, so the last few seconds of typing
+  survive.
 - The conversation list and each transcript live in the database document: metadata is ordinary row values and messages are keyed attributes on the row's `content` node. There is no `chatMessages` table.
 - The live answer streams in component `$state`, not the synced doc (ADR-0046): vocab is capability-free, so re-asking is free and only finished messages need to sync. Each finished message is one LWW JSON blob keyed by message id, written the moment a normal app would POST the row.
 - The cloud never writes the doc: it is a blind relay plus a stateless metered inference stream (ADR-0033).

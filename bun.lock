@@ -427,6 +427,7 @@
       "version": "0.0.2",
       "dependencies": {
         "@epicenter/agent": "workspace:*",
+        "@epicenter/app": "workspace:*",
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/chat": "workspace:*",
@@ -466,6 +467,7 @@
       "version": "7.11.1",
       "dependencies": {
         "@aptabase/web": "^0.4.3",
+        "@epicenter/app": "workspace:*",
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",

@@ -11,14 +11,15 @@
  * it (ADR-0213).
  */
 
-import type { VocabRuntime } from '../runtime.js';
+import type { ReplicaData } from '@epicenter/data';
+import type { vocabDefinition } from '@epicenter/vocab';
 
 const APPLICATION_DEFAULTS = { showReadings: true } as const;
 
 export function createSettingsState({
 	data,
 }: {
-	data: NonNullable<VocabRuntime['account']>['data'];
+	data: ReplicaData<typeof vocabDefinition>;
 }) {
 	function read(): boolean {
 		// One key, one fallback. `get` answers `undefined` for a key never

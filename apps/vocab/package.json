@@ -19,6 +19,7 @@
 	},
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
+		"@epicenter/app": "workspace:*",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/chat": "workspace:*",
