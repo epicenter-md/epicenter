@@ -5,7 +5,7 @@
 	"version": "0.0.2",
 	"type": "module",
 	"exports": {
-		".": "./vocab.ts"
+		".": "./src/lib/data/index.ts"
 	},
 	"scripts": {
 		"dev": "vite dev",

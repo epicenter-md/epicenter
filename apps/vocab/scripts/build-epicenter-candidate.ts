@@ -25,7 +25,7 @@
 import { cp, mkdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { vocabDefinition } from '../vocab.ts';
+import { vocabDefinition } from '@epicenter/vocab';
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const built = join(app, 'build');

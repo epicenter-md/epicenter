@@ -1,11 +1,12 @@
 import { field } from '@epicenter/data/definition';
+import { APP_ID } from '../app-id.js';
 /**
  * Vocab's inert workspace declaration: the workspace id it owns, its tables, and its device-local
  * values. Isomorphic: no IndexedDB, WebSockets, Svelte state, or browser APIs.
  *
- * Distribution: this file is the `@epicenter/vocab` package root file (the
- * target of the package's `"."` export). The browser root imports the workspace from
- * here and opens documents with it. The shapes here are the wire contract for
+ * Distribution: this file is the target of the package's `"."` export, so the
+ * rest of the app imports it as `@epicenter/vocab` rather than by path. It sits
+ * beside the app id it declares, the way Honeycrisp's definition does. The shapes here are the wire contract for
  * sync; forking a field shape breaks sync compatibility with peers running the
  * canonical workspace.
  *
@@ -117,7 +118,7 @@ const entriesTable = defineTable({
  * screen renders is a fact about this screen, not portable work (ADR-0233).
  */
 export const vocabDefinition = defineData({
-	id: 'so.epicenter.vocab',
+	id: APP_ID,
 	title: 'Vocab',
 	kv: {
 		/** Readings render by default. */
