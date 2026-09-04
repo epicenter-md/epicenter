@@ -19,8 +19,14 @@
 		 * different act. What changes is that there is a mailbox to go back to.
 		 */
 		another?: boolean;
-		/** Called when an account may have appeared, so the list re-reads. */
-		onConnected: () => void;
+		/**
+		 * Called when the flow finished, with the account's Google subject when
+		 * one was connected and `null` when nothing was. The page re-reads the
+		 * list either way, and reconciles the account it was handed: a credential
+		 * is only proven by a pass, and re-connecting a signed-out account has to
+		 * replace the failure its last pass wrote down.
+		 */
+		onConnected: (sub: string | null) => void;
 		/** Leave without connecting. Only reachable when there is a mailbox behind this. */
 		onCancel?: () => void;
 	} = $props();
@@ -29,18 +35,19 @@
 
 	async function connect(): Promise<void> {
 		starting = true;
+		let connected: string | null = null;
 		try {
 			const request = await mail.beginConnect();
 			// The web build leaves the page here and never comes back to this
 			// line; the desktop build waits and answers with where Google sent
 			// the person. Either way the request stays in hand.
 			const callbackUrl = await gmailAuthorization.authorize(request);
-			await mail.finishConnect(request, callbackUrl);
+			connected = (await mail.finishConnect(request, callbackUrl)).sub;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : String(error));
 		} finally {
 			starting = false;
-			onConnected();
+			onConnected(connected);
 		}
 	}
 </script>

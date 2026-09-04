@@ -66,7 +66,6 @@ async function setup(
 const act = (
 	deps: AssertDeps,
 	input: { ids: string[]; addLabels?: string[]; removeLabels?: string[] },
-	readOnly = false,
 ) =>
 	assertMessageLabels({
 		deps,
@@ -75,7 +74,6 @@ const act = (
 			addLabels: input.addLabels ?? [],
 			removeLabels: input.removeLabels ?? [],
 		},
-		readOnly,
 	});
 
 describe('assertMessageLabels', () => {
@@ -250,21 +248,6 @@ describe('assertMessageLabels', () => {
 				removeLabels: ['Label_7'],
 			});
 			expect(byName.error?.name).toBe('ContradictoryLabel');
-			expect(await deps.intents.pending()).toEqual([]);
-		} finally {
-			cleanup();
-		}
-	});
-
-	test('read-only refuses before anything is recorded', async () => {
-		const { deps, cleanup } = await setup();
-		try {
-			const { error } = await act(
-				deps,
-				{ ids: ['m1'], removeLabels: ['INBOX'] },
-				true,
-			);
-			expect(error?.name).toBe('ReadOnly');
 			expect(await deps.intents.pending()).toEqual([]);
 		} finally {
 			cleanup();

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	describeAssertion,
 	invert,
 	isReversible,
 	planLabel,
@@ -79,5 +80,26 @@ describe('isReversible', () => {
 		expect(isReversible(planToggle(['INBOX'], 'inbox'))).toBe(true);
 		const noop: TriageAction = { label: 'x', addLabels: [], removeLabels: [] };
 		expect(isReversible(noop)).toBe(false);
+	});
+});
+
+describe('describeAssertion', () => {
+	test('names an assertion with the same verb that planned it', () => {
+		// The two directions have to agree or the outbox tells a person their
+		// archive is a different act than the one they made.
+		const archive = planToggle(['INBOX'], 'inbox');
+		expect(archive.removeLabels).toEqual(['INBOX']);
+		expect(describeAssertion('INBOX', false)).toBe('Archive');
+		expect(describeAssertion('INBOX', true)).toBe('Move to inbox');
+		expect(describeAssertion('TRASH', true)).toBe('Move to trash');
+		expect(describeAssertion('UNREAD', false)).toBe('Mark read');
+		expect(describeAssertion('STARRED', true)).toBe('Star');
+	});
+
+	test('a custom label is named, and falls back to its id', () => {
+		expect(describeAssertion('Label_7', true, 'Receipts')).toBe('Add Receipts');
+		// The cache a name would have come from is disposable, so an outbox row
+		// that outlived it still has to say something (ADR-0306).
+		expect(describeAssertion('Label_7', false)).toBe('Remove Label_7');
 	});
 });

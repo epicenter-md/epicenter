@@ -15,7 +15,10 @@
 		senderName,
 		shortDate,
 	} from '$lib/format';
-	import type { MailLabel, MessageSummary } from '$lib/types';
+	import type {
+		LabelSummary,
+		MessageSummary,
+	} from '@epicenter/local-mail/mailbox';
 
 	let {
 		messages,
@@ -27,7 +30,7 @@
 		onSelect,
 	}: {
 		messages: MessageSummary[];
-		labels: MailLabel[];
+		labels: LabelSummary[];
 		selectedId: string | null;
 		loading: boolean;
 		error: string | null;

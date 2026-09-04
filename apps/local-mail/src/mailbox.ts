@@ -75,28 +75,38 @@ export type LabelSummary = {
 	type: string | null;
 };
 
-/** What a read applies on top of Gmail's facts, for one account. */
+/**
+ * What a read applies on top of Gmail's facts, for one account.
+ *
+ * Read-only in the type, because it is a snapshot of the intent store taken
+ * before a query and not a thing a query edits. That is also what makes
+ * `EMPTY_OVERLAY` safe to share: a `Map` cannot be frozen, so the only thing
+ * that can stop one default value from being poisoned for every read in the
+ * process is a type nobody can call `set` through.
+ */
 export type LabelOverlay = {
 	/** `messageId` -> labels this machine wants on it. */
-	wanted: Map<string, Set<string>>;
+	wanted: ReadonlyMap<string, ReadonlySet<string>>;
 	/** `messageId` -> labels this machine wants off it. */
-	unwanted: Map<string, Set<string>>;
+	unwanted: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
+/** The overlay of an account owing Gmail nothing, which is the common case. */
 export const EMPTY_OVERLAY: LabelOverlay = {
 	wanted: new Map(),
 	unwanted: new Map(),
 };
 
 export function overlayOf(intents: readonly LabelIntent[]): LabelOverlay {
-	const overlay: LabelOverlay = { wanted: new Map(), unwanted: new Map() };
+	const wanted = new Map<string, Set<string>>();
+	const unwanted = new Map<string, Set<string>>();
 	for (const intent of intents) {
-		const side = intent.want ? overlay.wanted : overlay.unwanted;
+		const side = intent.want ? wanted : unwanted;
 		const labels = side.get(intent.messageId) ?? new Set<string>();
 		labels.add(intent.labelId);
 		side.set(intent.messageId, labels);
 	}
-	return overlay;
+	return { wanted, unwanted };
 }
 
 /** The effective label set of one mirrored row under `overlay`. */
@@ -114,6 +124,13 @@ export function effectiveLabels(
 	for (const label of overlay.wanted.get(messageId) ?? []) labels.add(label);
 	return [...labels];
 }
+
+/** What one account's disposable copy of Gmail currently holds. */
+export type MailStatus = {
+	cache: 'empty' | 'building' | 'ready';
+	lastSyncedAt: string | null;
+	rows: { messages: number; labels: number };
+};
 
 export type Mailbox = ReturnType<typeof openMailbox>;
 
@@ -216,10 +233,7 @@ export function openMailbox(mail: AppSqliteDatabase) {
 		};
 	}
 
-	function idsAsserting(
-		side: Map<string, Set<string>>,
-		label: string,
-	): string[] {
+	function idsAsserting(side: LabelOverlay['wanted'], label: string): string[] {
 		const ids: string[] = [];
 		for (const [messageId, labels] of side) {
 			if (labels.has(label)) ids.push(messageId);
@@ -227,18 +241,28 @@ export function openMailbox(mail: AppSqliteDatabase) {
 		return ids;
 	}
 
-	function toSummary(
-		row: {
-			id: string;
-			thread_id: string | null;
-			subject: string | null;
-			sender: string | null;
-			snippet: string | null;
-			internal_date: number | null;
-			label_ids: string | null;
-		},
-		overlay: LabelOverlay,
-	): MessageSummary {
+	const SUMMARY_COLUMNS =
+		'id, thread_id, subject, sender, snippet, internal_date, label_ids';
+
+	/**
+	 * The columns a summary is built from, named once.
+	 *
+	 * Declared beside `SUMMARY_COLUMNS` because the two have to agree: a column
+	 * added to one and not the other is a row this reads as `undefined`. The
+	 * detail read selects these plus two more, so it says so as an intersection
+	 * rather than by restating the seven.
+	 */
+	type SummaryRow = {
+		id: string;
+		thread_id: string | null;
+		subject: string | null;
+		sender: string | null;
+		snippet: string | null;
+		internal_date: number | null;
+		label_ids: string | null;
+	};
+
+	function toSummary(row: SummaryRow, overlay: LabelOverlay): MessageSummary {
 		return {
 			id: row.id,
 			threadId: row.thread_id,
@@ -250,25 +274,78 @@ export function openMailbox(mail: AppSqliteDatabase) {
 		};
 	}
 
+	async function readCacheState(): Promise<CacheState> {
+		const rows = await all<{ key: string; value: string | null }>(
+			`SELECT key, value FROM cache_meta`,
+		);
+		const meta = new Map(rows.map((row) => [row.key, row.value]));
+		return {
+			historyId: meta.get('history_id') ?? null,
+			lastFullPullAt: meta.get('last_full_pull_at') ?? null,
+			lastSyncedAt: meta.get('last_synced_at') ?? null,
+		};
+	}
+
+	async function counts(): Promise<{ messages: number; labels: number }> {
+		const [messages, labels] = await Promise.all([
+			all<{ n: number }>(`SELECT count(*) AS n FROM messages`),
+			all<{ n: number }>(`SELECT count(*) AS n FROM labels`),
+		]);
+		return { messages: messages[0]?.n ?? 0, labels: labels[0]?.n ?? 0 };
+	}
+
 	return {
-		async readCacheState(): Promise<CacheState> {
-			const rows = await all<{ key: string; value: string | null }>(
-				`SELECT key, value FROM cache_meta`,
-			);
-			const meta = new Map(rows.map((row) => [row.key, row.value]));
+		readCacheState,
+		counts,
+
+		/**
+		 * How much of Gmail this device holds, and how fresh it is.
+		 *
+		 * The cache describing itself, because there is nothing else in the answer.
+		 * This was a `status.ts` module with its own deps type for as long as it
+		 * also reported what a person still owed Gmail; that half is the outbox,
+		 * over the durable file, and keeping the two reads apart is what makes it
+		 * impossible for an empty or broken cache to report zero waiting work
+		 * (ADR-0306).
+		 *
+		 * `building` is the state worth naming: rows are here but no history cursor
+		 * has been written, so no full pull has finished and what a person is
+		 * looking at is a partial mailbox rather than a small one.
+		 */
+		async status(): Promise<MailStatus> {
+			const [state, rows] = await Promise.all([readCacheState(), counts()]);
 			return {
-				historyId: meta.get('history_id') ?? null,
-				lastFullPullAt: meta.get('last_full_pull_at') ?? null,
-				lastSyncedAt: meta.get('last_synced_at') ?? null,
+				cache:
+					state.historyId !== null
+						? 'ready'
+						: rows.messages === 0
+							? 'empty'
+							: 'building',
+				lastSyncedAt: state.lastSyncedAt,
+				rows,
 			};
 		},
 
-		async counts(): Promise<{ messages: number; labels: number }> {
-			const [messages, labels] = await Promise.all([
-				all<{ n: number }>(`SELECT count(*) AS n FROM messages`),
-				all<{ n: number }>(`SELECT count(*) AS n FROM labels`),
-			]);
-			return { messages: messages[0]?.n ?? 0, labels: labels[0]?.n ?? 0 };
+		/**
+		 * Subject lines for a handful of ids, for the outbox's list.
+		 *
+		 * A missing id is a missing key rather than a null value, because the two
+		 * absences differ: this device may not hold the message at all, and a
+		 * message may genuinely have no subject. An id the copy does not hold is
+		 * ordinary here, since undelivered triage outlives a cache reset
+		 * (ADR-0306).
+		 */
+		async subjectsOf(
+			ids: readonly string[],
+		): Promise<Map<string, string | null>> {
+			if (ids.length === 0) return new Map();
+			const unique = [...new Set(ids)];
+			const rows = await all<{ id: string; subject: string | null }>(
+				`SELECT id, subject FROM messages
+				 WHERE id IN (${unique.map(() => '?').join(', ')})`,
+				unique,
+			);
+			return new Map(rows.map((row) => [row.id, row.subject]));
 		},
 
 		async hasMessage(id: string): Promise<boolean> {
@@ -331,16 +408,8 @@ export function openMailbox(mail: AppSqliteDatabase) {
 				parameters.push(pattern, pattern, pattern);
 			}
 			parameters.push(limit, offset);
-			const rows = await all<{
-				id: string;
-				thread_id: string | null;
-				subject: string | null;
-				sender: string | null;
-				snippet: string | null;
-				internal_date: number | null;
-				label_ids: string | null;
-			}>(
-				`SELECT id, thread_id, subject, sender, snippet, internal_date, label_ids
+			const rows = await all<SummaryRow>(
+				`SELECT ${SUMMARY_COLUMNS}
 				 FROM messages${where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''}
 				 ORDER BY internal_date DESC
 				 LIMIT ? OFFSET ?`,
@@ -353,19 +422,10 @@ export function openMailbox(mail: AppSqliteDatabase) {
 			id: string,
 			overlay: LabelOverlay = EMPTY_OVERLAY,
 		): Promise<MessageDetail | null> {
-			const rows = await all<{
-				id: string;
-				thread_id: string | null;
-				subject: string | null;
-				sender: string | null;
-				snippet: string | null;
-				internal_date: number | null;
-				label_ids: string | null;
-				body_text: string | null;
-				resource: string;
-			}>(
-				`SELECT id, thread_id, subject, sender, snippet, internal_date,
-				        label_ids, body_text, resource
+			const rows = await all<
+				SummaryRow & { body_text: string | null; resource: string }
+			>(
+				`SELECT ${SUMMARY_COLUMNS}, body_text, resource
 				 FROM messages WHERE id = ?`,
 				[id],
 			);

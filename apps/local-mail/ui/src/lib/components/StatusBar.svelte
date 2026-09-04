@@ -1,42 +1,65 @@
 <script lang="ts">
+	/**
+	 * The account in view, how much of its mail this device holds, and the way
+	 * into the outbox.
+	 *
+	 * Undelivered work is not described here any more, in any form. It is the
+	 * outbox panel's, whole: one thing says how much is waiting and why, and it
+	 * reads the same after a reload as before one (ADR-0327). This bar used to
+	 * carry a pending chip, a sign-in warning, and a "reconcile failed" marker,
+	 * all three derived from a mutation that had just run in this page, and all
+	 * three gone the moment the page reloaded.
+	 */
 	import { Button } from '@epicenter/ui/button';
 	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
-	import ClockIcon from '@lucide/svelte/icons/clock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-		import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import type { Outbox } from '@epicenter/local-mail/outbox';
+	import OutboxPanel from './OutboxPanel.svelte';
 	import { relativeTime } from '$lib/format';
-	import type { ConnectedAccount, MailboxStatus } from '$lib/types';
+	import type { ConnectedAccount } from '@epicenter/local-mail/accounts';
+	import type {
+		LabelSummary,
+		MailStatus,
+	} from '@epicenter/local-mail/mailbox';
 
 	let {
 		status,
+		outbox,
+		reconciling,
+		blocked,
+		labels,
 		accounts,
 		selectedAccount,
 		onSelectAccount,
-		reconciling,
-		reconcileError,
-		signInExpired,
-		onReconcile,
+		onRetry,
 		onSignIn,
 		onConnectAnother,
 		onRemoveAccount,
 	}: {
-		status: MailboxStatus | undefined;
+		status: MailStatus | undefined;
+		/** The outbox for the account in view. */
+		outbox: Outbox | undefined;
+		/** Whether this window is running a pass right now. Not on the outbox,
+		 * because the outbox is durable and this is not. */
+		reconciling: boolean;
+		/**
+		 * The accounts whose work cannot move without a person, so the switcher can
+		 * mark one. A person choosing accounts should not be surprised (ADR-0327).
+		 */
+		blocked: ReadonlySet<string>;
+		labels: LabelSummary[];
 		/** Every account this person has connected. One renders as plain text;
 		 * several render as a switcher. */
 		accounts: ConnectedAccount[];
 		/** The account currently in view (null only before the list has loaded). */
 		selectedAccount: string | null;
 		onSelectAccount: (account: string) => void;
-		reconciling: boolean;
-		reconcileError: string | null;
-		/** Google stopped honouring the grant, so this account cannot sync. */
-		signInExpired: boolean;
-		onReconcile: () => void;
+		/** Try again now, which is the outbox's only control. */
+		onRetry: () => void;
 		/** Send the person back to Google for the account already in view. */
 		onSignIn: () => void;
 		/** Send the person to Google for one more account. */
@@ -44,12 +67,6 @@
 		/** Ask to remove the account in view. What that costs is decided there. */
 		onRemoveAccount: () => void;
 	} = $props();
-
-	// Local triage Gmail has not been told about yet. Two numbers, no list: the
-	// point is that undelivered work is never invisible, not that this becomes a
-	// place to manage it.
-	const pending = $derived(status?.pending.assertions ?? 0);
-	const oldestPending = $derived(status?.pending.oldestAssertedAt ?? null);
 
 	// The cache chip is the one canonical cache-state surface.
 	const cache = $derived(status?.cache ?? 'empty');
@@ -100,6 +117,9 @@
 						{#each accounts as account (account.sub)}
 							<DropdownMenu.RadioItem value={account.sub}>
 								<span class="truncate font-mono text-xs">{account.email}</span>
+								{#if blocked.has(account.sub)}
+									<AlertTriangleIcon class="ml-auto size-3.5 text-destructive" />
+								{/if}
 							</DropdownMenu.RadioItem>
 						{/each}
 					</DropdownMenu.RadioGroup>
@@ -131,59 +151,8 @@
 			<span class="tabular-nums" title={status.lastSyncedAt ?? 'never synced'}>
 				synced {relativeTime(status.lastSyncedAt)}
 			</span>
-			{#if signInExpired}
-				<!--
-					Not an error a retry fixes and not a state a person chose. It says
-					what is at stake, because the pending count is work Gmail has not
-					been told about and cannot be until this is answered (ADR-0320).
-				-->
-				<span
-					class="flex items-center gap-1.5 rounded border border-destructive/40 px-1.5 py-0.5 font-medium text-destructive"
-				>
-					<AlertTriangleIcon class="size-3" />
-					Sign-in expired{pending > 0
-						? ` · ${numberFmt.format(pending)} ${pending === 1 ? 'change' : 'changes'} waiting`
-						: ''}
-				</span>
-				<Button size="sm" variant="outline" class="h-7" onclick={onSignIn}>
-					{pending > 0 ? 'Sign in to deliver' : 'Sign in'}
-				</Button>
-			{:else if pending > 0}
-				<span
-					class="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 font-medium text-amber-500 tabular-nums"
-					title="Changes recorded here that Gmail has not been told about yet. The reconciler delivers them; nothing is lost if this app closes first."
-				>
-					<ClockIcon class="size-3" />
-					{pending} pending · {relativeTime(oldestPending)}
-				</span>
-			{/if}
 		{/if}
-		<!--
-			An expired sign-in already says what happened and what to do about it,
-			so this would be the same fact twice, in weaker words.
-		-->
-		{#if reconcileError && !signInExpired}
-			<span
-				class="flex items-center gap-1 text-destructive"
-				title={reconcileError}
-			>
-				<AlertTriangleIcon class="size-3.5" /> reconcile failed
-			</span>
-		{/if}
-		<Button
-			size="sm"
-			variant="outline"
-			onclick={onReconcile}
-			disabled={reconciling}
-			tooltip="Send pending changes and poll Gmail now"
-		>
-			{#if reconciling}
-				<Spinner class="size-3.5" />
-			{:else}
-				<RefreshCwIcon class="size-3.5" />
-			{/if}
-			<span>Reconcile</span>
-		</Button>
+		<OutboxPanel {outbox} {reconciling} {labels} {onRetry} {onSignIn} />
 		<LightSwitch variant="ghost" />
 	</div>
 </header>

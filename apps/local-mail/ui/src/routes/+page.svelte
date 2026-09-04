@@ -36,7 +36,7 @@
 	const queryClient = useQueryClient();
 
 	// The accounts this person has connected. The switcher picks one; every read
-	// and write below is scoped to its Epicenter row id and keyed by it.
+	// and write below is scoped to its Google subject and keyed by it.
 	const accountsQuery = createQuery(() => ({
 		queryKey: ['accounts'],
 		queryFn: () => mail.accounts(),
@@ -55,16 +55,38 @@
 		}
 	});
 
-	// The only query that polls. Status is the health surface: the pending count
-	// and the age of the oldest change without anyone touching the page. Matched
-	// to the reconcile interval, so a clean pass and the reading of it move
-	// together.
+	// How much of Gmail this device holds, and how fresh it is. What a person
+	// still owes Gmail is the outbox below, not this.
 	const status = createQuery(() => ({
 		queryKey: ['status', selectedAccount],
 		queryFn: () => mail.status(selectedAccount as string),
 		enabled: selectedAccount !== null,
 		refetchInterval: 30_000,
 	}));
+	/**
+	 * The outbox for the account in view.
+	 *
+	 * Nothing writes to it except a pass this page ran, so the reliable signal is
+	 * `invalidateReads` after that pass. The poll is a backstop for a second
+	 * window over the same file, which is a shape this application does not have
+	 * today and costs one local SQLite read to survive.
+	 */
+	const outbox = createQuery(() => ({
+		queryKey: ['outbox', selectedAccount],
+		queryFn: () => mail.outbox(selectedAccount as string),
+		enabled: selectedAccount !== null,
+		refetchInterval: 15_000,
+	}));
+	/** Which accounts are stuck, so the switcher can mark them. */
+	const blocked = createQuery(() => {
+		const subs = (accountsQuery.data ?? []).map((one) => one.sub);
+		return {
+			queryKey: ['outbox', 'blocked', subs],
+			queryFn: () => mail.blocked(subs),
+			enabled: subs.length > 0,
+			refetchInterval: 30_000,
+		};
+	});
 	const labels = createQuery(() => ({
 		queryKey: ['labels', selectedAccount],
 		queryFn: () => mail.labels(selectedAccount as string),
@@ -83,46 +105,40 @@
 		};
 	});
 
+	/**
+	 * One reconcile pass, which is the only way one ever starts.
+	 *
+	 * Three things ask for it and all three are a person: opening the
+	 * application, recording triage, and pressing Retry. There is no timer and
+	 * no background half, so owed work that misses all three waits in the outbox
+	 * until the next time this application is opened.
+	 *
+	 * It reports nothing itself. The pass writes what it did to durable storage
+	 * before it resolves and the outbox is already reading that, so a toast here
+	 * would be the same sentence somewhere weaker: it would scroll away, and it
+	 * would say nothing at all to a person who had stepped away.
+	 */
 	const reconcile = createMutation(() => ({
-		mutationFn: () => mail.reconcile(selectedAccount as string),
-		onSuccess: (outcome) => {
-			// The host yields busy when another owner holds this account's
-			// reconciler; that owner delivers and pulls, so this is a note, not a
-			// failure, and there is nothing new to invalidate.
-			if ('reconciled' in outcome) {
-				toast.info(outcome.message);
-				return;
-			}
-			const { delivery, pull } = outcome;
-			// Gmail refused these outright, so they are gone. This toast is the only
-			// place they are ever reported: nothing durable records a refusal, so
-			// saying it once, here, is the whole contract.
-			if (delivery.discarded.length > 0) {
-				toast.warning(`Gmail refused ${delivery.discarded.length} change(s)`, {
-					description: delivery.discarded
-						.map((d) => `${d.want ? 'add' : 'remove'} ${d.labelId}: ${d.reason}`)
-						.join('\n'),
-					duration: 12_000,
-				});
-			}
-			if (delivery.failure) {
-				toast.error(`Could not reach Gmail: ${delivery.failure.message}`, {
-					description: `${delivery.retained} change(s) still pending. Nothing was lost.`,
-				});
-			} else if (pull.failure) {
-				toast.error(`Refresh failed: ${pull.failure.message}`);
-			} else {
-				const sent = delivery.delivered
-					? `${delivery.delivered} change(s) sent, `
-					: '';
-				toast.success(
-					`${sent}${pull.messagesUpserted} upserted, ${pull.messagesDeleted} deleted, ${pull.labelsPatched} labels patched`,
-				);
-			}
-			invalidateReads();
-		},
+		mutationFn: (sub: string) => mail.reconcile(sub),
+		onSettled: () => invalidateReads(),
 		onError: (error: Error) => toast.error(error.message),
 	}));
+
+	/**
+	 * Opening the application delivers what was owed when it was last closed.
+	 *
+	 * Once per account per page, tracked here rather than by the reconciler,
+	 * because "have I already done this since the window opened" is a fact about
+	 * this window. Switching to an account counts as opening it, since it is the
+	 * first time this page has looked at that mailbox.
+	 */
+	const opened = new Set<string>();
+	$effect(() => {
+		const account = selectedAccount;
+		if (account === null || opened.has(account)) return;
+		opened.add(account);
+		reconcile.mutate(account);
+	});
 
 	/** Re-read. Every triage act lands in the durable intent store and the read
 	 * models overlay it, so a plain refetch already shows the act; there is
@@ -132,10 +148,11 @@
 		queryClient.invalidateQueries({ queryKey: ['message'] });
 		queryClient.invalidateQueries({ queryKey: ['status'] });
 		queryClient.invalidateQueries({ queryKey: ['labels'] });
+		queryClient.invalidateQueries({ queryKey: ['outbox'] });
 	}
 
 	// The one write path. Both the toolbar (via `onDispatch`) and the keyboard
-	// call this; the read-only gate and the undo toast live here alone. `id` is
+	// call this; the undo toast lives here alone. `id` is
 	// explicit so Undo targets the original message even after the selection has
 	// moved on. Undo is the inverse assertion: it replaces the pending one, and
 	// wins even against a delivery already in flight.
@@ -161,7 +178,13 @@
 			}
 		},
 		onError: (error: Error) => toast.error(error.message),
-		onSettled: () => invalidateReads(),
+		onSettled: () => {
+			invalidateReads();
+			// The act is already durable and already on screen. Delivering it is a
+			// separate pass so that the keystroke never waits on the network, and
+			// so the outbox shows it going out rather than a second spinner.
+			if (selectedAccount) reconcile.mutate(selectedAccount);
+		},
 	}));
 
 	function runOn(id: string, action: TriageAction, undoable: boolean): void {
@@ -176,29 +199,13 @@
 	// The list is exactly what the read model returned. There is no client-side
 	// projection: the overlay composed Gmail's facts with this machine's
 	// undelivered triage before the query filtered and paged, so the page cannot
-	// disagree with a background pass about what is in the inbox.
-	const labelList = $derived(labels.data?.labels ?? []);
-	const messageList = $derived(messages.data?.messages ?? []);
+	// disagree with a pass about what is in the inbox.
+	const labelList = $derived(labels.data ?? []);
+	const messageList = $derived(messages.data ?? []);
 	// True when the cache holds no messages at all (nothing pulled yet), as
 	// opposed to this label or search view simply matching none. Drives which
 	// empty state the list shows: "reconcile" against "no match".
 	const mirrorEmpty = $derived((status.data?.rows.messages ?? 0) === 0);
-	const reconcileFailure = $derived(
-		reconcile.data && 'delivery' in reconcile.data
-			? (reconcile.data.delivery.failure ?? reconcile.data.pull.failure ?? null)
-			: null,
-	);
-	const reconcileError = $derived(
-		reconcile.error?.message ?? reconcileFailure?.message ?? null,
-	);
-	/**
-	 * Google stopped honouring this account's grant, which is the one state
-	 * where an account outlives its credential (ADR-0320). Nobody chose it, so
-	 * it is shown rather than offered, and signing in again lands on the same
-	 * account and delivers what was waiting.
-	 */
-	const signInExpired = $derived(reconcileFailure?.name === 'ReauthRequired');
-
 	// Keep the selection valid: default to the first row, and re-resolve when a
 	// filter change drops the current selection out of the list.
 	$effect(() => {
@@ -295,6 +302,9 @@
 <div class="flex h-full flex-col">
 	<StatusBar
 		status={status.data}
+		outbox={outbox.data}
+		blocked={blocked.data ?? new Set()}
+		labels={labelList}
 		accounts={accountsQuery.data ?? []}
 		{selectedAccount}
 		onSelectAccount={(account) => {
@@ -302,12 +312,10 @@
 			selectedId = null;
 			labelsOpen = false;
 		}}
-		reconciling={reconcile.isPending}
-		{reconcileError}
-		{signInExpired}
 		onSignIn={() => (connecting = true)}
-		onReconcile={() => {
-			if (selectedAccount) reconcile.mutate();
+		reconciling={reconcile.isPending}
+		onRetry={() => {
+			if (selectedAccount) reconcile.mutate(selectedAccount);
 		}}
 		onConnectAnother={() => (connecting = true)}
 		onRemoveAccount={() => {
@@ -322,9 +330,16 @@
 		<ConnectPanel
 			loading={accountsQuery.isPending}
 			another={connecting}
-			onConnected={() => {
+			onConnected={(sub) => {
 				connecting = false;
 				queryClient.invalidateQueries({ queryKey: ['accounts'] });
+				if (sub === null) return;
+				// Connecting is opening, so it reconciles like an open does. It has
+				// to: signing in again is the answer to a `signin` failure sitting in
+				// the durable outbox, and only a pass replaces that row. Without this
+				// the panel would keep offering Sign in to a person who just did.
+				opened.add(sub);
+				reconcile.mutate(sub);
 			}}
 			onCancel={() => (connecting = false)}
 		/>

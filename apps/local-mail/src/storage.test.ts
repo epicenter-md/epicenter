@@ -78,6 +78,7 @@ test('a first open creates the durable file and stamps its version', async () =>
 		'accounts',
 		'intent_meta',
 		'label_intents',
+		'last_pass',
 	]);
 	// The durable file is never deleted, not even to create it.
 	expect(owner.deleted).toEqual([]);

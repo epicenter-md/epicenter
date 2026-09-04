@@ -25,8 +25,8 @@ import { GmailApiError, type GmailClient } from './gmail-client.ts';
 import type { IntentStore } from './intent-store.ts';
 import { openIntentStore } from './intent-store.ts';
 import { type Mailbox, openMailbox, overlayOf } from './mailbox.ts';
+import { openPassRecord } from './outbox.ts';
 import { type ReconcileDeps, reconcileAccount } from './reconcile.ts';
-import { claimReconcile } from './reconcile-claim.ts';
 import type { GmailLabel, GmailMessage, HistoryPage } from './schema.ts';
 import { openTestSession, type TestSession } from './session.test-support.ts';
 
@@ -170,6 +170,7 @@ async function setup(
 		deps: {
 			mailbox: session.mailbox,
 			intents: session.intents,
+			passes: session.passes,
 			client,
 			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
@@ -183,25 +184,14 @@ async function setup(
 }
 
 /**
- * One pass, as a real owner runs one: take the account's claim, deliver under
- * it, release. A pass cannot be called without the capability, so the tests
- * below reach the write path the only way production does.
+ * One pass over one account's session.
+ *
+ * Production reaches this through `reconcileNow`, which adds only the joining
+ * of a second caller to a pass already in flight; that is `accounts.test.ts`'
+ * subject, and everything below is about what a single pass does.
  */
-async function pass(deps: ReconcileDeps, readOnly = false) {
-	const taken = claimReconcile(deps.sub);
-	if (taken.error !== null) {
-		throw new Error('the test could not become the reconcile owner');
-	}
-	try {
-		return await reconcileAccount(deps, {
-			forceFull: false,
-			readOnly,
-			claim: taken.data.claim,
-		});
-	} finally {
-		taken.data.release();
-	}
-}
+const pass = (deps: ReconcileDeps) =>
+	reconcileAccount(deps, { forceFull: false });
 
 /** Gmail's facts for one message, straight out of the cache column, with no
  * intent overlay: what the reconciler folded, not what a reader would see. */
@@ -513,13 +503,11 @@ describe('drain', () => {
 				assertMessageLabels({
 					deps,
 					input: { ids: ['m1'], addLabels: [], removeLabels: ['INBOX'] },
-					readOnly: false,
 				});
 			const unarchive = () =>
 				assertMessageLabels({
 					deps,
 					input: { ids: ['m1'], addLabels: ['INBOX'], removeLabels: [] },
-					readOnly: false,
 				});
 
 			expect((await archive()).error).toBeNull();
@@ -763,33 +751,6 @@ describe('drain', () => {
 		}
 	});
 
-	test('read-only mode delivers nothing and keeps every assertion', async () => {
-		const client = fakeGmail(new Map([['m1', { data: message('m1', []) }]]));
-		const { deps, intents, cleanup } = await setup(client);
-		try {
-			await intents.assert(
-				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
-				new Date(NOW).toISOString(),
-			);
-
-			const { delivery, pull } = await pass(deps, true);
-
-			expect(client.modifyCalls).toEqual([]);
-			expect(client.trashCalls).toEqual([]);
-			expect(delivery).toMatchObject({
-				pending: 1,
-				delivered: 0,
-				retained: 1,
-				failure: null,
-			});
-			expect(await intents.pending()).toHaveLength(1);
-			// Reads keep working in read-only mode, so the pull still happens.
-			expect(pull.failure).toBeNull();
-		} finally {
-			cleanup();
-		}
-	});
-
 	test('a pass with nothing pending calls no write endpoint at all', async () => {
 		const client = fakeGmail(new Map());
 		const { deps, cleanup } = await setup(client);
@@ -850,74 +811,6 @@ describe("folding Gmail's answer", () => {
 	});
 });
 
-describe('ownership', () => {
-	test('a second reconciler cannot run while the first holds the account', async () => {
-		const client = fakeGmail(
-			new Map([['m1', { data: message('m1', ['UNREAD']) }]]),
-		);
-		const { deps, intents, cleanup } = await setup(client);
-		try {
-			await intents.assert(
-				[{ messageId: 'm1', labelId: 'INBOX', want: false }],
-				new Date(NOW).toISOString(),
-			);
-
-			const first = claimReconcile(deps.sub);
-			expect(first.error).toBeNull();
-			if (first.error !== null) throw first.error;
-
-			// The second owner is refused, so it never obtains the capability a pass
-			// requires. There is no other way in: `reconcileAccount` has no overload
-			// that skips the claim.
-			const second = claimReconcile(deps.sub);
-			expect(second.error?.name).toBe('Busy');
-
-			// Nothing reached Gmail on the refused path, and the change is still owed.
-			expect(client.modifyCalls).toEqual([]);
-			expect(await intents.pending()).toHaveLength(1);
-
-			// The holder can still run, and the release hands ownership on.
-			const owned = await reconcileAccount(deps, {
-				forceFull: false,
-				readOnly: false,
-				claim: first.data.claim,
-			});
-			expect(owned.delivery.delivered).toBe(1);
-			first.data.release();
-
-			const third = claimReconcile(deps.sub);
-			expect(third.error).toBeNull();
-			third.data?.release();
-		} finally {
-			cleanup();
-		}
-	});
-
-	test("one account's claim cannot authorize a pass over another's mailbox", async () => {
-		// A surface serving several connected accounts holds one claim each, so
-		// "has a claim" is not the same question as "has THIS account's claim".
-		// Crossing them would write to a mailbox nobody claimed, which is a
-		// programming error rather than a runtime condition.
-		const client = fakeGmail(new Map());
-		const { deps, cleanup } = await setup(client);
-		try {
-			const other = claimReconcile('another-account');
-			if (other.error !== null) throw other.error;
-			expect(
-				reconcileAccount(deps, {
-					forceFull: false,
-					readOnly: false,
-					claim: other.data.claim,
-				}),
-			).rejects.toThrow('another-account');
-			expect(client.modifyCalls).toEqual([]);
-			other.data.release();
-		} finally {
-			cleanup();
-		}
-	});
-});
-
 describe('across a restart', () => {
 	test('an act made offline survives the process and lands on the next pass', async () => {
 		// The product headline, end to end: archive on a plane, quit, reopen on the
@@ -947,6 +840,7 @@ describe('across a restart', () => {
 		const firstDeps: ReconcileDeps = {
 			mailbox: session.mailbox,
 			intents: session.intents,
+			passes: session.passes,
 			client: offline,
 			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
@@ -958,7 +852,6 @@ describe('across a restart', () => {
 				await assertMessageLabels({
 					deps: firstDeps,
 					input: { ids: ['m1'], addLabels: [], removeLabels: ['INBOX'] },
-					readOnly: false,
 				})
 			).error,
 		).toBeNull();
@@ -985,9 +878,11 @@ describe('across a restart', () => {
 		);
 		const restarted = openMailbox(session.mailboxDatabase);
 		const restartedIntents = openIntentStore(session.localDatabase, ACCOUNT_ID);
+		const restartedPasses = openPassRecord(session.localDatabase, ACCOUNT_ID);
 		const secondDeps: ReconcileDeps = {
 			mailbox: restarted,
 			intents: restartedIntents,
+			passes: restartedPasses,
 			client: online,
 			config: DEFAULT_MAIL_CONFIG,
 			now: () => NOW,
@@ -995,7 +890,7 @@ describe('across a restart', () => {
 		};
 
 		// The change was still owed when the new handles opened.
-		expect((await restartedIntents.summary()).assertions).toBe(1);
+		expect(await restartedIntents.count()).toBe(1);
 
 		const landed = await pass(secondDeps);
 		expect(landed.delivery.delivered).toBe(1);

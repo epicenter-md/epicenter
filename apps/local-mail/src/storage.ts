@@ -16,6 +16,7 @@ import { type SqliteHandle, sqliteHandle } from './handle.ts';
  * | --- | --- | --- |
  * | which accounts are connected | this device's own fact | `local`, durable |
  * | what this machine still owes Gmail | a person's own act | `local`, durable |
+ * | what happened last time it was delivered | this device's own record | `local`, durable |
  * | the mail itself | borrowed data | `mail-<sub>`, one per account |
  *
  * **Nothing here is Epicenter Data.** Run ADR-0318's test on each artifact and
@@ -182,6 +183,16 @@ export const LOCAL_SCHEMA = [
 		key TEXT NOT NULL,
 		value TEXT,
 		PRIMARY KEY (sub, key)
+	)`,
+	`CREATE TABLE IF NOT EXISTS last_pass (
+		sub TEXT PRIMARY KEY,
+		finished_at TEXT NOT NULL,
+		delivered INTEGER NOT NULL,
+		waiting INTEGER NOT NULL,
+		discarded TEXT NOT NULL,
+		failure_kind TEXT,
+		failure_name TEXT,
+		failure_message TEXT
 	)`,
 ] as const;
 

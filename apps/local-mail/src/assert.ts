@@ -61,10 +61,6 @@ const MAX_MESSAGES_PER_ACT = 500;
 const MAX_LABELS_PER_DIRECTION = 100;
 
 export const AssertLabelsError = defineErrors({
-	ReadOnly: () => ({
-		message:
-			'Refusing to write: read-only mode is set (LOCAL_MAIL_READ_ONLY), so triage is disabled. query, status, and reconcile stay available.',
-	}),
 	NoMessageIds: () => ({
 		message: 'At least one Gmail message id is required.',
 	}),
@@ -177,17 +173,10 @@ async function resolveLabelIds(
 export async function assertMessageLabels({
 	deps,
 	input,
-	readOnly,
 }: {
 	deps: AssertDeps;
 	input: AssertLabelsInput;
-	/**
-	 * Required so every adapter decides explicitly whether triage is allowed.
-	 * The core owns this invariant, not the CLI, MCP, or HTTP surface.
-	 */
-	readOnly: boolean;
 }): Promise<Result<AssertLabelsOutcome, AssertLabelsError>> {
-	if (readOnly) return AssertLabelsError.ReadOnly();
 	if (input.ids.length === 0) return AssertLabelsError.NoMessageIds();
 	if (input.ids.length > MAX_MESSAGES_PER_ACT) {
 		return AssertLabelsError.TooManyMessageIds({ count: input.ids.length });

@@ -78,20 +78,28 @@ then un-archive, then archive is one row.
 
 **One reconciler per account is the only thing that writes to Gmail.** It drains
 the account's assertions, retires each one Gmail confirms, then pulls Gmail's
-facts. Running a pass requires the account's claim as a value rather than as a
-promise the caller made: `reconcileAccount` takes what `claimReconcile` mints,
-so delivering and pulling cannot interleave.
+facts. `reconcileNow` is the only way to start one, and a second caller arriving
+mid-pass joins the pass in flight rather than starting a second writer.
+
+**Nothing reconciles in the background.** A pass runs when the application
+opens, when a person records triage, and when a person presses Retry. Owed work
+that misses all three waits in the outbox until the next time the application is
+opened, which is why the outbox is durable and why it is the first thing a
+person sees.
 
 **Reversal is a new assertion.** Undo asserts the opposite want on the same key.
 Nothing retires an assertion by comparing it to the cache: the cache lags Gmail
 and can be incomplete, so a "the cache already agrees" rule would drop real
 writes on stale evidence. Only provider confirmation retires an assertion.
 
-**Undelivered work is visible and discardable.** Status reports the undelivered
-count and the age of the oldest. `discardAll` abandons every undelivered
-assertion; it cannot un-send one already delivered. There is no attempt counter,
-no per-row error, no retry schedule, no dead-letter tier, and nothing expires.
-Retries are bounded by a human, which is what discard is for.
+**Undelivered work is an outbox.** `label_intents` is what is owed and
+`last_pass` is what happened the last time this device tried to pay it; the
+outbox is the projection of the two, and a failure is still there after the
+window that saw it was closed and reopened (ADR-0327). `discardAll` abandons
+every undelivered assertion; it cannot un-send one already delivered. There is
+no attempt counter, no per-row error, no retry schedule, no dead-letter tier,
+and nothing expires. Retries are bounded by a human, which is what discard is
+for.
 
 **Reads apply the overlay.** A page of the triage list is Gmail's facts with
 this machine's undelivered assertions applied, computed in SQL so filtering,
@@ -109,7 +117,7 @@ page immediately and the page still comes back full.
 | `intent-store.ts` | one account's slice of the durable assertions, keyed by `sub` |
 | `assert.ts` | the act path: entirely local, resolves label names to ids |
 | `reconcile.ts` | the one Gmail writer: drain, then pull |
-| `reconcile-claim.ts` | who may run a pass, and what that does not promise |
+| `outbox.ts` | what is owed, what the last pass said, and the two as one view |
 | `sync.ts` | full pull and incremental `history.list` folding |
 | `oauth.ts` | the authorization-code and PKCE flow, as a page performs it |
 | `token-manager.ts` | the live access token over the stored refresh token |
@@ -124,9 +132,9 @@ rather than any branch in application code.
 - **Secrets.** The desktop leaf reaches the OS credential store through the
   host; the browser leaf holds a credential for the life of the tab and nothing
   longer. Not `localStorage`, not IndexedDB, not encrypted in the page.
-- **Background synchronization.** A keychain and a hidden window are what buy
-  it, and a browser tab has neither, so the web build syncs while a person is
-  looking at it.
+- **Credential lifetime.** The desktop keeps a refresh token across launches, so
+  reopening the application delivers what was owed. A browser tab keeps one only
+  while it is open, so closing it means connecting again.
 
 ### Connecting an account, on each build
 
@@ -270,9 +278,11 @@ rather than a pull request.
 - **A generic queue, event log, or provider-independent operation abstraction**,
   and any per-assertion attempt counter, error column, retry schedule, or
   dead-letter tier (ADR-0198, ADR-0199).
-- **A credential brokered by a server** so a browser build could sync in the
-  background. It would mean Epicenter's server holding something that reads a
-  person's mail, which changes what Epicenter claims to be (ADR-0310).
+- **A credential brokered by a server** so a build with no window open could
+  sync. It would mean Epicenter's server holding something that reads a person's
+  mail, which changes what Epicenter claims to be (ADR-0310).
+- **A background reconciler**, in a hidden window, a worker, or the host. Local
+  Mail reconciles when somebody is using it; owed work waits until they are.
 - **Reading or migrating the old layout.** `credentials.json`, `provider.json`,
   the versioned `mail.v<n>.db` artifacts, and the per-account directories are
   not read, not migrated, and not detected. Connecting an account again is the

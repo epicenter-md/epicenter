@@ -7,6 +7,11 @@
  * addressed by the same `sub`, which is the subject Google returns for the
  * account and which nothing here allocates (ADR-0319).
  *
+ * The outbox is the fourth thing filed under the same `sub`: `label_intents` is
+ * what a person owes Gmail and `last_pass` is what happened the last time this
+ * device tried to pay it (`outbox.ts`). Both are in the durable file, and both
+ * leave with the account row in the same transaction below.
+ *
  * **Nothing is minted, so nothing can be minted twice.** An earlier design gave
  * each account a row id and keyed the stores by it, which meant removing the
  * account deleted the only name its rows had. Reconnecting the same person
@@ -31,7 +36,7 @@ import {
 } from './config.ts';
 import { createGmailClient } from './gmail-client.ts';
 import { sqliteHandle } from './handle.ts';
-import { openIntentStore, type PendingSummary } from './intent-store.ts';
+import { openIntentStore } from './intent-store.ts';
 import { openMailbox } from './mailbox.ts';
 import {
 	type AuthorizationRequest,
@@ -39,8 +44,12 @@ import {
 	completeAuthorization,
 	type OAuthError,
 } from './oauth.ts';
-import type { ReconcileDeps } from './reconcile.ts';
-import { claimReconcile, type ReconcileClaimError } from './reconcile-claim.ts';
+import { openPassRecord } from './outbox.ts';
+import {
+	type ReconcileDeps,
+	type ReconcileOutcome,
+	reconcileAccount,
+} from './reconcile.ts';
 import {
 	accountFiling,
 	type LocalMailStorage,
@@ -94,6 +103,16 @@ export type MailApp = {
 	 * through it would recreate the file the removal unlinked.
 	 */
 	readonly sessions: Map<string, Promise<ReconcileDeps>>;
+	/**
+	 * The pass running for each account right now, if one is.
+	 *
+	 * The whole of Local Mail's concurrency control, and it fits here because
+	 * there is only ever one thing that starts a pass: a person, through
+	 * `reconcileNow`. A second gesture arriving mid-pass joins this promise
+	 * instead of starting a second writer, and removal awaits it before it
+	 * deletes the file a pass would be writing into.
+	 */
+	readonly reconciling: Map<string, Promise<ReconcileOutcome>>;
 };
 
 export function createMailApp({
@@ -109,7 +128,15 @@ export function createMailApp({
 	config?: MailConfig;
 	now?: () => number;
 }): MailApp {
-	return { epicenter, storage, identity, config, now, sessions: new Map() };
+	return {
+		epicenter,
+		storage,
+		identity,
+		config,
+		now,
+		sessions: new Map(),
+		reconciling: new Map(),
+	};
 }
 
 type AccountRow = {
@@ -211,20 +238,6 @@ export async function finishConnect(
 }
 
 /**
- * What one account still owes Gmail, which is what removal turns on.
- *
- * Straight at the durable file: this is what a person is asked about before a
- * removal, and asking must not open the mail file the removal is about to
- * unlink.
- */
-export function pendingWork(
-	app: MailApp,
-	sub: string,
-): Promise<PendingSummary> {
-	return openIntentStore(app.storage.local, sub).summary();
-}
-
-/**
  * Abandon this account's undelivered triage, which is a thing to mean on purpose.
  *
  * Straight at the durable file rather than through `openSession`, because a
@@ -262,58 +275,51 @@ export async function discardPending(
 export async function removeAccount(
 	app: MailApp,
 	sub: string,
-): Promise<Result<void, SecretError | AccountError | ReconcileClaimError>> {
-	// The account's claim, for the same reason a pass takes it: a reconciler
-	// already running holds an access token in memory, so destroying the
-	// credential does not stop it. It would deliver into a mail file this is
-	// unlinking and record a sync against a row this is deleting.
-	//
-	// The claim is held within one surface, which is all it ever promised
-	// (`reconcile-claim.ts`). A second window has its own, so removing here
-	// cannot exclude a pass running there. One window is the shape this
-	// application has today, and a claim that crossed windows would be a
-	// different mechanism than the one that exists.
-	//
-	// It does not close the window between counting what is owed and deleting
-	// it. A triage act does not take this claim, deliberately, because a person
-	// pressing `e` should never wait on a network pass, so an assertion recorded
-	// between the count and the commit is deleted without anyone choosing that.
-	// The window is one person's own two hands, and the interface only reaches
-	// this from a dialog they are looking at. Narrowing it further means either
-	// making every keystroke contend with the reconciler, or deleting by the
-	// sequence the count observed, which would leave an assertion behind under
-	// an account row that is gone: the orphan ADR-0319 exists to prevent.
-	const taken = claimReconcile(sub);
-	if (taken.error !== null) return taken;
-	const { release } = taken.data;
-	try {
-		const owed = (await pendingWork(app, sub)).assertions;
-		if (owed > 0) {
-			return Err(AccountError.OwesWork({ sub, pending: owed }).error);
-		}
+): Promise<Result<void, SecretError | AccountError>> {
+	// A pass in flight holds an access token in memory, so destroying the
+	// credential does not stop it: it would deliver into a mail file this is
+	// unlinking and record a sync against a row this is deleting. So wait for it
+	// rather than refusing, which is also the answer a person wants, since the
+	// pass they are waiting on is usually the delivery they asked for before
+	// removing (ADR-0320). Its failure is not this verb's to report; what a
+	// failed delivery leaves behind is owed work, and the count below sees it.
+	await app.reconciling.get(sub)?.catch(() => undefined);
 
-		const forgotten = await app.epicenter.secrets.delete(
-			requireAccountFiling(sub).secret,
-		);
-		if (forgotten.error !== null) return forgotten;
-
-		// The session goes before the file it holds, so nothing composed over
-		// this account survives the account. A session still opening is awaited
-		// rather than only dropped: it holds a `sqlite.open` that would land
-		// after the unlink and recreate the file (ADR-0321).
-		const opening = app.sessions.get(sub);
-		app.sessions.delete(sub);
-		await opening?.catch(() => undefined);
-		await app.storage.forgetMail(sub);
-		await sqliteHandle(app.storage.local).batch([
-			{ sql: `DELETE FROM label_intents WHERE sub = ?`, parameters: [sub] },
-			{ sql: `DELETE FROM intent_meta WHERE sub = ?`, parameters: [sub] },
-			{ sql: `DELETE FROM accounts WHERE sub = ?`, parameters: [sub] },
-		]);
-		return Ok(undefined);
-	} finally {
-		release();
+	// Nothing can start a pass between here and the commit below, because the
+	// only thing that starts one is a person, and a person is looking at the
+	// removal dialog. A triage act still can, deliberately: pressing `e` must
+	// never wait on a network pass, so an assertion recorded in this window is
+	// deleted without anyone choosing that. Narrowing it further means either
+	// making every keystroke contend with removal, or deleting by the sequence
+	// the count observed, which would leave an assertion behind under an account
+	// row that is gone: the orphan ADR-0319 exists to prevent.
+	// Straight at the durable file. Asking must not open the mail file this is
+	// about to unlink, which is why this counts rather than reading the outbox.
+	const owed = await openIntentStore(app.storage.local, sub).count();
+	if (owed > 0) {
+		return Err(AccountError.OwesWork({ sub, pending: owed }).error);
 	}
+
+	const forgotten = await app.epicenter.secrets.delete(
+		requireAccountFiling(sub).secret,
+	);
+	if (forgotten.error !== null) return forgotten;
+
+	// The session goes before the file it holds, so nothing composed over
+	// this account survives the account. A session still opening is awaited
+	// rather than only dropped: it holds a `sqlite.open` that would land
+	// after the unlink and recreate the file (ADR-0321).
+	const opening = app.sessions.get(sub);
+	app.sessions.delete(sub);
+	await opening?.catch(() => undefined);
+	await app.storage.forgetMail(sub);
+	await sqliteHandle(app.storage.local).batch([
+		{ sql: `DELETE FROM label_intents WHERE sub = ?`, parameters: [sub] },
+		{ sql: `DELETE FROM intent_meta WHERE sub = ?`, parameters: [sub] },
+		{ sql: `DELETE FROM last_pass WHERE sub = ?`, parameters: [sub] },
+		{ sql: `DELETE FROM accounts WHERE sub = ?`, parameters: [sub] },
+	]);
+	return Ok(undefined);
 }
 
 /**
@@ -348,6 +354,7 @@ export function openSession(app: MailApp, sub: string): Promise<ReconcileDeps> {
 			sub,
 			mailbox: openMailbox(await app.storage.mail(sub)),
 			intents: openIntentStore(app.storage.local, sub),
+			passes: openPassRecord(app.storage.local, sub),
 			client: createGmailClient({ config: app.config, tokens }),
 			config: app.config,
 			now: app.now,
@@ -360,6 +367,55 @@ export function openSession(app: MailApp, sub: string): Promise<ReconcileDeps> {
 	});
 	app.sessions.set(sub, opening);
 	return opening;
+}
+
+/**
+ * Run a reconcile pass for one account now, or join the one already running.
+ *
+ * **This is the only way a pass starts.** Local Mail has no background half: it
+ * reconciles when the application opens, when a person records triage, and when
+ * a person presses Retry. Owed work that misses all three waits in the outbox
+ * until the next time somebody opens the application, and that is the product
+ * decision rather than a gap.
+ *
+ * **Calling it repeatedly is safe, and calling it twice at once is one pass.**
+ * The second caller gets the first caller's promise, because they are asking
+ * for the same thing: a pass delivers from a snapshot of the intent store, so
+ * an act recorded a moment ago may not be in the pass now in flight, and one
+ * more pass afterwards is what covers it rather than a second writer running
+ * beside the first. That afterwards is the caller's to ask for, and in practice
+ * it is the very next gesture: recording triage asks for a pass of its own.
+ *
+ * **It settles, so a caller can act on the result.** Removal delivers before it
+ * deletes anything (ADR-0320) and has to know the delivery finished, not that
+ * it started.
+ *
+ * A throw is not swallowed: the entry is cleared either way, so a failed pass
+ * does not leave an account unable to try again.
+ */
+export function reconcileNow(
+	app: MailApp,
+	sub: string,
+): Promise<ReconcileOutcome> {
+	const inflight = app.reconciling.get(sub);
+	if (inflight !== undefined) return inflight;
+	const started = (async () => {
+		// Never forced: `syncMailbox` decides FULL against INCREMENTAL from the
+		// cache's own state, and no surface offers a person a rebuild.
+		const outcome = await reconcileAccount(await openSession(app, sub), {
+			forceFull: false,
+		});
+		// The registry's own note of when this device last heard from Gmail, which
+		// is a different question from whether the outbox is empty.
+		if (outcome.pull.failure === null) await recordSynced(app, sub);
+		return outcome;
+	})();
+	// This pass, not whatever is under the key when it settles.
+	const cleared = started.finally(() => {
+		if (app.reconciling.get(sub) === cleared) app.reconciling.delete(sub);
+	});
+	app.reconciling.set(sub, cleared);
+	return cleared;
 }
 
 /** Record that a pass reached Gmail, on this device's own registry row. */

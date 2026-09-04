@@ -18,9 +18,7 @@
 		"./handle": "./src/handle.ts",
 		"./mailbox": "./src/mailbox.ts",
 		"./oauth": "./src/oauth.ts",
-		"./reconcile": "./src/reconcile.ts",
-		"./reconcile-claim": "./src/reconcile-claim.ts",
-		"./status": "./src/status.ts",
+		"./outbox": "./src/outbox.ts",
 		"./storage": "./src/storage.ts",
 		"./sync": "./src/sync.ts"
 	},

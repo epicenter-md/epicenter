@@ -126,7 +126,7 @@ test('throwing the cache away cannot reach the durable intent store', async () =
 		lastFullPullAt: null,
 		lastSyncedAt: null,
 	});
-	expect((await intents.summary()).assertions).toBe(1);
+	expect(await intents.count()).toBe(1);
 	replacement.close();
 });
 
@@ -209,4 +209,36 @@ test('a full pull sweeps what the pass did not touch', async () => {
 	expect(await mailbox.finishFullPull('910', later)).toBe(1);
 	expect(await mailbox.hasMessage('m1')).toBe(false);
 	expect(await mailbox.hasMessage('m2')).toBe(true);
+});
+
+/**
+ * The cache's lifecycle, which is what `status` is for: `empty` is nothing
+ * pulled, `building` is rows without a finished full pull, and `ready` is a
+ * cursor that `finishFullPull` wrote after every page landed. The middle one is
+ * the one that matters, because a partial mailbox that reported `ready` would
+ * have a person believing mail is missing from Gmail.
+ */
+test('the cache reports which of its three states it is in', async () => {
+	const mail = createTestAppSqlite();
+	for (const sql of MAIL_CACHE_SCHEMA) await mail.run(sql);
+	const mailbox = openMailbox(mail);
+	try {
+		expect(await mailbox.status()).toEqual({
+			cache: 'empty',
+			lastSyncedAt: null,
+			rows: { messages: 0, labels: 0 },
+		});
+
+		await mailbox.ingestFullPullPage([message('m1', ['INBOX'])], AT);
+		const building = await mailbox.status();
+		expect(building.cache).toBe('building');
+		expect(building.rows.messages).toBe(1);
+
+		await mailbox.finishFullPull('900', AT);
+		const ready = await mailbox.status();
+		expect(ready.cache).toBe('ready');
+		expect(ready.lastSyncedAt).toBe(AT);
+	} finally {
+		mail.close();
+	}
 });

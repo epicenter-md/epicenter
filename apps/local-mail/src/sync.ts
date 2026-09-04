@@ -4,8 +4,8 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { MailConfig } from './config.ts';
-import type { CacheState, Mailbox } from './mailbox.ts';
 import type { GmailClient, GmailClientError } from './gmail-client.ts';
+import type { CacheState, Mailbox } from './mailbox.ts';
 import type { GmailMessage, HistoryRecord } from './schema.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -75,8 +75,8 @@ export function decideMode({
  * A concurrent writer held the cache's lock past the busy timeout. The failed
  * batch rolled back whole, so the cursor did not advance and the next pass
  * retries the same window. It is a reportable outcome rather than a crash,
- * because a visible window and a hidden synchronization worker writing the same
- * database is the supported desktop arrangement (ADR-0317).
+ * because the cache is one file that a pass writes and the page reads, and a
+ * write that loses the lock costs one pass rather than the surface.
  */
 export const CacheWriteError = defineErrors({
 	CacheBusy: ({ cause }: { cause: unknown }) => ({

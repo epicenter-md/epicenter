@@ -3,8 +3,7 @@
  *
  * There is no `/api` any more (ADR-0317). What used to be a typed HTTP client
  * against a Bun host is now direct calls into Local Mail's own modules over the
- * scoped Epicenter handle: the same functions the desktop's hidden
- * synchronization worker calls, in the same process as the person clicking.
+ * scoped Epicenter handle, in the same process as the person clicking.
  *
  * The verbs are unchanged in shape because the components never cared where the
  * work happened; what changed is that a read no longer crosses a socket, so an
@@ -14,6 +13,10 @@
  * is Gmail's facts with this machine's undelivered triage applied, and loading
  * the pending assertions is the one step that makes that true, so no caller can
  * forget it.
+ *
+ * A read answers with the read model itself. The `{ labels }` and `{ messages }`
+ * wrappers these verbs used to return were JSON response bodies from the `/api`
+ * that no longer exists, and every caller unwrapped them on the next line.
  */
 
 import {
@@ -24,18 +27,26 @@ import {
 	listAccounts,
 	type MailApp,
 	openSession,
-	pendingWork,
-	recordSynced,
+	reconcileNow,
 	removeAccount,
 	startConnect,
 } from '@epicenter/local-mail/accounts';
 import { assertMessageLabels } from '@epicenter/local-mail/assert';
 import { CALLBACK_PATH } from '@epicenter/local-mail/authorization-return';
-import { overlayOf } from '@epicenter/local-mail/mailbox';
+import {
+	type LabelSummary,
+	type MailStatus,
+	type MessageDetail,
+	type MessageSummary,
+	overlayOf,
+} from '@epicenter/local-mail/mailbox';
 import type { AuthorizationRequest } from '@epicenter/local-mail/oauth';
-import { reconcileAccount } from '@epicenter/local-mail/reconcile';
-import { claimReconcile } from '@epicenter/local-mail/reconcile-claim';
-import { readMailStatus } from '@epicenter/local-mail/status';
+import {
+	type Outbox,
+	type PassOutcome,
+	readBlockedAccounts,
+	readOutbox,
+} from '@epicenter/local-mail/outbox';
 import { openLocalMailStorage } from '@epicenter/local-mail/storage';
 import { epicenter } from './epicenter';
 import { gmailIdentity } from './identity';
@@ -70,8 +81,6 @@ function base(): string {
 	return path.startsWith(marker) ? marker : '';
 }
 
-export type { ConnectedAccount };
-
 export const mail = {
 	accounts: async (): Promise<ConnectedAccount[]> => listAccounts(await app()),
 
@@ -91,9 +100,6 @@ export const mail = {
 		if (connected.error !== null) throw new Error(connected.error.message);
 		return connected.data;
 	},
-
-	/** What Gmail has not been told about yet, which is what removal turns on. */
-	pending: async (sub: string) => pendingWork(await app(), sub),
 
 	/** Abandon this account's undelivered triage. A thing to mean on purpose. */
 	discard: async (sub: string): Promise<number> =>
@@ -117,13 +123,31 @@ export const mail = {
 		throw new Error(gone.error.message);
 	},
 
-	status: async (sub: string) =>
-		readMailStatus(await openSession(await app(), sub)),
+	/** How much of Gmail this device holds for one account, and how fresh it is. */
+	status: async (sub: string): Promise<MailStatus> =>
+		(await openSession(await app(), sub)).mailbox.status(),
 
-	labels: async (sub: string) => {
-		const session = await openSession(await app(), sub);
-		return { labels: await session.mailbox.listLabels() };
-	},
+	/**
+	 * The outbox: what Gmail has not been told about, and why not.
+	 *
+	 * Entirely durable, so it answers the same after a reload as before one, and
+	 * it says nothing about whether a pass is running: the page knows that from
+	 * the pass it is running.
+	 */
+	outbox: async (sub: string): Promise<Outbox> =>
+		readOutbox(await openSession(await app(), sub)),
+
+	/**
+	 * Which connected accounts cannot move without a person, for the switcher's
+	 * mark. The durable file only, so asking about every account does not open
+	 * every account's mail file.
+	 */
+	blocked: async (subs: readonly string[]): Promise<Set<string>> =>
+		readBlockedAccounts((await app()).storage.local, subs),
+
+	/** This account's mirrored label set, for the rail and for naming a label. */
+	labels: async (sub: string): Promise<LabelSummary[]> =>
+		(await openSession(await app(), sub)).mailbox.listLabels(),
 
 	messages: async (
 		sub: string,
@@ -133,51 +157,34 @@ export const mail = {
 			limit?: number;
 			offset?: number;
 		} = {},
-	) => {
+	): Promise<MessageSummary[]> => {
 		const session = await openSession(await app(), sub);
-		const overlay = overlayOf(await session.intents.pending());
-		return {
-			messages: await session.mailbox.listMessages({
-				labelId: query.label,
-				search: query.search,
-				limit: query.limit ?? 100,
-				offset: query.offset ?? 0,
-				overlay,
-			}),
-		};
+		return session.mailbox.listMessages({
+			labelId: query.label,
+			search: query.search,
+			limit: query.limit ?? 100,
+			offset: query.offset ?? 0,
+			overlay: overlayOf(await session.intents.pending()),
+		});
 	},
 
-	message: async (sub: string, id: string) => {
+	message: async (sub: string, id: string): Promise<MessageDetail | null> => {
 		const session = await openSession(await app(), sub);
-		const overlay = overlayOf(await session.intents.pending());
-		return session.mailbox.getMessageDetail(id, overlay);
+		return session.mailbox.getMessageDetail(
+			id,
+			overlayOf(await session.intents.pending()),
+		);
 	},
 
 	/**
-	 * One reconcile pass, or a note that one is already running.
+	 * Reconcile this account now: deliver what is owed, then pull.
 	 *
-	 * A busy claim is not a failure: whoever holds it is delivering and pulling,
-	 * so there is nothing new to say and nothing to invalidate.
+	 * Resolves when the pass has finished and written what it did, so a caller
+	 * can read the outbox straight after and see the result. Asking twice at
+	 * once is one pass, not two, and asking repeatedly is safe.
 	 */
-	reconcile: async (sub: string) => {
-		const opened = await app();
-		const taken = claimReconcile(sub);
-		if (taken.error !== null) {
-			return { reconciled: false as const, message: taken.error.message };
-		}
-		const { claim, release } = taken.data;
-		try {
-			const outcome = await reconcileAccount(await openSession(opened, sub), {
-				forceFull: false,
-				readOnly: false,
-				claim,
-			});
-			if (outcome.pull.failure === null) await recordSynced(opened, sub);
-			return outcome;
-		} finally {
-			release();
-		}
-	},
+	reconcile: async (sub: string): Promise<PassOutcome> =>
+		(await reconcileNow(await app(), sub)).pass,
 
 	/**
 	 * Record a triage act. It is durable and visible to the very next read before
@@ -196,9 +203,12 @@ export const mail = {
 				addLabels: input.addLabels ?? [],
 				removeLabels: input.removeLabels ?? [],
 			},
-			readOnly: false,
 		});
 		if (recorded.error !== null) throw new Error(recorded.error.message);
+		// The act is durable and visible here, and it is owed to Gmail. Delivering
+		// it is the caller's next step rather than this one's: a person pressing
+		// `e` must not wait on a network pass, and the surface that asks for the
+		// pass is the surface that can show it running.
 		return recorded.data;
 	},
 };

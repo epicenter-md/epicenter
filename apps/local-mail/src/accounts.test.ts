@@ -17,11 +17,11 @@ import {
 	finishConnect,
 	listAccounts,
 	openSession,
-	pendingWork,
 	removeAccount,
 } from './accounts.ts';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
 import { DEFAULT_MAIL_CONFIG } from './config.ts';
+import { openIntentStore } from './intent-store.ts';
 import type { AuthorizationRequest } from './oauth.ts';
 import {
 	LOCAL_MAIL_APP_ID,
@@ -282,7 +282,7 @@ test('removal refuses while Gmail has not been told, and deletes nothing', async
 			[{ messageId: 'm1', labelId: 'INBOX', want: false }],
 			'2026-07-01T00:00:00.000Z',
 		);
-		expect((await pendingWork(opened.app, sub)).assertions).toBe(1);
+		expect(await openIntentStore(opened.local, sub).count()).toBe(1);
 
 		// Delivering needs the credential that removal destroys, so removal that
 		// owes anything deletes nothing at all (ADR-0320).
@@ -300,7 +300,7 @@ test('removal refuses while Gmail has not been told, and deletes nothing', async
 		expect(await listAccounts(opened.app)).toEqual([]);
 		expect(opened.held.size).toBe(0);
 		expect(opened.deleted).toEqual(['mail-google-sub-1']);
-		expect((await pendingWork(opened.app, sub)).assertions).toBe(0);
+		expect(await openIntentStore(opened.local, sub).count()).toBe(0);
 	} finally {
 		server.stop(true);
 		opened.close();
@@ -358,8 +358,8 @@ test('two accounts are two mail files, and neither reads the other', async () =>
 			[{ messageId: 'm1', labelId: 'INBOX', want: false }],
 			'2026-07-01T00:00:00.000Z',
 		);
-		expect((await one.intents.summary()).assertions).toBe(1);
-		expect((await two.intents.summary()).assertions).toBe(0);
+		expect(await one.intents.count()).toBe(1);
+		expect(await two.intents.count()).toBe(0);
 	} finally {
 		opened.close();
 	}

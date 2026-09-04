@@ -23,27 +23,25 @@
 import type { AppSqliteDatabase } from '@epicenter/app';
 import { sqliteHandle } from './handle.ts';
 
-/** One row of the map: this message should, or should not, carry this label. */
-export type LabelIntent = {
+/**
+ * One opinion: this message should, or should not, carry this label.
+ *
+ * The whole of what a caller says. `seq` is allocated by the store and
+ * `assertedAt` is passed to `assert` for the batch, so neither belongs to the
+ * act; they are what recording it added.
+ */
+export type LabelAssertion = {
 	messageId: string;
 	labelId: string;
 	want: boolean;
-	/** The account-monotonic sequence this row was last asserted at. */
-	seq: number;
 };
 
-/** An opinion to record. `seq` is allocated by the store, never by the caller. */
-export type LabelAssertion = Omit<LabelIntent, 'seq'>;
-
-/**
- * What is owed to Gmail right now, in aggregate. Two numbers and no rows: a
- * status line can be honest about undelivered work without anything per
- * assertion becoming durable state.
- */
-export type PendingSummary = {
-	assertions: number;
-	/** ISO timestamp of the longest-waiting assertion, or `null` when none. */
-	oldestAssertedAt: string | null;
+/** An assertion as the store holds it: the opinion, plus its place in line. */
+export type LabelIntent = LabelAssertion & {
+	/** The account-monotonic sequence this row was last asserted at. */
+	seq: number;
+	/** When the person made this act, which is what the outbox ages. */
+	assertedAt: string;
 };
 
 export type IntentStore = ReturnType<typeof openIntentStore>;
@@ -121,19 +119,20 @@ export function openIntentStore(intent: AppSqliteDatabase, sub: string) {
 			return assertions.length;
 		},
 
-		async summary(): Promise<PendingSummary> {
-			const [row] = await all<{
-				assertions: number;
-				oldest_asserted_at: string | null;
-			}>(
-				`SELECT count(*) AS assertions, min(asserted_at) AS oldest_asserted_at
-				 FROM label_intents WHERE sub = ?`,
+		/**
+		 * How much is owed, without reading it.
+		 *
+		 * The one caller is removal, which asks before it deletes anything and
+		 * must not open the account's mail file to find out (ADR-0320). Everything
+		 * a person is shown about owed work comes from the outbox instead, which
+		 * reads the rows and can name them.
+		 */
+		async count(): Promise<number> {
+			const [row] = await all<{ owed: number }>(
+				`SELECT count(*) AS owed FROM label_intents WHERE sub = ?`,
 				[sub],
 			);
-			return {
-				assertions: row?.assertions ?? 0,
-				oldestAssertedAt: row?.oldest_asserted_at ?? null,
-			};
+			return row?.owed ?? 0;
 		},
 
 		/** Everything still owed to Gmail, oldest assertion first. */
@@ -143,8 +142,9 @@ export function openIntentStore(intent: AppSqliteDatabase, sub: string) {
 				label_id: string;
 				want: number;
 				seq: number;
+				asserted_at: string;
 			}>(
-				`SELECT message_id, label_id, want, seq FROM label_intents
+				`SELECT message_id, label_id, want, seq, asserted_at FROM label_intents
 				 WHERE sub = ? ORDER BY seq`,
 				[sub],
 			);
@@ -153,6 +153,7 @@ export function openIntentStore(intent: AppSqliteDatabase, sub: string) {
 				labelId: row.label_id,
 				want: row.want === 1,
 				seq: row.seq,
+				assertedAt: row.asserted_at,
 			}));
 		},
 
