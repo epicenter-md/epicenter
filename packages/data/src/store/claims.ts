@@ -82,13 +82,19 @@ const originLocks = new Map<string, () => void>();
  * exists to prevent, arriving quietly on whatever runtime happens to lack the
  * API. Every browser this store targets ships it; a test runtime supplies it
  * the same way it supplies `indexedDB` (`test-locks.ts`).
+ *
+ * **Three refusals, not one.** A held lock is `AlreadyOpen`, a missing API is
+ * `LocksUnsupported`, and a request that threw is `ClaimFailed`. They were one
+ * name until an application's boot gate started switching on it: `AlreadyOpen`
+ * is what makes Honeycrisp tell a person to close another window, and two of
+ * these three are not another window.
  */
 export async function claimDocument(
 	address: string,
 ): Promise<Result<void, StoreError>> {
 	const locks = lockManager();
 	if (locks === undefined) {
-		return StoreError.AlreadyOpen({ address });
+		return StoreError.LocksUnsupported({ address });
 	}
 
 	return await new Promise<Result<void, StoreError>>((settle) => {
@@ -112,8 +118,11 @@ export async function claimDocument(
 				},
 			)
 			// A failed request must not leave the open awaiting a promise nobody
-			// will settle.
-			.catch(() => settle(StoreError.AlreadyOpen({ address })));
+			// will settle. What it failed for is unknown, so it is reported as
+			// what it is rather than guessed at.
+			.catch((cause: unknown) =>
+				settle(StoreError.ClaimFailed({ address, cause })),
+			);
 	});
 }
 

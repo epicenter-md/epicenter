@@ -751,6 +751,71 @@ describe('the clean break: storage from before the generation address', () => {
 	});
 });
 
+describe('one refusal per cause, because a boot gate switches on the name', () => {
+	/**
+	 * Run one body with `navigator.locks` taken away, and put it back.
+	 *
+	 * `installTestLocks` defines the property as configurable for exactly this:
+	 * the live case is a WebKitGTK older than 2.36, and there is no way to
+	 * reach it other than removing the API.
+	 */
+	async function withoutWebLocks<TResult>(
+		run: () => Promise<TResult>,
+	): Promise<TResult> {
+		const scope = globalThis as { navigator?: { locks?: unknown } };
+		const held = scope.navigator?.locks;
+		Reflect.deleteProperty(scope.navigator as object, 'locks');
+		try {
+			return await run();
+		} finally {
+			Object.defineProperty(scope.navigator as object, 'locks', {
+				value: held,
+				configurable: true,
+			});
+		}
+	}
+
+	test('a runtime with no Web Locks is refused, and not as a conflict', async () => {
+		// Refused rather than opened unguarded, which is the corruption the
+		// claim exists to prevent. It used to answer `AlreadyOpen`, which is
+		// what makes an application tell a person to close another window: there
+		// is no other window, and there is no repair in the page at all.
+		const database = databaseFor('nolocks');
+		const account = accountFor(ALICE);
+		const refused = await withoutWebLocks(() =>
+			openStore(database, { appId: APP, generation: GEN, account }),
+		);
+		expect(refused.error?.name).toBe('LocksUnsupported');
+
+		// And nothing was created to say so: the refusal lands before the
+		// address is opened.
+		expect(await databaseNames()).not.toContain(storeAddress(database.id));
+	});
+
+	test('an address that already holds a generation is not an ownership conflict', async () => {
+		// A generation is created once and never mutated in place (ADR-0293), so
+		// a second create meets bytes. Nobody holds the document open, so
+		// `AlreadyOpen` named a repair (close the other window) that cannot help.
+		const database = databaseFor('exists');
+		const account = accountFor(ALICE);
+		expectOk(await createGeneration(database, { appId: APP, account }));
+
+		// The second create asks the authority for a number, and this fake
+		// account hands out the one it already wrote.
+		const again = await createGeneration(database, {
+			appId: APP,
+			account: accountFor(ALICE),
+		});
+		expect(again.error?.name).toBe('GenerationExists');
+
+		// The first generation is intact, and still opens.
+		const opened = expectOk(
+			await openStore(database, { appId: APP, generation: GEN, account }),
+		);
+		await opened[Symbol.asyncDispose]();
+	});
+});
+
 describe('a boot that cannot proceed refuses, and holds no claim after it', () => {
 	/**
 	 * Write one undecodable update into a record certified under the current

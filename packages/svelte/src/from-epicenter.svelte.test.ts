@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { rmSync, writeFileSync } from 'node:fs';
 import { compileModule } from 'svelte/compiler';
-import { Err, Ok } from 'wellcrafted/result';
+import { Ok } from 'wellcrafted/result';
 import type { fromEpicenter as FromEpicenter } from './from-epicenter.svelte.js';
 
 /**
@@ -56,26 +56,44 @@ function store(address: string): Store {
 		address,
 	};
 }
-type Opened = ReturnType<typeof Ok<Store>> | ReturnType<typeof Err<string>>;
-
 /**
- * A handle whose `data` records whether anything read it.
+ * A handle whose state this test drives, the way the core session does.
  *
- * The laziness is the contract: reading `data` is what starts an open, claims a
- * Web Lock, and touches IndexedDB, so a page that never renders the store must
- * never read it.
+ * It records subscriptions and erases, and it never opens anything: what
+ * acquires is `open`, which this wrapper forwards untouched, so nothing here
+ * needs to fake acquisition to test the adapter.
  */
-function handle(status: 'signed-in' | 'signed-out', settle: Promise<Opened>) {
-	let reads = 0;
+function handle(
+	initial: { status: 'closed' } | { status: 'opening' } = { status: 'closed' },
+) {
+	type State =
+		| { status: 'closed' }
+		| { status: 'opening' }
+		| { status: 'ready'; data: Store }
+		| { status: 'failed'; error: string };
+	let state: State = initial;
+	const listeners = new Set<(state: State) => void>();
 	let erases = 0;
+	let opens = 0;
 	return {
-		reads: () => reads,
 		erases: () => erases,
+		opens: () => opens,
+		listeners: () => listeners.size,
+		publish(next: State) {
+			state = next;
+			for (const listener of listeners) listener(next);
+		},
 		epicenter: {
-			account: { state: { status } },
-			get data() {
-				reads += 1;
-				return settle;
+			get state() {
+				return state;
+			},
+			open: async () => {
+				opens += 1;
+				return Ok(undefined);
+			},
+			onStateChange: (listener: (state: State) => void) => {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
 			},
 			eraseReplica: async () => {
 				erases += 1;
@@ -85,26 +103,33 @@ function handle(status: 'signed-in' | 'signed-out', settle: Promise<Opened>) {
 	};
 }
 
-const never = new Promise<Opened>(() => {});
+test('constructing mirrors the session and opens nothing', () => {
+	const held = handle();
+	const epicenter = fromEpicenter(held.epicenter);
 
-test('constructing opens nothing, and the first read of boot is what starts it', () => {
-	const held = handle('signed-in', never);
-	const store = fromEpicenter(held.epicenter);
-	expect(held.reads()).toBe(0);
+	// The whole of what construction does: read one state and subscribe. A
+	// handle that has not been opened reports `closed`, and reading it a second
+	// time is still a plain property read.
+	expect(epicenter.state).toEqual({ status: 'closed' });
+	expect(epicenter.state).toEqual({ status: 'closed' });
+	expect(held.opens()).toBe(0);
+	expect(held.listeners()).toBe(1);
+});
 
-	expect(store.boot.status).toBe('opening');
-	expect(held.reads()).toBe(1);
+test("opening is the application's call, and it comes across untouched", async () => {
+	const held = handle();
+	const epicenter = fromEpicenter(held.epicenter);
 
-	// A second read joins the first. The handle memoizes too, but this must not
-	// depend on that: an application reads `state` on every render.
-	expect(store.boot.status).toBe('opening');
-	expect(held.reads()).toBe(1);
+	await epicenter.open();
+	expect(held.opens()).toBe(1);
+
+	// The session reports `opening` itself; the wrapper does not guess it.
+	held.publish({ status: 'opening' });
+	expect(epicenter.state).toEqual({ status: 'opening' });
 });
 
 test('the rest of the handle comes across, and reading it opens nothing', () => {
-	const held = handle('signed-in', never);
-	// Descriptors, not a spread: a spread here would read `data` and start the
-	// open in the test's own setup.
+	const held = handle();
 	const full = Object.defineProperties(
 		{
 			appId: 'so.epicenter.notes',
@@ -119,64 +144,73 @@ test('the rest of the handle comes across, and reading it opens nothing', () => 
 		sqlite: { open(): Promise<unknown> };
 		secrets: { get(): Promise<unknown> };
 		close?: unknown;
-		data?: unknown;
+		onStateChange?: unknown;
 		eraseReplica?: unknown;
 	};
 
-	// One `epicenter`, not a boot beside unrelated storage exports.
+	// One `epicenter`, not a session beside unrelated storage exports.
 	expect(epicenter.appId).toBe('so.epicenter.notes');
 	expect(typeof epicenter.sqlite.open).toBe('function');
 	expect(typeof epicenter.secrets.get).toBe('function');
 
-	// Reading the verbs is not reading the store. A spread would have evaluated
-	// the lazy `data` getter here and claimed a Web Lock on a page that only
-	// wanted a file name.
-	expect(held.reads()).toBe(0);
-
-	// Ending the store is the module local's, and erasing rides on `failed`.
+	// Ending the store is the module local's, erasing rides on `failed`, and
+	// the raw subscription is consumed rather than offered as a second way to
+	// watch what the rune already reports.
 	expect('close' in epicenter).toBe(false);
-	expect('data' in epicenter).toBe(false);
+	expect('onStateChange' in epicenter).toBe(false);
 	expect('eraseReplica' in epicenter).toBe(false);
 });
 
-test('a signed-out person never touches the store at all', () => {
-	const held = handle('signed-out', never);
-	const store = fromEpicenter(held.epicenter);
+test('the store rides on ready, adapted once, with everything else intact', () => {
+	const held = handle({ status: 'opening' });
+	const epicenter = fromEpicenter(held.epicenter);
+	expect(epicenter.state.status).toBe('opening');
 
-	expect(store.boot.status).toBe('signed-out');
-	expect(store.boot.status).toBe('signed-out');
-	// No Web Lock, no IndexedDB, no round trip. Signed-out is answered from one
-	// read of the account, before anything opens.
-	expect(held.reads()).toBe(0);
-});
-
-test('the store rides on ready, awake, with everything else intact', async () => {
-	const opened = store('epicenter/v4/app/data/1');
-	const held = handle('signed-in', Promise.resolve(Ok(opened)));
-	const wrapper = fromEpicenter(held.epicenter);
-	expect(wrapper.boot.status).toBe('opening');
-
-	await Bun.sleep(1);
-	if (wrapper.boot.status !== 'ready') throw new Error('expected ready');
+	held.publish({ status: 'ready', data: store('epicenter/v4/app/data/1') });
+	if (epicenter.state.status !== 'ready') throw new Error('expected ready');
 	// Adapted, not narrowed: every member the store had is still there, which is
 	// what lets one object be handed over once instead of a store and a view of
 	// it. The address is the member the folder verbs read.
-	expect(wrapper.boot.data.address).toBe('epicenter/v4/app/data/1');
-	expect(wrapper.boot.data.transact(() => 'ran')).toBe('ran');
+	expect(epicenter.state.data.address).toBe('epicenter/v4/app/data/1');
+	expect(epicenter.state.data.transact(() => 'ran')).toBe('ran');
+
+	// One projection per store, built when the store appeared rather than on
+	// every read: `fromData` walks every table and subscribes to each one.
+	const first = epicenter.state.data;
+	expect(epicenter.state.data).toBe(first);
+});
+
+test('the data on ready cannot end the session', () => {
+	const held = handle({ status: 'opening' });
+	const epicenter = fromEpicenter(held.epicenter);
+	held.publish({ status: 'ready', data: store('epicenter/v4/app/data/1') });
+	if (epicenter.state.status !== 'ready') throw new Error('expected ready');
+
+	// A component is handed `state.data` and nothing else, so the lock, the
+	// socket, and the listener the session acquired together stay in one hand
+	// (ADR-0340).
+	for (const verb of ['open', 'close', 'erase', 'eraseReplica']) {
+		expect(verb in epicenter.state.data).toBe(false);
+	}
 });
 
 test('a failure carries the error and the erase, and nothing else does', async () => {
-	const held = handle('signed-in', Promise.resolve(Err('BoundElsewhere')));
-	const store = fromEpicenter(held.epicenter);
-	void store.boot;
+	const held = handle({ status: 'opening' });
+	const epicenter = fromEpicenter(held.epicenter);
 
-	await Bun.sleep(1);
-	if (store.boot.status !== 'failed') throw new Error('expected a failure');
-	expect(store.boot.error).toBe('BoundElsewhere');
+	held.publish({ status: 'failed', error: 'BoundElsewhere' });
+	if (epicenter.state.status !== 'failed')
+		throw new Error('expected a failure');
+	expect(epicenter.state.error).toBe('BoundElsewhere');
 
 	// Erasing takes the same claim an open takes, so it can only succeed in the
 	// state that hands it over: a failed open released its claim before it
 	// returned.
-	await store.boot.eraseReplica();
+	await epicenter.state.eraseReplica();
 	expect(held.erases()).toBe(1);
+
+	// And the repair is a second `open`, which is the state machine's own way
+	// back rather than a document reload.
+	held.publish({ status: 'closed' });
+	expect((epicenter.state as { status: string }).status).toBe('closed');
 });

@@ -66,9 +66,16 @@ test('a handle with no definition has no store and no account', () => {
 	// The type says this already: `[TDefinition] extends [never]` fails
 	// downward, so omitting the definition yields the smaller handle. The
 	// runtime agrees, which is what keeps a `in` test from finding one.
-	expect('data' in epicenter).toBe(false);
-	expect('account' in epicenter).toBe(false);
-	expect('eraseReplica' in epicenter).toBe(false);
+	for (const member of [
+		'state',
+		'open',
+		'onStateChange',
+		'close',
+		'account',
+		'eraseReplica',
+	]) {
+		expect(member in epicenter).toBe(false);
+	}
 });
 
 test('a name is checked where it is minted, not on every call', () => {
@@ -113,7 +120,6 @@ test('an application id this platform cannot file refuses at construction', () =
 		createEpicenter({ appId: 'not an app id', binding: bindingFor([]) }),
 	).toThrow('is not valid');
 });
-
 
 test('definition and account are both required when adding a store', () => {
 	const binding = bindingFor([]);

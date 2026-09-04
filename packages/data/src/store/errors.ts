@@ -106,16 +106,71 @@ export const StoreError = defineErrors({
 		cause,
 	}),
 	/**
-	 * This process already holds this document's address open.
+	 * Another context holds this document's address open, and it is still
+	 * holding it.
 	 *
 	 * A second open would be a second `Y.Doc` over one document, and the two
 	 * cannot see each other's writes: they converge through storage under
 	 * last-writer-wins, so one side's work vanishes with no error and nothing to
-	 * retry (ADR-0229). Dispose the first application, or share the one you have.
+	 * retry (ADR-0229). Close the other window, or share the one you have.
+	 *
+	 * **A CONFIRMED ownership conflict and nothing else.** This used to be the
+	 * answer to four unrelated situations, of which three were not conflicts:
+	 * a runtime with no Web Locks (`LocksUnsupported`), a lock request that
+	 * threw (`ClaimFailed`), and an address that already holds state
+	 * (`GenerationExists`). An application's boot gate tells a person to close
+	 * another window when it sees this name, so a name that can mean four
+	 * things tells three quarters of the people who reach it to do something
+	 * that cannot help.
 	 */
 	AlreadyOpen: ({ address }: { address: string }) => ({
-		message: `This process already has ${address} open`,
+		message: `Another context already has ${address} open`,
 		address,
+	}),
+	/**
+	 * This runtime ships no Web Locks API, so a single owner cannot be proven.
+	 *
+	 * Refused rather than opened unguarded, which is the corruption `claims.ts`
+	 * exists to prevent arriving quietly on whatever runtime happens to lack
+	 * the API. Every browser this store targets ships it, and a WebKitGTK older
+	 * than 2.36 is the live case: there is no repair a person can perform in
+	 * the page, which is exactly why it must not wear `AlreadyOpen`'s clothes
+	 * and ask them to close a window they do not have open.
+	 */
+	LocksUnsupported: ({ address }: { address: string }) => ({
+		message: `This runtime cannot claim ${address}: it has no Web Locks`,
+		address,
+	}),
+	/**
+	 * The lock request itself failed, which says nothing about who holds it.
+	 *
+	 * Distinct from `AlreadyOpen` because the cause is unknown: reporting a
+	 * mechanism failure as a conflict names a repair that may be irrelevant. A
+	 * retry is the honest answer, and the `cause` is what a bug report carries.
+	 */
+	ClaimFailed: ({ address, cause }: { address: string; cause: unknown }) => ({
+		message: `The claim on ${address} could not be requested`,
+		address,
+		cause,
+	}),
+	/**
+	 * This device already holds state at that generation's address.
+	 *
+	 * A generation is created once and never mutated in place, so a write that
+	 * meets bytes is a caller confusing import with sync (ADR-0293). It is not
+	 * an ownership conflict: nobody holds the document open, and closing a
+	 * window changes nothing.
+	 */
+	GenerationExists: ({
+		dataId,
+		generation,
+	}: {
+		dataId: string;
+		generation: number;
+	}) => ({
+		message: `This device already holds generation ${generation} of '${dataId}'`,
+		dataId,
+		generation,
 	}),
 	/**
 	 * The store was asked for something it cannot name.

@@ -79,8 +79,19 @@ epicenter.sqlite.open(name)  // Promise<Result<AppSqliteDatabase, AppError>>
 epicenter.sqlite.delete(name)// Promise<Result<void, AppError>>
 epicenter.secrets            // SecretStore
 epicenter.account            // the AuthClient the application passed in
-epicenter.data               // Promise<Result<ReplicaData<TDefinition>, StoreError | DataDefinitionParseError>>
+epicenter.state              // EpicenterState<TDefinition>, read-only
+epicenter.open()             // Promise<Result<ReplicaData<TDefinition>, DataOpenError>>
+epicenter.onStateChange(fn)  // () => void, the unsubscribe
+epicenter.close()            // Promise<void>
 epicenter.eraseReplica()     // Promise<Result<void, StoreError>>
+```
+
+```ts
+type EpicenterState<TDefinition> =
+	| { status: 'closed' }
+	| { status: 'opening' }
+	| { status: 'ready'; data: ReplicaData<TDefinition> }
+	| { status: 'failed'; error: DataOpenError };
 ```
 
 **`definition` and `account` arrive together or not at all.** An authority mints
@@ -93,17 +104,39 @@ application is an independent part of the store address. Keeping it explicit
 means every handle states the scope it opens, including when it opens another
 application's data.
 
-**`data` is a lazy getter that memoizes.** Reading it starts the open, so an
-application that never reads it pays no Web Lock, no IndexedDB, and no round
-trip, and reading it twice joins one open. Sync attaches inside. It resolves a
-`Result`, and the error is the store's own rather than an `AppError` wrapping
-it: a boot gate switches on the failure's `name` to choose between a retry and
-an erase.
+**Construction is inert, and `open` is the only thing that acquires.**
+`createEpicenter` claims no Web Lock, touches no IndexedDB, and makes no round
+trip. `open` does all three, plus the sync dial and the flush-on-hide listener,
+and an application calls it once from its root after authentication is ready.
+`data` used to be a lazy getter whose READ started the open, which put
+substantial asynchronous resource acquisition behind property syntax: an
+application could not say when it happened, a surface could not retry it, and a
+`{ ...epicenter }` anywhere claimed a lock.
 
-A failure is memoized with everything else, so the repair for a failed open is
-a document reload rather than a second read of `data`. That is what a boot gate
-already does: `AlreadyOpen` and `GenerationUnreachable` both repair by
-reloading, and an erase leaves the page.
+`open` resolves a `Result`, and the error is the store's own rather than an
+`AppError` wrapping it: a boot gate switches on the failure's `name` to choose
+between a retry and an erase. Two variants are the session's rather than the
+store's. `DataSessionError.SessionClosed` answers a caller whose open was closed
+underneath, instead of handing back `Ok` over a store whose every verb throws;
+`DataSessionError.OpenerThrew` contains an opener that rejected, which would
+otherwise leave the session in `opening` with no way back.
+
+**Repetition is deterministic, and each case is a different answer.** While
+`opening`, callers join the one attempt. While `ready`, `open` resolves the
+open store and acquires nothing. While `failed`, it RETRIES, which is what
+makes "close the other window, then try again" a repair a person can perform
+without reloading the document. After a `close`, it opens again.
+
+**`close` is idempotent and returns the session to `closed`.** It is not
+terminal: terminal was a property of the memo, and preserving it would need a
+fifth state that only a hot reload and a test could observe. A close that lands
+mid-open ends what that open acquired and publishes nothing for it.
+
+**`state.data` is the typed application data and nothing else.** It carries no
+`open`, no `close`, no `erase`, and no disposal, because the lock, the socket,
+and the listener were acquired together and are released together (ADR-0340).
+A component takes `state.data`; the lifetime stays with whoever built the
+handle.
 
 Every method answers a `Result`. Runtime differences are typed failures, never
 branches: a browser build has no keychain, and the application handles that

@@ -921,8 +921,11 @@ async function writeGeneration({
 		if (opened.error !== null) return Err(opened.error);
 		const backing = opened.data;
 		try {
+			// Not `AlreadyOpen`: nobody holds this document, and telling a
+			// person to close another window would name a repair that cannot
+			// help. A generation is written once (ADR-0293).
 			if (backing.loaded.updates.length > 0) {
-				return StoreError.AlreadyOpen({ address });
+				return StoreError.GenerationExists({ dataId, generation });
 			}
 			await backing.create({ bytes: state, position, binding });
 			return Ok(undefined);

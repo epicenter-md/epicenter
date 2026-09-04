@@ -63,19 +63,19 @@ export type ReactiveAuthClient = AuthClient & Brand<'ReactiveAuthClient'>;
  * promises that reads track IF the underlying client ever changes, which is a
  * promise every client can keep.
  */
-export function fromAuth(auth: AuthClient): ReactiveAuthClient {
+export function fromAuth(authClient: AuthClient): ReactiveAuthClient {
 	const subscribeState = createSubscriber((update) =>
-		auth.onStateChange(update),
+		authClient.onStateChange(update),
 	);
-	const connection = auth.connection;
+	const connection = authClient.connection;
 	const subscribeConnection = createSubscriber((update) =>
 		connection.onChange(update),
 	);
 	return {
-		...auth,
+		...authClient,
 		get state() {
 			subscribeState();
-			return auth.state;
+			return authClient.state;
 		},
 		connection: {
 			...connection,

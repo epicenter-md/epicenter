@@ -248,13 +248,19 @@ shapes, see `docs/adr/`.
 
 - **Application factory**: the one function that opens the application's data,
   and returns a ready handle, as `packages/app/src/client-owned-data.ts` does
-  behind `epicenter.data`. There is no readiness promise beside it: opening is
-  the only asynchronous thing, so wanting a separate `whenReady` means a
+  behind `epicenter.open()`. There is no readiness promise beside it: opening
+  is the only asynchronous thing, so wanting a separate `whenReady` means a
   half-open handle.
-- **Ready-application shape**: one open promise created in a mounted component
-  and rendered through a stable `{#await}` boundary, with the handle passed down
-  through typed context. Library modules stay inert, which
-  `scripts/check-boot-purity.ts` enforces.
+- **Data session**: what `epicenter` owns once a definition and an account are
+  passed. Construction is inert; `open` acquires the document, the Web Lock,
+  the persistence connection, the sync socket, and the flush-on-hide listener,
+  and `close` releases all five. `state` reports `closed | opening | ready |
+  failed`, and the typed data rides on `ready`. Nothing on `state.data` can end
+  the session.
+- **Ready-application shape**: one session opened from the application root
+  after auth is ready, rendered through the four states of `epicenter.state`,
+  with `state.data` passed down through typed context. Library modules stay
+  inert, which `scripts/check-boot-purity.ts` enforces.
 - **`#platform/*`**: the build-time platform DI seam for multi-platform (Tauri) apps.
 - **`session`**: the singleton holding the signed-in Epicenter lifecycle.
 - **deviceConfig vs synced values**: per-device settings (global shortcuts,

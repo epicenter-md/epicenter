@@ -4,7 +4,10 @@ export {
 } from './agent-conversation.svelte.js';
 export { default as FlushEditsOnHide } from './flush-edits-on-hide.svelte';
 export { fromData, type ReactiveData } from './from-data.svelte.js';
-export { type EpicenterBoot, fromEpicenter } from './from-epicenter.svelte.js';
+export {
+	fromEpicenter,
+	type ReactiveEpicenterState,
+} from './from-epicenter.svelte.js';
 export {
 	fromSubscription,
 	type Tracked,

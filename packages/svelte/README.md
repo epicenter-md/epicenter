@@ -45,28 +45,37 @@ app.persistence.get() === 'blocked';     // this device stopped saving
 
 ### `fromEpicenter`
 
-Adapts one `@epicenter/app` handle's store into the four states a route renders
-from, on one member, `boot`: `signed-out`, `opening`, `ready` (carrying the
-data), and `failed` (carrying the error and the erase). One property rather
-than a `status` beside a `data`, because TypeScript narrows a union and cannot
-correlate two properties: flat, `data` would be optional at every read. The store is a field on the `ready` variant, so a read
-before it is open does not compile.
+Mirrors one `@epicenter/app` handle's data session into a rune, on one member,
+`state`: `closed`, `opening`, `ready` (carrying the data), and `failed`
+(carrying the error and the erase). One property rather than a `status` beside
+a `data`, because TypeScript narrows a union and cannot correlate two
+properties: flat, `data` would be optional at every read. The store is a field
+on the `ready` variant, so a read before it is open does not compile.
 
-Signed-out is answered from one read of `account.state` BEFORE anything opens,
-so a person who cannot open anything pays no Web Lock, no IndexedDB, and no
-round trip. It is its own state rather than a failure: folding it into the
-error channel would make the gate sniff an error to choose between "sign in"
-and "something broke".
+The core session owns the state machine; this subscribes to it and runs
+`fromData` once, when a store first becomes readable. There is no second
+lifecycle here and no second answer to what the session is doing.
 
-Both halves are lazy, so nothing opens until something renders: the first read
-of `state` starts the open and writes no signal synchronously. That makes it
-safe inside a `$derived` and safe at module scope, which is where it belongs —
-one call site by construction, so there is no wrapper to own and nothing to
-memoize.
+Constructing it acquires nothing: it reads one state and subscribes, so it
+belongs at module scope, which is one call site by construction. What acquires
+is `open`, which comes across untouched and an application calls from its root
+after authentication is ready.
+
+Signed-out is not a state here. It never was a fact about the session: it was a
+latched read of `account.state` that this wrapper performed because reading
+`data` would otherwise open into `Unaddressable`. With opening explicit, an
+application that has not authenticated has not called `open`, and the session is
+`closed`, which is exactly true. The gate belongs to the application, which is
+where the auth client already is.
 
 `eraseReplica` rides on `failed` and nowhere else. Erasing takes the same claim
 an open takes, so erasing an open store is refused by the store; a failed open
 released its claim before it returned.
+
+`close` and `onStateChange` do not come across. The close stays with the module
+local that built the handle, which is the one place a hot reload can reach and
+no route can; the raw subscription is consumed here rather than offered as a
+second way to watch what the rune already reports.
 
 The handle is taken structurally, the way `fromData` takes opened data, so this
 package does not depend on `@epicenter/app`.
@@ -83,14 +92,23 @@ export const notes = fromEpicenter(
 ```
 
 ```svelte
-{#if notes.boot.status === 'signed-out'}
+<script>
+  // The application root, once auth is ready.
+  if (auth.state.status !== 'signed-out') void notes.open();
+</script>
+
+{#if auth.state.status === 'signed-out'}
   <SignInGate />
-{:else if notes.boot.status === 'opening'}
-  <Loading />
-{:else if notes.boot.status === 'ready'}
-  <Notes data={notes.boot.data} />
+{:else if notes.state.status === 'ready'}
+  <Notes data={notes.state.data} />
+{:else if notes.state.status === 'failed'}
+  <BootFailure
+    error={notes.state.error}
+    erase={notes.state.eraseReplica}
+    retry={() => void notes.open()}
+  />
 {:else}
-  <BootFailure error={notes.boot.error} erase={notes.boot.eraseReplica} />
+  <Loading />
 {/if}
 ```
 

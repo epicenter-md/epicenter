@@ -154,7 +154,7 @@ function handleFor(account: AuthClient) {
  */
 async function openedBy(account: AuthClient) {
 	const epicenter = handleFor(account);
-	const opened = await epicenter.data;
+	const opened = await epicenter.open();
 	if (opened.error !== null) throw opened.error;
 	return { data: opened.data, close: () => epicenter.close() };
 }
@@ -176,72 +176,236 @@ test('the store opens as a replica of the account that was passed in', async () 
 	await close();
 });
 
-test('one handle memoizes its open, and a second handle is refused', async () => {
+test('construction acquires nothing, and opening is what does', async () => {
 	await resetStorage();
 	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 	await importEmptyGeneration(account);
 
-	// Two reads of one handle are one promise, which is what makes a second
-	// reader join rather than claim a Web Lock the first one holds.
+	// The whole of the reason `data` stopped being a getter. Building the
+	// handle claims no Web Lock, opens no IndexedDB, and makes no round trip,
+	// and there is no property whose READ would.
+	const before = await databaseNames();
 	const epicenter = handleFor(account);
-	expect(epicenter.data).toBe(epicenter.data);
+	expect(epicenter.state).toEqual({ status: 'closed' });
+	// Reading every member, which is what a spread or a devtools panel does.
+	// None of them is a getter that opens.
+	expect({ ...epicenter }.appId).toBe(APP_ID);
+	expect(epicenter.state).toEqual({ status: 'closed' });
+	expect(await databaseNames()).toEqual(before);
+
+	// Another handle can still take the claim, because nobody has taken it.
+	const other = await openedBy(account);
+	await other.close();
+
+	const opened = await epicenter.open();
+	expect(opened.error).toBeNull();
+	expect(epicenter.state.status).toBe('ready');
+	await epicenter.close();
+});
+
+test('opening twice is one open, and a second handle is refused', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	// Two calls while it is opening join one attempt, which is what keeps a
+	// second caller from claiming a Web Lock the first one is taking.
+	const epicenter = handleFor(account);
+	const [first, second] = await Promise.all([
+		epicenter.open(),
+		epicenter.open(),
+	]);
+	if (first.error !== null) throw first.error;
+	if (second.error !== null) throw second.error;
+	expect(second.data).toBe(first.data);
+
+	// A call once it is ready acquires nothing and answers the same store.
+	expect((await epicenter.open()).data).toBe(first.data);
 
 	// A SECOND handle is a second claim, and the store refuses it. That is the
 	// dev-time shape of this: an application constructs one handle per page,
 	// and hot-reloading the module that constructs it meets this until the
-	// document is replaced.
-	const second = await handleFor(account).data;
-	expect(second.error?.name).toBe('AlreadyOpen');
+	// first one is closed.
+	const other = await handleFor(account).open();
+	expect(other.error?.name).toBe('AlreadyOpen');
 
-	const opened = await epicenter.data;
-	if (opened.error !== null) throw opened.error;
 	await epicenter.close();
 });
 
-test('closing is terminal, and the claim it held is free for the next handle', async () => {
+test('the states a session reports are the transitions it makes', async () => {
 	await resetStorage();
 	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 	await importEmptyGeneration(account);
 
 	const epicenter = handleFor(account);
-	const first = await epicenter.data;
+	const seen: string[] = [];
+	const stop = epicenter.onStateChange((state) => seen.push(state.status));
+
+	await epicenter.open();
+	await epicenter.close();
+	stop();
+	// Nothing after the unsubscribe reaches it.
+	await epicenter.open();
+	await epicenter.close();
+
+	expect(seen).toEqual(['opening', 'ready', 'closed']);
+});
+
+test('the data a ready session hands over cannot end the session', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	const epicenter = handleFor(account);
+	await epicenter.open();
+	if (epicenter.state.status !== 'ready') throw new Error('not ready');
+	const { data } = epicenter.state;
+
+	// The lock, the socket, and the listener were acquired together and are
+	// released together (ADR-0340). A store that could free one of the three
+	// would leave a connection dialling against a dead document, so the store
+	// carries no way to try.
+	for (const verb of ['close', 'open', 'erase', 'eraseReplica', 'dispose']) {
+		expect(verb in data).toBe(false);
+	}
+	expect(Symbol.dispose in data).toBe(false);
+	expect(Symbol.asyncDispose in data).toBe(false);
+
+	await epicenter.close();
+});
+
+test('closing releases the claim, and the same handle opens again', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	const epicenter = handleFor(account);
+	const first = await epicenter.open();
 	if (first.error !== null) throw first.error;
 	first.data.tables.notes.create({ title: 'before' });
 
 	// `close` ends all three things opening acquired: the socket, the page-hide
 	// listener, and the document holding the Web Lock. Twice is once.
 	await Promise.all([epicenter.close(), epicenter.close()]);
+	expect(epicenter.state).toEqual({ status: 'closed' });
+	expect(() => first.data.tables.notes.rows).toThrow();
 
-	// The handle does not forget its open, so it never opens a second store: it
-	// resolves the same one, closed, and a closed store throws on every verb.
-	// Reopening is a NEW handle, which is what a fresh page is.
-	const after = await epicenter.data;
-	if (after.error !== null) throw after.error;
-	expect(() => after.data.tables.notes.rows).toThrow();
-
-	const reopened = await openedBy(account);
-	expect(titles(reopened.data)).toEqual(['before']);
-	await reopened.close();
+	// `closed` after a close is the same `closed` a fresh handle starts in, so
+	// the verb that acquires works from it. What comes back is a NEW store over
+	// the durable record the first one left.
+	const again = await epicenter.open();
+	if (again.error !== null) throw again.error;
+	expect(again.data).not.toBe(first.data);
+	expect(titles(again.data)).toEqual(['before']);
+	await epicenter.close();
 });
 
-test('a close before anything was read still ends what opens after it', async () => {
+test('a close that races an open ends what the open acquired', async () => {
 	await resetStorage();
 	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 	await importEmptyGeneration(account);
 
-	// Nothing has read `data`, so there is no open to await. A later read must
-	// not start one this handle can never end: the open closes itself on
-	// arrival, and the claim it took is free for the next handle.
+	// The hot-reload shape: the module that built the handle is replaced while
+	// its open is still in flight. The close must not return while a lock is
+	// still being taken, and the session must never report `ready` for a store
+	// nobody can reach.
 	const epicenter = handleFor(account);
+	const opening = epicenter.open();
 	await epicenter.close();
-	const opened = await epicenter.data;
-	if (opened.error !== null) throw opened.error;
-	await Bun.sleep(1);
-	expect(() => opened.data.tables.notes.rows).toThrow();
+	expect(epicenter.state).toEqual({ status: 'closed' });
 
+	// The caller who awaited the open is TOLD, rather than handed `Ok` over a
+	// store whose every verb throws. `state` says `closed` and the promise says
+	// why: two channels for one fact have to agree.
+	const opened = await opening;
+	expect(opened.error?.name).toBe('SessionClosed');
+
+	// And the claim it took is free, which is the whole point of awaiting it.
 	const next = await openedBy(account);
 	expect(titles(next.data)).toEqual([]);
 	await next.close();
+
+	// The other half of the same race: an open that starts while the closed one
+	// is still letting go must not meet a conflict with no other window in it.
+	const again = handleFor(account);
+	const racing = again.open();
+	const ending = again.close();
+	const reopened = again.open();
+	await Promise.all([racing, ending]);
+	const settled = await reopened;
+	if (settled.error !== null) throw settled.error;
+	expect(again.state.status).toBe('ready');
+	await again.close();
+});
+
+test('a second close awaits the first rather than reporting it done', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	const epicenter = handleFor(account);
+	await epicenter.open();
+
+	// Not `Promise.all`, deliberately: awaiting only the SECOND close is the
+	// case that used to resolve while the first was still letting go of the
+	// lock, because the second found `held` already cleared and had nothing to
+	// wait on. A caller that then opened met a conflict with no other window.
+	const first = epicenter.close();
+	await epicenter.close();
+	expect(epicenter.state).toEqual({ status: 'closed' });
+	const next = handleFor(account);
+	expect((await next.open()).error).toBeNull();
+	await next.close();
+	await first;
+});
+
+test('a listener told about `opening` joins the attempt rather than starting one', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	// A subscriber is free to call `open` while it is being told, and the
+	// state is published only after the attempt is recorded, so what it gets is
+	// the attempt already running. Publishing first meant a second claim on one
+	// address, answered as a conflict.
+	const epicenter = handleFor(account);
+	let joined: ReturnType<typeof epicenter.open> | undefined;
+	const stop = epicenter.onStateChange((next) => {
+		if (next.status === 'opening') joined = epicenter.open();
+	});
+
+	const opened = await epicenter.open();
+	stop();
+	if (opened.error !== null) throw opened.error;
+	expect((await joined)?.data).toBe(opened.data);
+	expect(epicenter.state.status).toBe('ready');
+	await epicenter.close();
+});
+
+test('a failed open leaks nothing, and opening again is the retry', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	// The live failure a person meets: another context holds the document. It
+	// is repaired by that context letting go, which is a repair nobody can
+	// perform if the answer is memoized.
+	const holder = handleFor(account);
+	await holder.open();
+
+	const epicenter = handleFor(account);
+	const refused = await epicenter.open();
+	expect(refused.error?.name).toBe('AlreadyOpen');
+	const failed: { status: string; error?: unknown } = epicenter.state;
+	expect(failed.status).toBe('failed');
+	expect(failed.error).toBe(refused.error);
+
+	await holder.close();
+
+	const retried = await epicenter.open();
+	if (retried.error !== null) throw retried.error;
+	expect(epicenter.state.status).toBe('ready');
+	await epicenter.close();
 });
 
 test('a held copy opens from local storage before sync is available', async () => {
@@ -297,7 +461,9 @@ test('a signed-out account is refused without creating anything', async () => {
 
 	// It RESOLVES the refusal rather than throwing it (ADR-0339): the boot gate
 	// switches on the name, and a rejection would hand it an `unknown`.
-	const opened = await handleFor(createFakeAuth({ status: 'signed-out' })).data;
+	const opened = await handleFor(
+		createFakeAuth({ status: 'signed-out' }),
+	).open();
 	expect(opened.error?.name).toBe('Unaddressable');
 	expect(await databaseNames()).toEqual([]);
 });
@@ -319,7 +485,7 @@ test("another account's notes are refused, and erasing is what clears them", asy
 	// him her address: nothing asks his account, because this device already
 	// has a generation 1.
 	const bob = createFakeAuth({ status: 'signed-in', principalId: 'bob' });
-	const refused = await handleFor(bob).data;
+	const refused = await handleFor(bob).open();
 	expect(refused.error?.name).toBe('BoundElsewhere');
 
 	// And nothing was deleted to say so (ADR-0281). Alice comes back to hers.
