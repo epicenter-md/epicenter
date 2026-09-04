@@ -4,10 +4,9 @@ import {
 	createWebviewBlobSources,
 	createWebviewBlobStore,
 } from '@epicenter/blobs/webview';
-import { auth } from '#platform/auth';
+import { authClient } from '#platform/auth';
 
 const local = createWebviewBlobStore();
-const remote = createWebviewBlobRemote();
 
 /**
  * Desktop composition: the host's canonical filesystem bytes behind the
@@ -15,18 +14,18 @@ const remote = createWebviewBlobRemote();
  * capability. The Bun host owns the deployment credential, mints its own
  * presigned operations, and streams recording bytes between its filesystem
  * store and the remote, so nothing here ever sees a bearer or a signed URL
- * and no recording crosses WebView IPC (ADR-0149). This module owns remote
- * availability: desktop identity is immutable per process generation, so the
- * boot auth state decides whether the capability exists.
+ * and no recording crosses WebView IPC (ADR-0149).
+ *
+ * This module owns remote availability, and it is decided once: desktop
+ * identity is immutable per process generation, so the boot auth state is the
+ * whole answer. `authClient`, not `auth`, because nothing here tracks.
  */
+const remote =
+	authClient.state.status === 'signed-in' ? createWebviewBlobRemote() : null;
+
 export const BlobsLive: {
 	local: BlobStore;
 	readonly remote: BlobRemote | null;
-} = {
-	local,
-	get remote() {
-		return auth.state.status === 'signed-in' ? remote : null;
-	},
-};
+} = { local, remote };
 
 export const BlobSourcesLive: BlobSources = createWebviewBlobSources(local);

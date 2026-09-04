@@ -7,12 +7,15 @@ import {
 	createBrowserBlobRemote,
 	createEpicenterClient,
 } from '@epicenter/client';
-import { auth } from '#platform/auth';
+import { auth, authClient } from '#platform/auth';
 
 const local = createBrowserBlobStore();
+// The server and the authenticated fetch are boot facts, so they come off
+// `authClient`: reading them through the reactive surface would track nothing
+// and only suggest they change.
 const epicenterClient = createEpicenterClient({
-	baseURL: auth.connection.baseURL,
-	fetch: auth.fetch,
+	baseURL: authClient.connection.baseURL,
+	fetch: authClient.fetch,
 });
 const remote = createBrowserBlobRemote({ local, client: epicenterClient });
 
@@ -27,6 +30,9 @@ export const BlobsLive: {
 	readonly remote: BlobRemote | null;
 } = {
 	local,
+	// Reactive on purpose: `signed-in` degrading to `reauth-required` does not
+	// reload the page (ADR-0088), and the remote copy is exactly what stops
+	// working there, so this answer has to change underneath a live app.
 	get remote() {
 		return auth.state.status === 'signed-in' ? remote : null;
 	},

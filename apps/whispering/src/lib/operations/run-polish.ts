@@ -4,7 +4,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { isErr, Ok, type Result } from 'wellcrafted/result';
-import { auth } from '#platform/auth';
+import { authClient } from '#platform/auth';
 import { buildPolishSystemPrompt } from '$lib/operations/build-system-prompt';
 import {
 	completeWithGlobalDefault,
@@ -62,7 +62,7 @@ export function polishDestination(app: WhisperingApp): string {
 		resolveTranscriptionLocalityFromConfig({
 			service: app.settings.get('transcriptionService'),
 			getDeviceConfig: deviceConfig.get,
-			sessionBaseUrl: auth.connection.baseURL,
+			sessionBaseUrl: authClient.connection.baseURL,
 		}),
 		app.settings.get('completionProvider'),
 		resolveCompletionState(app),
