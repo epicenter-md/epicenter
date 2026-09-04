@@ -94,7 +94,6 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/honeycrisp": "workspace:*",
         "@epicenter/local-mail": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/server": "workspace:*",
@@ -273,6 +272,7 @@
       },
       "devDependencies": {
         "@epicenter/ui": "workspace:*",
+        "@epicenter/vite-config": "workspace:*",
         "@lucide/svelte": "catalog:",
         "@sveltejs/adapter-static": "catalog:",
         "@sveltejs/kit": "catalog:",

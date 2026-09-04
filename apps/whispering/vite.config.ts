@@ -33,20 +33,10 @@ export default defineConfig(
 		// .mjs that Vite's dep optimizer can't pre-bundle (it 404s on
 		// .vite/deps/ort-wasm-simd-threaded.mjs). Keep that package and its wasm
 		// subpath native, but still prebundle vad-web so Vite converts its
-		// CommonJS entry to ESM for browser dev mode.
-		optimizeDeps: {
-			// @sqlite.org/sqlite-wasm resolves its .wasm relative to its own
-			// module URL inside the records Worker; pre-bundling breaks that.
-			exclude: [
-				'onnxruntime-web',
-				'onnxruntime-web/wasm',
-				'@sqlite.org/sqlite-wasm',
-			],
-		},
-		// The records Worker (module type) transitively includes sqlite-wasm;
-		// its chunk needs ES output and current syntax, same as honeycrisp.
-		worker: { format: 'es' },
-		build: { target: 'esnext' },
+		// CommonJS entry to ESM for browser dev mode. `@sqlite.org/sqlite-wasm`
+		// is excluded by the base config, which owns everything the browser
+		// storage worker costs; `mergeConfig` concatenates these with those.
+		optimizeDeps: { exclude: ['onnxruntime-web', 'onnxruntime-web/wasm'] },
 		resolve: {
 			// Build-time platform DI over the `#platform/*` subpaths (package.json
 			// "imports"). This build activates both conditions because both are

@@ -16,8 +16,6 @@ export default defineConfig(
 		// the same build (ADR-0190).
 		workspaceAppViteConfig(APPS.HONEYCRISP, { tauri: !isEpicenterHost }),
 		{
-			worker: { format: 'es' },
-			build: { target: 'esnext' },
 			resolve: {
 				// Build-time platform DI over the `#platform/*` subpaths in
 				// package.json "imports". The spread is load-bearing: custom
