@@ -39,8 +39,8 @@
 		"check": "bun run typecheck",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.desktop.json",
-		"typecheck:desktop": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.desktop.json",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && svelte-check --tsconfig ./tsconfig.epicenter-host.json",
+		"typecheck:epicenter-host": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.epicenter-host.json",
 		"typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
 	"license": "AGPL-3.0-or-later",
