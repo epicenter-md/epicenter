@@ -39,5 +39,13 @@ export default defineConfig({
 			conditions: ['epicenter-host', ...defaultClientConditions],
 		}),
 	},
+	optimizeDeps: {
+		// `@sqlite.org/sqlite-wasm` resolves `sqlite3.wasm` relative to its own
+		// module URL. Pre-bundling rewrites that URL into `.vite/deps/`, where no
+		// `.wasm` was copied, so the fetch falls through to the SPA fallback and
+		// the module aborts on a `text/html` response. `apps/whispering` excludes
+		// it for the same reason.
+		exclude: ['@sqlite.org/sqlite-wasm'],
+	},
 	server: { port: SPA_DEV_PORT, strictPort: true },
 });
