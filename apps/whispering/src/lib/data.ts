@@ -1,5 +1,5 @@
 import { field } from '@epicenter/data/definition';
-import { APP_ID } from '../app-id';
+import { APP_ID } from './app-id';
 /**
  * Whispering's inert data definition.
  *

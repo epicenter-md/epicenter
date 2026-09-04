@@ -17,7 +17,7 @@
  */
 
 import type { BlobId } from '@epicenter/blobs';
-import type { Recording as RecordingRow, WhisperingData } from '../workspace';
+import type { Recording as RecordingRow, WhisperingData } from '../data';
 
 export type Recording = Omit<RecordingRow, 'audioBlobId'> & {
 	audioBlobId: BlobId;

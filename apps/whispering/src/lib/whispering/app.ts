@@ -7,7 +7,7 @@ import { APP_ID } from '../app-id';
 import {
 	type WhisperingSettingValues,
 	whisperingDefinition,
-} from '../workspace';
+} from '../data';
 
 import {
 	createWhisperingRecipes,

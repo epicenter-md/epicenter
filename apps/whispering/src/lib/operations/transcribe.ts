@@ -33,7 +33,7 @@ import {
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
-import type { RecordingId } from '$lib/workspace';
+import type { RecordingId } from '$lib/data';
 
 const log = createLogger('whispering/transcribe');
 

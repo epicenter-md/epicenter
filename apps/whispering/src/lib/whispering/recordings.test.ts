@@ -11,7 +11,7 @@ import { openMemory } from '@epicenter/data/memory';
 import type { Result } from 'wellcrafted/result';
 import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk as expectResult } from 'wellcrafted/testing';
-import { type RecordingId, whisperingDefinition } from '../workspace';
+import { type RecordingId, whisperingDefinition } from '../data';
 import { asStoredBlobId, type NewRecording } from './recording';
 import { createWhisperingRecordings } from './recordings';
 

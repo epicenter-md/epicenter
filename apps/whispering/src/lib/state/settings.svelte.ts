@@ -1,6 +1,6 @@
 import { createSubscriber } from 'svelte/reactivity';
 import type { WhisperingSettings } from '$lib/whispering/app';
-import type { WhisperingSettingValues } from '$lib/workspace';
+import type { WhisperingSettingValues } from '$lib/data';
 
 export type BooleanSettingKey = {
 	[K in keyof WhisperingSettingValues]: WhisperingSettingValues[K] extends boolean

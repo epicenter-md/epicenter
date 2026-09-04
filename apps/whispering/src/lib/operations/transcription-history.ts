@@ -9,7 +9,7 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, isErr, Ok, type Result, trySync } from 'wellcrafted/result';
 import type { WhisperingApp } from '$lib/whispering/app';
 import type { Recording } from '$lib/whispering/recording';
-import type { RecordingId } from '$lib/workspace';
+import type { RecordingId } from '$lib/data';
 
 const defaultLog = createLogger('whispering/transcription-history');
 
@@ -64,7 +64,7 @@ export function recordTranscriptionOutcome<TError extends AnyTaggedError>(
 ): Result<TranscriptionSuccess, TError> {
 	// The outcome is three columns rather than one nested object: a workspace has no
 	// expression for an inline object, and flattening also lets a failure's
-	// message merge independently of its timestamp (`workspace/index.ts`).
+	// message merge independently of its timestamp (`data.ts`).
 	if (isErr(transcription)) {
 		const error = transcription.error;
 		const { error: historyError } = saveRecordingHistory(app, recordingId, {

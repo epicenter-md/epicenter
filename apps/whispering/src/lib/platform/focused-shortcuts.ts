@@ -12,7 +12,7 @@ import type { WhisperingApp } from '$lib/whispering/app';
 import {
 	DEFAULT_SHORTCUT_KEYS,
 	type WhisperingSettingValues,
-} from '$lib/workspace';
+} from '$lib/data';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 
@@ -24,7 +24,7 @@ import type { Shortcuts } from './types';
  *
  * Two columns rather than one structured value, because a workspace has no
  * expression for an inline object and no way to default an array
- * (`workspace/index.ts`). So a binding is composed on read and decomposed on
+ * (`data.ts`). So a binding is composed on read and decomposed on
  * write, and "no shortcut configured" is `null` on both halves rather than a
  * stored empty binding.
  *
@@ -107,7 +107,7 @@ export function createFocusedShortcuts({
 	 * The shipped binding, which is release-local product policy rather than a
 	 * application policy: the definition stores null when no shortcut is configured,
 	 * and "no shortcut configured" and "the shipped shortcut" would otherwise be
-	 * the same stored value (`workspace/index.ts`).
+	 * the same stored value (`data.ts`).
 	 */
 	const readDefaultBinding = (id: Command['id']): KeyBinding | null =>
 		compose(

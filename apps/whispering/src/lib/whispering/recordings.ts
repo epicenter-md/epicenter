@@ -10,7 +10,7 @@ import {
 import type { NonconformingRow } from '@epicenter/data';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { WhisperingData } from '../workspace';
+import type { WhisperingData } from '../data';
 import {
 	asRecording,
 	asStoredBlobId,

@@ -2,7 +2,7 @@
 	import type { BlobId } from '@epicenter/blobs';
 	import AudioBlobPlayer from '$lib/components/AudioBlobPlayer.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-	import type { RecordingId } from '$lib/workspace';
+	import type { RecordingId } from '$lib/data';
 
 	let { id, audioBlobId }: { id: RecordingId; audioBlobId: BlobId } = $props();
 </script>

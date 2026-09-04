@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { whisperingDefinition } from './index';
+import { whisperingDefinition } from './data';
 
 /**
  * The active local transcription model must never synchronize (ADR-0180).

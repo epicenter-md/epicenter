@@ -49,7 +49,7 @@
 	import { tauri } from '#platform/tauri';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
 	import type { Recording } from '$lib/state/recordings.svelte';
-	import type { RecordingId } from '$lib/workspace';
+	import type { RecordingId } from '$lib/data';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import RecordingTranscriptCell from './RecordingTranscriptCell.svelte';
 	import RecordingAudioCell from './RecordingAudioCell.svelte';

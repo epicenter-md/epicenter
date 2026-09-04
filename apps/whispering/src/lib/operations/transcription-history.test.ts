@@ -14,7 +14,7 @@ import { createLogger, memorySink } from 'wellcrafted/logger';
 import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { Recording } from '$lib/whispering/recording';
-import type { RecordingId } from '$lib/workspace';
+import type { RecordingId } from '$lib/data';
 
 const recordingId = 'recording-1' as RecordingId;
 const recording = { id: recordingId } as Recording;
@@ -64,7 +64,7 @@ test('successful transcription carries its history Result', () => {
 	expect(success.text).toBe('usable text');
 	expectOk(success.history);
 	// Three flat columns rather than one nested outcome: a workspace has no
-	// expression for an inline object (`workspace/index.ts`).
+	// expression for an inline object (`data.ts`).
 	expect(patch).toHaveBeenLastCalledWith(recordingId, {
 		transcript: 'usable text',
 		polishedTranscript: null,

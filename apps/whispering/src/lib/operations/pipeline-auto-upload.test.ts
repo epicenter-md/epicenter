@@ -12,7 +12,7 @@
 import { afterEach, expect, mock, test } from 'bun:test';
 import { generateBlobId } from '@epicenter/blobs';
 import { Err, Ok } from 'wellcrafted/result';
-import type { RecordingId } from '$lib/workspace';
+import type { RecordingId } from '$lib/data';
 
 let autoUpload = true;
 let willPolish = false;
