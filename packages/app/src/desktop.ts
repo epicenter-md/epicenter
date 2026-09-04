@@ -28,15 +28,14 @@
  * entry. Nothing durable lands in the page.
  */
 
-import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	AppError,
-	type AppSqliteDatabase,
 	type EpicenterBindingFactory,
 	SecretError,
 	type SecretStore,
 } from './index.js';
+import { createOwnedSqlite, unwrap } from './owner.js';
 import {
 	APP_STORAGE_PATH,
 	type AppStorageRequest,
@@ -114,46 +113,6 @@ function createOwnerRequest({
 	};
 }
 
-function createOwnedSqlite(
-	request: OwnerRequest,
-	appId: string,
-	name: string,
-): AppSqliteDatabase {
-	return {
-		run: (sql, parameters) =>
-			unwrap(
-				request({
-					kind: 'sqlite-run',
-					appId,
-					name,
-					statement: { sql, parameters },
-				}),
-				'sqlite-run',
-				(response) => ({ changes: response.changes }),
-			),
-		all: <TRow extends SqliteRow>(
-			sql: string,
-			parameters?: readonly SqliteValue[],
-		) =>
-			unwrap(
-				request({
-					kind: 'sqlite-all',
-					appId,
-					name,
-					statement: { sql, parameters },
-				}),
-				'sqlite-all',
-				(response) => response.rows as TRow[],
-			),
-		batch: (statements) =>
-			unwrap(
-				request({ kind: 'sqlite-batch', appId, name, statements }),
-				'sqlite-batch',
-				(response) => ({ changes: [...response.changes] }),
-			),
-	};
-}
-
 function createKeychainSecrets(
 	request: OwnerRequest,
 	appId: string,
@@ -188,19 +147,4 @@ function createKeychainSecrets(
 				: SecretError.StorageFailed({ cause: result.error });
 		},
 	};
-}
-
-/** Unwrap one response, refusing an owner that answered about something else. */
-function unwrap<TKind extends AppStorageResponse['kind'], TValue>(
-	pending: Promise<Result<AppStorageResponse, AppError>>,
-	kind: TKind,
-	read: (response: Extract<AppStorageResponse, { kind: TKind }>) => TValue,
-): Promise<Result<TValue, AppError>> {
-	return pending.then((outcome) => {
-		if (outcome.error !== null) return outcome;
-		if (outcome.data.kind !== kind) return AppError.InvalidResponse();
-		return Ok(
-			read(outcome.data as Extract<AppStorageResponse, { kind: TKind }>),
-		);
-	});
 }

@@ -7,6 +7,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { AgentToolDefinition } from '@epicenter/agent';
+import { answerAppStorage } from '@epicenter/app/owner';
 import {
 	APP_STORAGE_PATH,
 	type AppStorageRequest,
@@ -344,11 +345,9 @@ export function createHomeServer({
 				return c.json({ kind: request.kind } satisfies AppStorageResponse);
 			}
 			if (appStorage === undefined) return c.text('Unavailable', 503);
-			if (request.kind === 'sqlite-delete') {
-				await appStorage.delete(request.appId, request.name);
-				return c.json({ kind: request.kind } satisfies AppStorageResponse);
-			}
-			return c.json(await runAppStatements(appStorage, request));
+			// Every transport answers a request the same way, so the host does not
+			// own a second reading of what one means (`@epicenter/app`'s `owner.ts`).
+			return c.json(await answerAppStorage(appStorage, request));
 		} catch {
 			return c.text('Application storage failed', 500);
 		}
@@ -780,41 +779,6 @@ function parseAppStorageRequest(
 			: { kind, appId: input.appId, label: input.label };
 	}
 	return undefined;
-}
-
-async function runAppStatements(
-	storage: BunAppStorage,
-	request: Extract<
-		AppStorageRequest,
-		{ kind: 'sqlite-run' | 'sqlite-all' | 'sqlite-batch' }
-	>,
-): Promise<AppStorageResponse> {
-	switch (request.kind) {
-		case 'sqlite-run': {
-			const database = await storage.open(request.appId, request.name);
-			const result = await database.run(
-				request.statement.sql,
-				request.statement.parameters,
-			);
-			if (result.error !== null) throw result.error;
-			return { kind: request.kind, changes: result.data.changes };
-		}
-		case 'sqlite-all': {
-			const database = await storage.open(request.appId, request.name);
-			const result = await database.all(
-				request.statement.sql,
-				request.statement.parameters,
-			);
-			if (result.error !== null) throw result.error;
-			return { kind: request.kind, rows: result.data };
-		}
-		case 'sqlite-batch': {
-			const database = await storage.open(request.appId, request.name);
-			const result = await database.batch(request.statements);
-			if (result.error !== null) throw result.error;
-			return { kind: request.kind, changes: result.data.changes };
-		}
-	}
 }
 
 function parseSqliteStatement(value: unknown):

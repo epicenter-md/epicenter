@@ -1,8 +1,8 @@
 /// <reference lib="dom" />
 
 /**
- * The browser binding: origin-owned SQLite over OPFS, and secrets that live
- * exactly as long as the tab (ADR-0310).
+ * The browser binding: origin-owned SQLite over OPFS in a worker, and secrets
+ * that live exactly as long as the tab (ADR-0310).
  *
  * This is the reduced build. It has no keychain and no host, so it holds no
  * credential across a reload, deliberately and permanently: not `localStorage`,
@@ -20,13 +20,10 @@
  * this through its own `#platform/binding` seam.
  */
 
-import { Ok, tryAsync } from 'wellcrafted/result';
-import { createBrowserSqliteOwner } from './browser-sqlite.js';
-import {
-	AppError,
-	type EpicenterBindingFactory,
-	type SecretStore,
-} from './index.js';
+import { Ok } from 'wellcrafted/result';
+import { createBrowserSqliteTransport } from './browser-sqlite.js';
+import type { EpicenterBindingFactory, SecretStore } from './index.js';
+import { createOwnedSqlite, unwrap } from './owner.js';
 
 /**
  * One binding over what a browser tab can own, for whichever application asks.
@@ -36,22 +33,25 @@ import {
  * hands it over, so the files and the keychain cannot be scoped to a different
  * application than the store (ADR-0339).
  *
- * The SQLite owner is built once, above the function, because one tab has one
- * OPFS and the owner keys every file by the id it is handed.
+ * The transport is built once, above the function, because one tab has one
+ * OPFS and therefore one storage worker; the application scope is the name the
+ * worker files under, exactly as it is for the Bun owner.
+ *
+ * `open` cannot fail here, which is the same thing the desktop leaf says: it
+ * resolves a name to a handle rather than a connection, and whether the file
+ * can be opened at all is answered by the first statement through it. Handing
+ * back a `Result` anyway keeps one binding contract across runtimes.
  */
 export function createBrowserBinding(): EpicenterBindingFactory {
-	const sqlite = createBrowserSqliteOwner();
+	const request = createBrowserSqliteTransport();
 	return (appId) => ({
-		open: (name) =>
-			tryAsync({
-				try: () => sqlite.open(appId, name),
-				catch: (cause) => AppError.StorageFailed({ cause }),
-			}),
+		open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 		delete: (name) =>
-			tryAsync({
-				try: () => sqlite.delete(appId, name),
-				catch: (cause) => AppError.StorageFailed({ cause }),
-			}),
+			unwrap(
+				request({ kind: 'sqlite-delete', appId, name }),
+				'sqlite-delete',
+				() => undefined,
+			),
 		secrets: createTabMemorySecrets(),
 	});
 }

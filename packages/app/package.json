@@ -7,11 +7,12 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./browser": "./src/browser.ts",
+		"./owner": "./src/owner.ts",
 		"./desktop": "./src/desktop.ts",
 		"./protocol": "./src/protocol.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p evidence/browser/opfs-sqlite/tsconfig.json",
 		"test": "bun test"
 	},
 	"dependencies": {
@@ -25,7 +26,9 @@
 	"devDependencies": {
 		"@types/bun": "catalog:",
 		"fake-indexeddb": "^6.2.5",
-		"typescript": "catalog:"
+		"playwright": "^1.61.1",
+		"typescript": "catalog:",
+		"vite": "catalog:"
 	},
 	"license": "AGPL-3.0-or-later"
 }

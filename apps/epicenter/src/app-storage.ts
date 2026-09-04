@@ -4,14 +4,20 @@ import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppError, type AppSqliteDatabase } from '@epicenter/app';
+import type { AppSqliteOwner } from '@epicenter/app/owner';
 import { appDataDir, isAppId } from '@epicenter/constants/app-data';
 import type { SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
 
-export type BunAppStorage = {
-	open(appId: string, name: string): Promise<AppSqliteDatabase>;
-	delete(appId: string, name: string): Promise<void>;
-};
+/**
+ * This host's owner, which is the one `@epicenter/app` names.
+ *
+ * An alias rather than a second declaration of the same two methods: the
+ * browser's worker owns an OPFS pool and this owns files below the Epicenter
+ * data root, and the whole point of the shared type is that a caller cannot
+ * tell which it is holding.
+ */
+export type BunAppStorage = AppSqliteOwner;
 
 /** One live connection per scoped database, and the file it is connected to. */
 type OpenedDatabase = {

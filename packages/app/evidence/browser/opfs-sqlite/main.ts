@@ -1,0 +1,79 @@
+/**
+ * The page under test: the real browser binding, nothing simulated.
+ *
+ * It exposes the binding's own verbs on `globalThis` so the harness can drive
+ * them from outside the page and the page holds no assertions of its own.
+ */
+
+import { createBrowserBinding } from '../../../src/browser.js';
+
+const APP_ID = 'so.epicenter.evidence';
+const binding = createBrowserBinding()(APP_ID);
+
+type Answer = { ok: true; value?: unknown } | { ok: false; error: string };
+
+async function attempt(run: () => Promise<Answer>): Promise<Answer> {
+	try {
+		return await run();
+	} catch (cause) {
+		return {
+			ok: false,
+			error: cause instanceof Error ? cause.message : String(cause),
+		};
+	}
+}
+
+Object.assign(globalThis, {
+	async run(
+		name: string,
+		sql: string,
+		parameters: unknown[] = [],
+	): Promise<Answer> {
+		return attempt(async () => {
+			const opened = await binding.open(name as never);
+			if (opened.error !== null)
+				return { ok: false, error: opened.error.message };
+			const result = await opened.data.run(sql, parameters as never);
+			return result.error === null
+				? { ok: true, value: result.data }
+				: { ok: false, error: result.error.message };
+		});
+	},
+	async all(
+		name: string,
+		sql: string,
+		parameters: unknown[] = [],
+	): Promise<Answer> {
+		return attempt(async () => {
+			const opened = await binding.open(name as never);
+			if (opened.error !== null)
+				return { ok: false, error: opened.error.message };
+			const result = await opened.data.all(sql, parameters as never);
+			return result.error === null
+				? { ok: true, value: result.data }
+				: { ok: false, error: result.error.message };
+		});
+	},
+	async batch(
+		name: string,
+		statements: { sql: string; parameters?: unknown[] }[],
+	): Promise<Answer> {
+		return attempt(async () => {
+			const opened = await binding.open(name as never);
+			if (opened.error !== null)
+				return { ok: false, error: opened.error.message };
+			const result = await opened.data.batch(statements as never);
+			return result.error === null
+				? { ok: true, value: result.data }
+				: { ok: false, error: result.error.message };
+		});
+	},
+	async remove(name: string): Promise<Answer> {
+		return attempt(async () => {
+			const gone = await binding.delete(name as never);
+			return gone.error === null
+				? { ok: true }
+				: { ok: false, error: gone.error.message };
+		});
+	},
+});

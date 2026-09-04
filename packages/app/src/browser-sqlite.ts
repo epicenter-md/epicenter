@@ -1,202 +1,87 @@
 /// <reference lib="dom" />
 
-import type { SqliteValue } from '@epicenter/sqlite';
-import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
-import { AppError, type AppSqliteDatabase } from './index.js';
+/**
+ * The page's half of the browser SQLite owner: a worker, and the ids that make
+ * `postMessage` answerable.
+ *
+ * There is no SQLite here at all any more, and there cannot be: OPFS
+ * synchronous access handles exist only in a dedicated worker
+ * (`browser-sqlite.worker.ts` says what that costs). So this file is what the
+ * desktop leaf is with `fetch` swapped for `postMessage`, and both of them
+ * hand the same `createOwnedSqlite` the same `AppStorageRequest`.
+ *
+ * It holds no map of open databases. The worker owns those, because it owns
+ * the connections; a page-side map would be a second answer to "is this file
+ * open" that nothing keeps true.
+ */
 
-type PreparedStatement = {
-	bind(parameters: readonly SqliteValue[]): PreparedStatement;
-	step(): boolean;
-	get(row: Record<string, unknown>): Record<string, unknown>;
-	finalize(): unknown;
-};
+import { AppError } from './index.js';
+import type { AppSqliteRequest, AppSqliteTransport } from './owner.js';
+import type { AppStorageResponse } from './protocol.js';
 
-type Database = {
-	close(): void;
-	prepare(sql: string): PreparedStatement;
-	exec(sql: string): unknown;
-	changes(): number | bigint;
-};
+type Answer =
+	| { id: number; response: AppStorageResponse }
+	| { id: number; failure: string };
 
-type SqliteModule = {
-	oo1: {
-		OpfsDb?: new (filename: string) => Database;
-	};
-};
+/**
+ * Reach this origin's storage worker, starting it if nothing has yet.
+ *
+ * Lazy, and that is load-bearing rather than tidy: `browser.ts` builds this at
+ * module scope, and a `Worker` constructed there would run in every test and
+ * every server render that merely imports the leaf.
+ */
+export function createBrowserSqliteTransport(): AppSqliteTransport {
+	let worker: Worker | undefined;
+	const pending = new Map<
+		number,
+		(answer: Answer | { failed: unknown }) => void
+	>();
+	let nextId = 0;
 
-type OpenedDatabase = {
-	handle: AppSqliteDatabase;
-	/** Behind the same queue every statement runs on. Only this module calls it. */
-	close(): Promise<void>;
-};
-
-const databases = new Map<string, Promise<OpenedDatabase>>();
-
-/** Open and delete persistent SQLite databases in this origin's OPFS. */
-export function createBrowserSqliteOwner(): {
-	open(appId: string, name: string): Promise<AppSqliteDatabase>;
-	delete(appId: string, name: string): Promise<void>;
-} {
-	function opening(appId: string, name: string): Promise<OpenedDatabase> {
-		const key = `${appId}/${name}`;
-		const existing = databases.get(key);
-		if (existing !== undefined) return existing;
-		const opened = openOpfsDatabase(databaseFilename(appId, name)).then(
-			(database) => createAsyncDatabase(database),
+	function ready(): Worker {
+		if (worker !== undefined) return worker;
+		const started = new Worker(
+			new URL('./browser-sqlite.worker.ts', import.meta.url),
+			{ type: 'module' },
 		);
-		// A rejected open holds no database, so forgetting it is safe, and
-		// keeping it would answer every later open with a failure that has
-		// already passed. Pinned in the Bun leaf, which holds the same rule
-		// and can be driven from a test; OPFS cannot be opened in one.
-		opened.catch(() => databases.delete(key));
-		databases.set(key, opened);
-		return opened;
+		started.onmessage = (event: MessageEvent<Answer>) => {
+			const settle = pending.get(event.data.id);
+			pending.delete(event.data.id);
+			settle?.(event.data);
+		};
+		// A worker that died took every statement in flight with it, and the ones
+		// that had not been sent would wait forever on a thread that is gone. Fail
+		// them all and start a new worker on the next call: its pool install is
+		// the only thing that can say whether storage is reachable again.
+		const abandon = (cause: unknown) => {
+			if (worker === started) worker = undefined;
+			for (const settle of [...pending.values()]) settle({ failed: cause });
+			pending.clear();
+		};
+		started.onerror = (event) => abandon(event.message ?? 'worker failed');
+		started.onmessageerror = () =>
+			abandon('the storage worker sent something unreadable');
+		worker = started;
+		return started;
 	}
 
-	return {
-		open: async (appId, name) => (await opening(appId, name)).handle,
-		/**
-		 * Close this origin's connection, then remove the file.
-		 *
-		 * A database this tab never opened still deletes, because the caller
-		 * asked for it to be gone. OPFS answers `NotFoundError` for a file that
-		 * was never written, which is the same outcome stated as a failure.
-		 */
-		delete: async (appId, name) => {
-			const key = `${appId}/${name}`;
-			const existing = databases.get(key);
-			databases.delete(key);
-			if (existing !== undefined) {
-				const opened = await existing.catch(() => undefined);
-				await opened?.close();
+	return (message: AppSqliteRequest) =>
+		new Promise((resolve) => {
+			const id = nextId++;
+			pending.set(id, (answer) => {
+				if ('failed' in answer) {
+					resolve(AppError.StorageFailed({ cause: answer.failed }));
+				} else if ('failure' in answer) {
+					resolve(AppError.StorageFailed({ cause: new Error(answer.failure) }));
+				} else {
+					resolve({ data: answer.response, error: null });
+				}
+			});
+			try {
+				ready().postMessage({ id, request: message });
+			} catch (cause) {
+				pending.delete(id);
+				resolve(AppError.StorageFailed({ cause }));
 			}
-			// Every file SQLite may have written under this name, not only the
-			// database: an open finding a stale journal beside a freshly created
-			// empty database reads a journal describing a file that is gone.
-			const root = await navigator.storage.getDirectory();
-			const file = databaseFilename(appId, name).slice(1);
-			for (const entry of [file, `${file}-journal`, `${file}-wal`]) {
-				await root.removeEntry(entry).catch((cause: unknown) => {
-					if ((cause as { name?: string })?.name === 'NotFoundError') return;
-					throw cause;
-				});
-			}
-		},
-	};
-}
-
-async function openOpfsDatabase(filename: string): Promise<Database> {
-	const sqlite3 = (await sqlite3InitModule()) as unknown as SqliteModule;
-	if (sqlite3.oo1.OpfsDb === undefined) {
-		throw new Error('This browser does not provide SQLite OPFS storage.');
-	}
-	return new sqlite3.oo1.OpfsDb(filename);
-}
-
-function createAsyncDatabase(database: Database): OpenedDatabase {
-	let queue = Promise.resolve();
-	const serialize = <T>(operation: () => T | Promise<T>): Promise<T> => {
-		const next = queue.then(operation, operation);
-		queue = next.then(
-			() => undefined,
-			() => undefined,
-		);
-		return next;
-	};
-
-	const handle: AppSqliteDatabase = {
-		run: (sql, parameters) =>
-			asResult(
-				serialize(() => {
-					execute(database, sql, parameters);
-					return { changes: changeCount(database) };
-				}),
-			),
-		all: <TRow>(sql: string, parameters?: readonly SqliteValue[]) =>
-			asResult(serialize(() => executeRows<TRow>(database, sql, parameters))),
-		batch: (statements) =>
-			asResult(
-				serialize(() => {
-					database.exec('BEGIN');
-					try {
-						const changes: number[] = [];
-						for (const statement of statements) {
-							execute(database, statement.sql, statement.parameters);
-							changes.push(changeCount(database));
-						}
-						database.exec('COMMIT');
-						return { changes };
-					} catch (cause) {
-						try {
-							database.exec('ROLLBACK');
-						} catch {
-							// Preserve the statement failure. The owner is unusable if rollback fails.
-						}
-						throw cause;
-					}
-				}),
-			),
-	};
-	return {
-		handle,
-		close: () => serialize(() => database.close()),
-	};
-}
-
-function asResult<T>(
-	promise: Promise<T>,
-): Promise<
-	import('wellcrafted/result').Result<T, import('./index.js').AppError>
-> {
-	return promise.then(
-		(value) => ({ data: value, error: null }),
-		(cause) => AppError.StorageFailed({ cause }),
-	);
-}
-
-function execute(
-	database: Database,
-	sql: string,
-	parameters?: readonly SqliteValue[],
-): void {
-	const statement = database.prepare(sql);
-	try {
-		if (parameters !== undefined) statement.bind(parameters);
-		while (statement.step()) {
-			// Drain rows for statements that return them. `run` intentionally ignores them.
-		}
-	} finally {
-		statement.finalize();
-	}
-}
-
-function executeRows<TRow>(
-	database: Database,
-	sql: string,
-	parameters?: readonly SqliteValue[],
-): TRow[] {
-	const statement = database.prepare(sql);
-	try {
-		if (parameters !== undefined) statement.bind(parameters);
-		const rows: TRow[] = [];
-		while (statement.step()) rows.push(statement.get({}) as TRow);
-		return rows;
-	} finally {
-		statement.finalize();
-	}
-}
-
-function changeCount(database: Database): number {
-	const count = database.changes();
-	if (typeof count === 'bigint') {
-		if (count > BigInt(Number.MAX_SAFE_INTEGER)) {
-			throw new Error('SQLite change count exceeds JavaScript precision.');
-		}
-		return Number(count);
-	}
-	return count;
-}
-
-function databaseFilename(appId: string, name: string): string {
-	return `/${encodeURIComponent(appId)}-${encodeURIComponent(name)}.sqlite`;
+		});
 }
