@@ -1,6 +1,6 @@
 # Whispering Architecture Deep Dive
 
-Whispering uses a clean three-layer architecture that shares one SPA between its browser deployment and the Epicenter desktop host. This is possible because platform differences are selected at build time and business logic stays separate from UI concerns.
+Whispering is one SPA in three layers, served by the Epicenter desktop host. Platform differences are selected at build time, and business logic stays separate from UI concerns.
 
 **Quick Navigation:** [Service Layer](#service-layer---pure-business-logic--platform-abstraction) | [Query Layer](#query-layer---adding-reactivity-and-state-management) | [Error Handling](#error-handling-with-wellcrafted)
 
@@ -14,22 +14,28 @@ Whispering uses a clean three-layer architecture that shares one SPA between its
          Reactive Updates
 ```
 
-## Workspace Composition
+## Application composition
 
-Whispering binds its inert data definition through one environment-owned SQLite runtime, acquired as one ready app inside the mounted Svelte root:
+Whispering binds its inert data definition to one account replica, acquired as one ready app inside the mounted Svelte root:
 
 ```txt
-defineData()                            src/lib/workspace/index.ts (inert schema)
-  -> openWhisperingApp()        src/lib/whispering/app.ts (transactional async open)
-    -> #platform/whispering             whisperingPlatform: the per-build dependencies
+defineData()                            src/lib/data.ts (inert schema)
+  -> whisperingDependencies             src/lib/whispering/dependencies.ts (auth + blobs)
+    -> openWhisperingApp()              src/lib/whispering/app.ts (transactional async open)
       -> openWhisperingUiSession()      src/lib/whispering/ui-session.ts (app + query runtime)
         -> (app)/+layout.svelte         raw {#await} owns pending / ready / failed
           -> WhisperingUiSessionProvider      typed context for ready-only descendants
 ```
 
-`src/lib/workspace/index.ts` defines the fixed application id, flat table fields, required row `content` codecs, and KV settings schema with no platform APIs. `openWhisperingApp(whisperingPlatform, { signal })` opens the Whispering application through the runtime the environment supplies, hydrates settings, recordings, and recipes, and resolves only with those UI-free product namespaces ready; any failure releases everything it opened and rejects. The (app) layout wraps that open in one UI session (`openWhisperingUiSession`), which composes the Svelte reactivity adapters, a session-scoped TanStack `QueryClient`, and the query namespace over the ready app, and owns their ordered disposal. The layout creates the session promise during component initialisation, so the `{#await}` observes it from the first microtask. The fulfilled branch mounts `WhisperingUiSessionProvider`, which only publishes the ready session: typed `getWhisperingApp()` / `getWhisperingQueries()` context plus the session's query client. Boot retry is a full page reload; unmount/HMR aborts the acquisition, and the layout is the single owner of session disposal. Bun scripts import `@epicenter/whispering/app` and `@epicenter/whispering/app/bun`, then use the same product API: `await using app = await openWhisperingApp(createWhisperingBunDependencies({ dataDir }))`. The one `dataDir` roots all persistent Bun storage (`<dataDir>/device/<dataId>/store.sqlite3`, `<dataDir>/blobs/`).
+`src/lib/data.ts` defines the fixed application id, flat table fields, required row `content` codecs, and KV settings schema with no platform APIs.
 
-The `#platform/whispering` leaves are pure dependency bindings of the workspace runtime plus the platform's composed blob capability (`#platform/blobs`): the web build (`whispering.browser.ts`) selects the device or account browser runtime from the boot auth state (`whispering.browser-runtime.ts`); the Epicenter-hosted build (`whispering.tauri.ts`) uses the same-origin desktop workspace runtime, whose `open` performs an honest host acquisition handshake. The app's recordings namespace owns row/blob consistency: audio storage, upload/download/purge, the `uploadedAt` marker, and deletion of the online copy, device copy, and row as one workflow. A row's values and its `content` node both live in the one Yjs 14 database document; there is no SQLite projection beside it (ADR-0269).
+`src/lib/whispering/dependencies.ts` exports `whisperingDependencies`, the build's two environment-owned inputs: the `authClient` from `#platform/auth` and `BlobsLive` from `#platform/blobs`. It is pure data and factories; nothing there opens storage.
+
+`openWhisperingApp(dependencies, { signal })` requires a signed-in account and refuses otherwise, because a store is one replica of an authority and a signed-out generation has no document to fall back to. It opens that account's replica through `createEpicenter` from `@epicenter/app`, then hands back settings, recordings, and recipes as UI-free product namespaces. Any failure releases everything it opened and rejects.
+
+The `(app)` layout wraps that open in one UI session (`openWhisperingUiSession`), which composes the Svelte reactivity adapters, a session-scoped TanStack `QueryClient`, and the query namespace over the ready app, and owns their ordered disposal. The layout creates the session promise during component initialisation, so the `{#await}` observes it from the first microtask. The fulfilled branch mounts `WhisperingUiSessionProvider`, which only publishes the ready session: typed `getWhisperingApp()` / `getWhisperingQueries()` context plus the session's query client. Boot retry is a full page reload; unmount and HMR abort the acquisition, and the layout is the single owner of session disposal.
+
+The app's recordings namespace owns row and blob consistency: audio storage, upload, download, purge, the `uploadedAt` marker, and deletion of the online copy, device copy, and row as one workflow. A row's values and its `content` node both live in the one Yjs 14 database document; there is no SQLite projection beside it (ADR-0269).
 
 ## Service Layer - Pure Business Logic + Platform Abstraction
 
@@ -37,46 +43,34 @@ The service layer contains all business logic as **pure functions** with zero UI
 
 The key innovation is **build-time platform resolution** via Node-standard `#platform/*` subpath imports. Each platform-bound service lives in a folder with both implementations as sibling files plus a shared contract; the app's `package.json` `imports` map points each seam at the matching file per build condition:
 
+Most seams now have a single leaf, because ADR-0227 left one shipped build:
+
 ```
 src/lib/services/recorder/
-  index.browser.ts    Browser MediaRecorder APIs
+  contract.ts         Shared contract the impl is annotated with
   index.tauri.ts      Tauri recorder plugin
-  types.ts            Shared contract both impls are annotated with
 ```
 
 ```jsonc
 // package.json
 {
   "imports": {
-    "#platform/recorder": {
-      "tauri": "./src/lib/services/recorder/index.tauri.ts",
-      "default": "./src/lib/services/recorder/index.browser.ts"
+    "#platform/recorder": "./src/lib/services/recorder/index.tauri.ts",
+    "#platform/blobs": {
+      "epicenter-host": "./src/lib/services/blobs/index.epicenter-host.ts",
+      "default": "./src/lib/services/blobs/index.browser.ts"
     }
   }
 }
 ```
 
-The Tauri build activates the `tauri` condition; the web build falls through to `default` (browser):
+Three seams keep two leaves: `auth`, `binding`, and `blobs`. Each has an `epicenter-host` leaf for the things the Bun host owns (credential, keychain and files, recording bytes) and a `default` leaf for the `bun dev:whispering` browser tab. The Epicenter build sets `EPICENTER_HOST=1`, which is what activates `epicenter-host` in `vite.config.ts`. That config also lists a `tauri` condition, but no seam declares one any more, so it selects nothing (ADR-0347). Base path is not a seam: `svelte.config.js` sets `paths.base` and routes call `resolve` from `$app/paths`.
 
-```ts
-// vite.config.ts
-const isEpicenterHost = process.env.EPICENTER_HOST === '1';
-export default defineConfig(async () => ({
-  resolve: {
-    // The `...defaultClientConditions` spread is load-bearing: custom
-    // conditions REPLACE Vite's defaults rather than adding to them.
-    ...(isEpicenterHost && {
-      conditions: ['tauri', ...defaultClientConditions],
-    }),
-  },
-}));
-```
+Consumers (for example the services barrel `src/lib/services/index.ts`) import the bare specifier `from '#platform/recorder'` with **no platform branch at the call site**. Where a seam still has two leaves, the off-target file is never resolved, so it is physically absent from the bundle (a build-time guarantee, not Rollup tree-shaking).
 
-Consumers (for example the services barrel `src/lib/services/index.ts`) import the bare specifier `from '#platform/recorder'` with **no platform branch at the call site**. Vite resolves `index.tauri.ts` on Tauri builds and `index.browser.ts` on web builds; the off-target file is never resolved, so it is physically absent from the bundle (a build-time guarantee, not Rollup tree-shaking). This makes the web bundle structurally unable to ship Tauri APIs and vice versa: a Tauri-only file imported by shared code fails the web build instead of shipping a broken runtime.
+This mechanism is scoped to `#platform/*` only; every other bare import resolves normally. `tsconfig.json` typechecks the default resolution and `tsconfig.epicenter-host.json` repeats the check with the condition the Epicenter build activates. Each impl is annotated with the shared contract (`export const x: Contract = ...`, not `satisfies`, so the concrete type stays hidden and the variants stay in lockstep).
 
-This mechanism is scoped to `#platform/*` only; every other bare import resolves normally. The browser typecheck uses the default condition, and `tsconfig.desktop.json` repeats the check with the `epicenter-host` and `tauri` conditions the Epicenter build activates (ADR-0190). Each impl is annotated with the shared contract (`export const x: Contract = ...`, not `satisfies`, so the concrete type stays hidden and the variants stay in lockstep).
-
-Tauri-only exports (Whispering's `tauriOnly` namespace in `src/lib/tauri.tauri.ts`) are imported **directly** by `.tauri.ts` files (`import { tauriOnly } from '$lib/tauri.tauri'`), not through a `#platform/*` seam, since that seam is null on web. Shared code that only needs the platform boolean reaches it through `import { tauri } from '#platform/tauri'` and checks `if (tauri)`.
+Tauri-only exports (Whispering's `tauriOnly` namespace in `src/lib/tauri.tauri.ts`) are imported **directly** by `.tauri.ts` files (`import { tauriOnly } from '$lib/tauri.tauri'`), not through a `#platform/*` seam, which does not export it. Shared code reaches the namespace through `import { tauri } from '#platform/tauri'` and narrows with `if (tauri)`; the export is annotated `Tauri | null` to force that narrowing.
 
 Services are **testable** (just pass mock parameters), **reusable** (work identically anywhere via the shared contract in `types.ts`), and **maintainable** (no hidden runtime branches).
 

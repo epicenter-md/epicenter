@@ -26,7 +26,7 @@ docs/          reference materials
 
 One runtime: a desktop SPA in a WebView over a client-owned store (ADR-0227). The host serves bundles and brokers credentials and owns no application data (ADR-0226).
 
-ADR-0227 was executed as a clean break, so these are broken on purpose until they are rebuilt against the store: `apps/whispering`, `apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`, `packages/skills`, and app-shell's agent chat.
+ADR-0227 was executed as a clean break, so these are broken on purpose until they are rebuilt against the store: `apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`, `packages/skills`, and app-shell's agent chat. `apps/whispering` is rebuilt: it opens its account replica through `createEpicenter`, boots in an `(app)` route group (ADR-0345), and typechecks under both of its conditions.
 
 Migration reference: `docs/the-store-and-what-it-replaced.md`.
 
