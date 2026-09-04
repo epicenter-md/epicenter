@@ -5,37 +5,29 @@
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
  *
- * Two files, one import path (`#platform/tauri`, declared in package.json
- * "imports"):
+ * One file behind one import path. `#platform/tauri` is a plain path alias to
+ * this module in package.json "imports": there is no second leaf and no
+ * condition, because ADR-0227 left one shipped build. The web leaf that used
+ * to export `null` under `default` is gone.
  *
- *     this file                              -> Tauri build (`tauri` condition)
- *     `./tauri.browser.ts` (exports `null`)  -> web build (`default`)
+ * Two exports, one for each use case:
  *
- * Both files annotate the export `: Tauri | null` and export the `Tauri`
- * type, so consumers always see the full shape regardless of which one
- * resolves.
- *
- * Two patterns, one for each use case:
- *
+ *     // Shared code, through the seam. `tauri` is annotated `Tauri | null`,
+ *     // so consumers are forced to narrow even though the value is always
+ *     // present.
  *     import { tauri } from '#platform/tauri';
  *     if (tauri) await tauri.fs.pathsToFiles(paths);
  *     // or
  *     await tauri?.fs.pathsToFiles(paths);
  *
- *     // Inside *.tauri.ts files only (build guarantees Tauri runtime).
- *     // `tauriOnly` is imported directly, not through the `#platform/tauri`
- *     // seam, which resolves to `null` on web and does not export it:
+ *     // Inside *.tauri.ts files, which import `tauriOnly` directly rather
+ *     // than through the seam, since the seam does not export it:
  *     import { tauriOnly } from '$lib/tauri.tauri';
  *     await tauriOnly.fs.pathsToFiles(paths);
  *
- * `tauri` doubles as the platform check: truthy means we're on Tauri
- * and the whole namespace is available. There is no separate
- * `__TAURI_INTERNALS__` check; the value IS the check.
- *
- * Why the `: Tauri | null` annotation on a never-null local: it widens the
- * export type so consumers are forced to narrow.
- *
- * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
+ * The `: Tauri | null` annotation on a never-null value is deliberate. It
+ * keeps shared call sites narrowing, which is what lets the dev browser tab
+ * reach them without a `__TAURI_INTERNALS__` probe: the value IS the check.
  */
 
 import { appDataDir, basename, extname, join } from '@tauri-apps/api/path';
@@ -478,7 +470,7 @@ export const tauriOnly = {
 export type Tauri = typeof tauriOnly;
 
 /**
- * The Tauri capability namespace, or `null` on web builds.
- * Doubles as the platform check: truthy means Tauri.
+ * The Tauri capability namespace, widened to `Tauri | null` so shared code has
+ * to narrow before calling it. Doubles as the platform check.
  */
 export const tauri: Tauri | null = tauriOnly;

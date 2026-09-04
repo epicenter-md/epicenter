@@ -2,12 +2,7 @@
 	"name": "@epicenter/whispering",
 	"private": true,
 	"version": "7.11.1",
-	"description": "Browser-deployable speech-to-text SPA hosted natively by Epicenter",
-	"exports": {
-		"./app": "./src/lib/whispering/app.ts",
-		"./commands": "./src/lib/commands.ts",
-		"./workspace": "./src/lib/workspace/index.ts"
-	},
+	"description": "Speech-to-text SPA served by the Epicenter desktop host",
 	"imports": {
 		"#platform/analytics": "./src/lib/services/analytics/index.tauri.ts",
 		"#platform/auth": {
@@ -86,9 +81,7 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
 		"@epicenter/recorder": "workspace:*",
-		"@epicenter/skills": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
-		"@epicenter/sync": "workspace:*",
 		"@mistralai/mistralai": "^1.9.18",
 		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@standard-schema/spec": "catalog:",
