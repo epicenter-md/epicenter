@@ -197,7 +197,7 @@ function setup() {
 		tables: { notes: notes.handle, folders: folders.handle },
 		kv: kv.handle,
 		// Passed through untouched, so the fake just runs it.
-		transact: <TResult,>(run: () => TResult) => run(),
+		transact: <TResult>(run: () => TResult) => run(),
 		watch: () => () => undefined,
 		persistence: persistence.handle,
 	});
