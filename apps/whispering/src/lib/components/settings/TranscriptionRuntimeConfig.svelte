@@ -17,7 +17,7 @@
 		SUPPORTED_LANGUAGES_OPTIONS,
 		type SupportedLanguage,
 	} from '$lib/constants/languages';
-	import { whisperingPath } from '$lib/constants/urls';
+	import { resolve } from '$app/paths';
 	import { describeTranscriptionDestinationFromConfig } from '$lib/operations/transcription-target';
 	import {
 		ACCESS_GROUPS,
@@ -206,7 +206,7 @@
 				<Field.Label>Signed in</Field.Label>
 				<Field.Description>
 					Your Epicenter account is connected. Manage it in
-					<Link href={whisperingPath('/settings/account')}>Account settings</Link>.
+					<Link href={resolve('/settings/account')}>Account settings</Link>.
 				</Field.Description>
 			</Field.Content>
 			<Badge variant="secondary" class="text-xs">Ready</Badge>

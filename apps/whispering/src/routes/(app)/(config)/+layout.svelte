@@ -13,7 +13,7 @@
 		MANUAL_RECORDING_BUTTON,
 		VAD_RECORDING_BUTTON,
 	} from '$lib/constants/audio';
-	import { whisperingPath } from '$lib/constants/urls';
+	import { resolve } from '$app/paths';
 	import { captureSurface } from '$lib/state/capture-surface.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
@@ -36,7 +36,7 @@
 		'flex h-14 w-full items-center justify-between px-4 sm:px-8',
 	)}
 >
-	<Button tooltip="Go home" href={whisperingPath('/')} variant="ghost" class="-ml-4">
+	<Button tooltip="Go home" href={resolve('/')} variant="ghost" class="-ml-4">
 		<span class="text-lg font-bold">whispering</span>
 	</Button>
 

@@ -10,7 +10,7 @@
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { goto } from '$app/navigation';
-	import { whisperingPath } from '$lib/constants/urls';
+	import { resolve } from '$app/paths';
 	import { readyTranscribers } from '$lib/settings/transcription-switcher';
 	import {
 		getSelectedTranscriptionService,
@@ -189,7 +189,7 @@
 					<Button
 						variant="outline"
 						onclick={() => {
-							goto(whisperingPath('/settings/processing'));
+							goto(resolve('/settings/processing'));
 							combobox.closeAndFocusTrigger();
 						}}
 					>
@@ -214,7 +214,7 @@
 					<Command.Item
 						value="add a model settings configure provider"
 						onSelect={() => {
-							goto(whisperingPath('/settings/processing'));
+							goto(resolve('/settings/processing'));
 							combobox.closeAndFocusTrigger();
 						}}
 						class="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground"

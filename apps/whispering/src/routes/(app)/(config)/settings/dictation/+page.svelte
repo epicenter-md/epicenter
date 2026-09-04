@@ -8,7 +8,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { AdvancedDisclosure, SettingSwitch } from '$lib/components/settings';
-	import { whisperingPath } from '$lib/constants/urls';
+	import { resolve } from '$app/paths';
 	import { polishDestination, polishStatus } from '$lib/operations/run-polish';
 	import { getWhisperingApp } from '$lib/whispering/context';
 
@@ -75,7 +75,7 @@
 						<KeyRoundIcon class="mt-0.5 size-4 shrink-0 text-amber-500" />
 						<p>
 							Polish is on, but the completion provider is not ready, so
-							transcripts still ship raw. <Link href={whisperingPath('/settings/processing')}
+							transcripts still ship raw. <Link href={resolve('/settings/processing')}
 								>Check completion settings</Link
 							> to start cleaning them up.
 						</p>

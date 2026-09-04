@@ -2,7 +2,7 @@
 	import { Link } from '@epicenter/ui/link';
 	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-	import { whisperingPath } from '$lib/constants/urls';
+	import { resolve } from '$app/paths';
 	import { polishStatus } from '$lib/operations/run-polish';
 	import { getWhisperingApp } from '$lib/whispering/context';
 
@@ -14,7 +14,7 @@
 
 {#if status === 'needs-key'}
 	<Link
-		href={whisperingPath('/settings/processing')}
+		href={resolve('/settings/processing')}
 		tooltip="Polish needs setup; transcripts currently ship raw"
 		class="{triggerClass} text-muted-foreground hover:text-foreground"
 	>
@@ -23,7 +23,7 @@
 	</Link>
 {:else if status === 'on'}
 	<Link
-		href={whisperingPath('/settings/dictation')}
+		href={resolve('/settings/dictation')}
 		tooltip="Polish is on"
 		class="{triggerClass} text-muted-foreground hover:text-foreground"
 	>
@@ -32,7 +32,7 @@
 	</Link>
 {:else}
 	<Link
-		href={whisperingPath('/settings/dictation')}
+		href={resolve('/settings/dictation')}
 		tooltip="Polish is off"
 		class="{triggerClass} text-muted-foreground hover:text-foreground"
 	>

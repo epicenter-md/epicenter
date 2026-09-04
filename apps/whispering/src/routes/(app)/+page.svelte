@@ -25,7 +25,7 @@
 		MAX_IMPORT_FILES,
 		MAX_IMPORT_FILE_SIZE,
 	} from '$lib/constants/import-formats';
-	import { whisperingPath } from '$lib/constants/urls';
+	import { resolve } from '$app/paths';
 	import { importFiles } from '$lib/operations/import';
 	import { selectCaptureSurface } from '$lib/operations/recording';
 	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
@@ -190,7 +190,7 @@
 			{#if inlineKeyProvider}
 				<ProviderConfigFields provider={inlineKeyProvider.id} secretsOnly />
 				<p class="text-muted-foreground text-sm">
-					<Link href={whisperingPath('/settings/processing')}>
+					<Link href={resolve('/settings/processing')}>
 						Change provider, model, or endpoint in Privacy &amp; Processing
 					</Link>
 				</p>
@@ -203,13 +203,13 @@
 					Set up in Epicenter Home
 				</Button>
 				<p class="text-muted-foreground text-sm">
-					Or <Link href={whisperingPath('/settings/processing')}>
+					Or <Link href={resolve('/settings/processing')}>
 						transcribe with a cloud provider
 					</Link> instead.
 				</p>
 			{:else}
 				<Button
-					href={whisperingPath('/settings/processing')}
+					href={resolve('/settings/processing')}
 					variant="outline"
 					class="w-full"
 				>
@@ -324,9 +324,9 @@
 				{#if hasActiveShortcut}
 					Your shortcut works
 					{tauri ? 'from any app.' : 'while this window is focused.'}
-					<Link href={whisperingPath('/settings/shortcuts')}>Configure shortcuts</Link>
+					<Link href={resolve('/settings/shortcuts')}>Configure shortcuts</Link>
 				{:else}
-					<Link href={whisperingPath('/settings/shortcuts')}>Set a shortcut</Link>
+					<Link href={resolve('/settings/shortcuts')}>Set a shortcut</Link>
 					{tauri ? 'to dictate from any app.' : 'to start recording.'}
 				{/if}
 			</p>

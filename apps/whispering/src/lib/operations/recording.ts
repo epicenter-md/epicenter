@@ -5,7 +5,7 @@ import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { reportRecordingMicLevel } from '#platform/recording-mic-level';
 import { goto } from '$app/navigation';
 import type { CaptureSurface } from '$lib/constants/audio';
-import { whisperingPath } from '$lib/constants/urls';
+import { resolve } from '$app/paths';
 import { logAnalyticsEvent } from '$lib/operations/analytics';
 import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
@@ -47,7 +47,7 @@ function reportDeviceAcquisitionOutcome(
 					'No microphone was selected, so we automatically connected to an available one. You can update your selection in settings.',
 				action: {
 					label: 'Open Settings',
-					onClick: () => goto(whisperingPath('/settings/recording')),
+					onClick: () => goto(resolve('/settings/recording')),
 				},
 			});
 			return;
@@ -58,7 +58,7 @@ function reportDeviceAcquisitionOutcome(
 					"Your previously selected microphone wasn't found, so we automatically connected to an available one.",
 				action: {
 					label: 'Open Settings',
-					onClick: () => goto(whisperingPath('/settings/recording')),
+					onClick: () => goto(resolve('/settings/recording')),
 				},
 			});
 			return;
