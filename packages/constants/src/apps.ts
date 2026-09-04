@@ -32,7 +32,19 @@ export const APPS = {
 	VOCAB: { port: 8888, url: 'https://vocab.epicenter.so' },
 } as const;
 
-export type AppId = keyof typeof APPS;
+/**
+ * A key into {@link APPS}, which is not an app id.
+ *
+ * `AppKey` rather than `AppId`, because the two name different things and the
+ * old name claimed the wrong one. These are catalog keys for a URL table
+ * (`API`, `SH`, `WHISPERING`), and two of them are not applications with an id
+ * at all: `API` is the hosted server and `SH` is the marketing site. An app id
+ * is the reverse-domain string an application stores under
+ * (`so.epicenter.vocab`), validated by `isAppId` in `#app-id` and spent by
+ * `createEpicenter` and `createHostedBrowserRedirectAuth`. A reader who met
+ * `AppId` here and grepped for it found the wrong concept.
+ */
+export type AppKey = keyof typeof APPS;
 
 /**
  * Dev listen port for the apps/api Bun runtime (`apps/api/server.ts`,
