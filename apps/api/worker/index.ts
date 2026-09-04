@@ -31,6 +31,7 @@ import {
 	resolveRequestOAuthPrincipal,
 	type ServerBindings,
 	StoreAuthority,
+	type StoreAuthorityStub,
 } from '@epicenter/server';
 import type { Context } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -143,7 +144,7 @@ mountStoreSyncApp(app, {
 			authority: (name) =>
 				bindings.STORE_AUTHORITY.get(
 					bindings.STORE_AUTHORITY.idFromName(name),
-				) as unknown as { fetch(request: Request): Promise<Response> },
+				) as unknown as StoreAuthorityStub,
 			ledger: (name) =>
 				bindings.GENERATIONS_LEDGER.get(
 					bindings.GENERATIONS_LEDGER.idFromName(name),
