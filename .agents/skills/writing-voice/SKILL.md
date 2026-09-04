@@ -35,15 +35,18 @@ it performs, such as making a turn legible without removing its uncertainty.
 
 ## Draft, Then Rehear
 
-During editorial flow, a proposed passage may use an earned reveal, contrast,
-metaphor, or closing turn when it makes the supplied material easier to hear. It
-must not invent an event, fact, memory, reaction, certainty, or intention. Do
-not turn a sparse source into a polished generality.
+During editorial development, a destination skill may propose an earned reveal,
+contrast, metaphor, or closing turn when it makes the supplied material easier
+to hear. Voice work may shape that expression, but must not invent an event,
+fact, memory, reaction, certainty, or intention. Do not turn a sparse source
+into a polished generality.
 
-`authored-capture` owns the capture flow. There, voice work may repair or
-rearrange source-authorized material. In the editorial flow, this skill helps
-make an adopted proposed passage sound like the writer rather than like generic
-polish.
+`authored-capture` identifies the source-authorized material and governs the
+first body's faithful amplification. Within that path, voice work may make only
+the mechanical repairs that `authored-capture` permits. During editorial
+development, this skill helps shape the proposed passage so it sounds like the
+writer before Braden evaluates it; after adoption, the ear pass verifies that
+the integrated passage still sounds like him rather than generic polish.
 
 After a whole draft exists, read it at speaking speed. Mark generic connective
 tissue, flattened rhythm, and places where the attention moves away from what

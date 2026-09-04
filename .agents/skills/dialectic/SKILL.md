@@ -32,6 +32,12 @@ multiple accounts are live, keep them distinct rather than flattening them into
 a summary. The user should be able to accept, reject, or correct the account
 itself.
 
+When the thing being developed is composed of multiple parts, the live object
+may be the relationship among them rather than any one part. Keep the parts
+distinct, and make each part's role, boundary, dependencies, and order visible.
+Do not assume that the whole must become one artifact merely because its parts
+were discovered together.
+
 ## What an articulation is
 
 An articulation is a rendering the user can stand inside and be specifically
@@ -160,6 +166,13 @@ respond with the tightest account that preserves the concreteness of the next
 articulation. Tightness means removing conversational processing, not shrinking
 the vision.
 
+Read reactions as evidence about the model's boundaries and granularity as well
+as its wording. “That belongs elsewhere” may identify a component boundary.
+“That is too strong” may change the model's intensity. “That is the right
+sentence” or “that is the right piece” may identify the governing unit.
+Preserve those signals in the next articulation instead of treating them as
+local approval alone.
+
 ## Make the collision checkable
 
 State the whole articulation first, then render enough of the situation for the
@@ -182,6 +195,10 @@ change the model. Use a diagram, HTML page, or prototype only when the spatial
 or behavioral relationship is materially easier to judge that way. If HTML is
 the right surface, read [references/example-turn.html](references/example-turn.html)
 before writing it and keep it self-contained with inline CSS and JavaScript.
+
+When the object has parts or stages, make its composition checkable: show what
+belongs together, what remains separate, what depends on what, and what order a
+person encounters it in.
 
 ## How it ends
 
