@@ -145,7 +145,7 @@ export const honeycrispDefinition = defineData({
  * owned the open and handed the application the two things it renders. There
  * is no route-owned open any more (ADR-0339): the handle opens the store for
  * this page's lifetime, and what an application is given is what
- * `epicenter.data` resolves. The narrowing was also already leaking, because
+ * `epicenter.state.data` carries. The narrowing was also already leaking, because
  * `persistence` was not the only document fact a person is shown: the sync
  * status line is another, and it lives on the store's own `sync` capability
  * (ADR-0340).

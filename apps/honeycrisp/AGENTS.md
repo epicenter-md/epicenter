@@ -22,9 +22,12 @@ owner its platform actually has.
 
 `definition` and `account` arrive together in that one file, which IS the store: an authority
 mints every generation (ADR-0336), so there is no accountless notebook.
-Nothing opens at construction. `epicenter.data` is a lazy getter, so a
-signed-out person meeting the gate pays no Web Lock, no IndexedDB, and no
-round trip, and reading it twice joins one open.
+**Nothing opens at construction, and opening is a verb.** `routes/+page.svelte`
+calls `epicenter.open()` once, after reading auth, so a signed-out person
+meeting the gate pays no Web Lock, no IndexedDB, and no round trip, and
+`/auth/callback` renders under the same layout without opening anything.
+Calling `open` again while it is opening joins the one attempt; calling it
+after a failure retries, which is what the gate's Try again button is.
 
 ```text
 epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>
@@ -36,7 +39,7 @@ first one down: the constructor states the opening application explicitly.
 An application that opened another's data would state its different id, and
 would then hold two stores, which ADR-0339 refuses until something needs it.
 
-**The generation is not in the URL and there is no picker.** `data` takes the
+**The generation is not in the URL and there is no picker.** `open` takes the
 newest copy this device holds, else the account's newest, else mints, and
 nothing stores the choice. It creates one only when the account's list comes
 back EMPTY, which is a first run: a device that could not SEE what the account
@@ -48,12 +51,17 @@ usable offline; one that holds none fetches the generation whole before
 returning, so a fresh account never renders empty while its state is arriving.
 
 That file exports ONE name, `epicenter`, which is `fromEpicenter` composed over
-the handle. Its one member is `boot`: `signed-out | opening | ready | failed`,
-with the store on `ready` and the error and the erase on `failed`. Signed-out is answered before anything
-opens, and it is a state rather than a failure, so the gate never sniffs an
-error to choose between "sign in" and "something broke". Both halves are lazy,
-so importing the leaf opens nothing: `/auth/callback` never reads `state` and
-never claims a lock.
+the handle. Its lifecycle member is `state`: `closed | opening | ready |
+failed`, with the store on `ready` and the error and the erase on `failed`.
+Signed-out is NOT one of them and is not this package's to answer: the route
+reads `auth.state` once and renders the gate, which is why the session's
+`closed` means one thing. Constructing the wrapper reads one state and
+subscribes and acquires nothing, so importing the leaf opens nothing.
+
+`state.data` is the whole of what `StoreShell` receives. It carries no `open`,
+`close`, `erase`, or disposal: those belong to the session that took the lock,
+the socket, and the listener together (ADR-0340), and the close stays private
+to `$lib/epicenter.svelte.ts` where the hot reload can reach it.
 
 `createHoneycrisp` turns that one opened store into the reactive application
 object the UI consumes. It adapts the document into Svelte-reactive named
@@ -139,6 +147,8 @@ only the default one is checked by an editor.
 
 ## Don'ts
 
+- Do not hand a component `epicenter`, or a lifecycle verb off it, when it only
+  needs the notes. `StoreShell` takes `data={epicenter.state.data}`.
 - Do not render a store error to a person as the message. `src/lib/boot-failure.ts`
   picks the sentence someone reads; the library's own wording goes underneath as
   detail, so a bug report keeps it and a wrong arm stays visible. Give a new

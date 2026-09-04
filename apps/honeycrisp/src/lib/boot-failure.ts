@@ -18,11 +18,13 @@
  * offered signing in again, which fixes neither. Naming the repair here is what
  * keeps the sentence and the button one decision.
  *
- * Two repairs, not three. `'go-to-notes'` sent a person to `/account`, and
- * there is one URL now (ADR-0339); the `Unaddressable` arm went with it,
- * because its remaining producer is an account naming no principal, which is a
- * signed-out person, and the Svelte wrapper answers that before anything
- * opens.
+ * Three repairs, and the third is the honest absence of one. `'go-to-notes'`
+ * sent a person to `/account`, and there is one URL now (ADR-0339); the
+ * `Unaddressable` arm went with it, because its remaining producer is an
+ * account naming no principal, which is a signed-out person, and the route
+ * answers that before anything opens. `'none'` arrived with
+ * `LocksUnsupported`: nothing a person does in the page changes whether their
+ * browser ships the API, so the gate says what happened and offers nothing.
  *
  * There is one store, so there is one set of sentences. The second argument
  * this took, naming which of two notebooks failed, went with the device store:
@@ -36,11 +38,14 @@
  * gone; give it a producer before giving it a sentence.
  */
 export type BootRepair =
-	/** Try again. Something outside this device has to change first. */
+	/** Open again. Something outside this device has to change first. */
 	| 'retry'
 	/** Sign out, then in as the account this device's copy belongs to, or erase
 	 * it (ADR-0325). Both are the person's, and neither happens by itself. */
-	| 'erase';
+	| 'erase'
+	/** Nothing, and saying so is the point. A button that cannot help is worse
+	 * than no button. */
+	| 'none';
 
 /**
  * Erase this device's copy, as the gate receives it.
@@ -59,9 +64,29 @@ export function bootFailure(error: unknown): BootFailure {
 	if (typeof error === 'object' && error !== null && 'name' in error) {
 		switch (error.name) {
 			case 'AlreadyOpen':
+				// A CONFIRMED ownership conflict and nothing else. The store used to
+				// answer this name for a missing Web Locks API and a failed lock
+				// request too, so this sentence told most of the people who reached
+				// it to close a window they did not have open.
 				return {
 					message:
 						'Another Honeycrisp window already has these notes open. Close it, then try again.',
+					repair: 'retry',
+				};
+			case 'LocksUnsupported':
+				// Not a conflict, and not a retry: this browser ships no Web Locks,
+				// so nothing here can prove one window owns the notes, and opening
+				// unguarded is the silent data loss the guard exists to prevent.
+				return {
+					message:
+						'This browser is too old to open your notes safely. Update it, or use a different one.',
+					repair: 'none',
+				};
+			case 'ClaimFailed':
+				// The mechanism failed and said nothing about who holds it, so the
+				// sentence does not guess either.
+				return {
+					message: 'Your notes could not be opened. Try again.',
 					repair: 'retry',
 				};
 			case 'BoundElsewhere':

@@ -11,10 +11,17 @@
 	// callable in the state that hands it over: erasing takes the same claim an
 	// open takes, so erasing an open store is refused by the store, and a failed
 	// open released its claim before it returned (ADR-0340).
+	//
+	// So does the retry, and for the same reason it is a prop rather than
+	// `location.reload()`: opening is a verb now, and a failed session opens
+	// again from where it is. The route passes `epicenter.open`, so trying again
+	// re-runs exactly the thing that failed instead of throwing the document
+	// away to get back to a state the session can already reach.
 	let {
 		error = undefined,
 		erase: eraseReplica = undefined,
-	}: { error?: unknown; erase?: EraseReplica } = $props();
+		retry = undefined,
+	}: { error?: unknown; erase?: EraseReplica; retry?: () => void } = $props();
 
 	// One decision, made in `bootFailure`: the sentence and the control below it
 	// are the same answer, so nothing here re-reads the error to pick a verb.
@@ -44,11 +51,11 @@
 			eraseFailure = bootFailure(error).message;
 			return;
 		}
-		// Reloaded rather than navigated: `epicenter.data` memoized the failure
-		// that brought them here, so a second read of it inside this page is the
-		// same refusal about a copy that no longer exists. A fresh document
-		// resolves what the account has and opens it.
-		location.reload();
+		// Opened rather than reloaded. The refusal that brought them here was
+		// about a copy that no longer exists, and a session that failed opens
+		// again: this resolves what the account has now and bootstraps it. The
+		// reload this used to do was working around a memo that is gone.
+		retry?.();
 	}
 </script>
 
@@ -65,7 +72,11 @@
 		</div>
 
 		{#if failure?.repair === 'retry'}
-			<Button size="lg" onclick={() => location.reload()}>Try again</Button>
+			<Button size="lg" onclick={() => retry?.()}>Try again</Button>
+		{:else if failure?.repair === 'none'}
+			<!-- Nothing to offer. A runtime with no Web Locks is not repaired by
+			     trying again or by signing in as somebody else, and a button that
+			     cannot help is worse than no button. -->
 		{:else if failure?.repair === 'erase'}
 			<div class="flex flex-col items-center gap-2">
 				<!--

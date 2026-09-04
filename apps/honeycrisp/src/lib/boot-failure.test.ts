@@ -33,9 +33,32 @@ describe('bootFailure', () => {
 		expect(
 			bootFailure({
 				name: 'AlreadyOpen',
-				message: 'This process already has epicenter/v4/x/y/1 open',
+				message: 'Another context already has epicenter/v4/x/y/1 open',
 			}).message,
 		).toMatch(/another honeycrisp window/i);
+	});
+
+	test('only a confirmed conflict says to close a window', () => {
+		// The store used to answer `AlreadyOpen` for a missing Web Locks API, a
+		// lock request that threw, and an address that already held a
+		// generation. Three quarters of the people who read this sentence were
+		// being told to close a window they did not have open.
+		for (const name of [
+			'LocksUnsupported',
+			'ClaimFailed',
+			'GenerationExists',
+		]) {
+			expect(bootFailure({ name }).message).not.toMatch(/window/i);
+		}
+	});
+
+	test('a browser with no Web Locks is told the truth and offered nothing', () => {
+		// There is no repair in the page: the API is missing, and opening
+		// unguarded is the silent data loss the guard exists to prevent. A
+		// button that cannot help is worse than no button.
+		const failure = bootFailure({ name: 'LocksUnsupported' });
+		expect(failure.repair).toBe('none');
+		expect(failure.message).toMatch(/browser/i);
 	});
 
 	test('an unrecognized failure admits it rather than inventing a reason', () => {
@@ -52,6 +75,9 @@ describe('bootFailure', () => {
 			/replica|authority|database|document|log|head|dial|socket|struct|principal|projection|binding|generation/i;
 		for (const error of [
 			{ name: 'AlreadyOpen' },
+			{ name: 'LocksUnsupported' },
+			{ name: 'ClaimFailed' },
+			{ name: 'GenerationExists' },
 			{ name: 'Unaddressable' },
 			{ name: 'BoundElsewhere' },
 			{ name: 'GenerationNotFound' },

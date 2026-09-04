@@ -21,13 +21,15 @@ browser as a static site.
 Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/data/index.ts`) and opens it as a store the app owns:
 
 ```txt
-createEpicenter({ appId, definition, account, binding })  the handle, composed once
-epicenter.data                                            the store, opened on first read
+createEpicenter({ appId, definition, account, binding })  the handle, composed once, inert
+epicenter.open()                                          the one thing that acquires
+epicenter.state                                           closed | opening | ready | failed
+epicenter.state.data                                      the store, on `ready`
 epicenter.eraseReplica()                                  the one deleting verb
 data.tables.notes.rows                                    synchronous from here on
 ```
 
-The definition names the application, and `data` resolves which exact
+The definition names the application, and `open` resolves which exact
 generation of it to open: the newest copy this device holds, else the account's
 newest, else a fresh one (ADR-0292, ADR-0339). Nobody chooses that number and
 no URL carries it. The store lives at
