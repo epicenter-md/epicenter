@@ -1,15 +1,5 @@
 # Backlog
 
-## Remove Local Mail's headless continuous watcher
-
-- Desired result: Remove `local-mail reconcile --watch` so the open desktop app
-  is the only continuous reconcile owner while a one-shot `reconcile` remains
-  available for explicit delivery and freshness.
-- Grounding:
-  [ADR-0116](docs/adr/0116-local-mail-is-desktop-first-one-bun-engine-no-background-mail-service.md)
-  says Local Mail does not update automatically while the app is closed.
-- Revisit when: Local Mail next changes its CLI or synchronization lifecycle.
-
 ## Make Sign in with Apple a supported product path
 
 - Desired result: Expose and support Sign in with Apple wherever Epicenter
