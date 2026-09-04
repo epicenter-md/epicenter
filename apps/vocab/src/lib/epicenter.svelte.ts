@@ -26,6 +26,7 @@
 import { createEpicenter } from '@epicenter/app';
 import { fromEpicenter } from '@epicenter/svelte';
 import { vocabDefinition } from '@epicenter/vocab';
+import { APP_ID } from '$lib/app-id';
 import { authClient } from '$lib/platform/auth';
 import { binding } from '$lib/platform/binding';
 
@@ -37,7 +38,7 @@ import { binding } from '$lib/platform/binding';
  * which has no close on it at all.
  */
 const handle = createEpicenter({
-	appId: 'so.epicenter.vocab',
+	appId: APP_ID,
 	definition: vocabDefinition,
 	account: authClient,
 	binding,

@@ -1,4 +1,5 @@
 import { field } from '@epicenter/data/definition';
+import { APP_ID } from '../app-id';
 /**
  * Whispering's inert data definition.
  *
@@ -183,7 +184,7 @@ const settingsKv = {
 } as const;
 
 export const whisperingDefinition = defineData({
-	id: 'so.epicenter.whispering',
+	id: APP_ID,
 	title: 'Whispering',
 	kv: settingsKv,
 	tables: {

@@ -3,6 +3,7 @@ import type { AuthClient } from '@epicenter/auth';
 import type { ReplicaData } from '@epicenter/data';
 import type { SyncConnectionStatus } from '@epicenter/data/sync';
 import { binding } from '#platform/binding';
+import { APP_ID } from '../app-id';
 import {
 	type WhisperingSettingValues,
 	whisperingDefinition,
@@ -19,9 +20,6 @@ import {
 } from './recordings';
 
 export type { WhisperingBlobs } from './recording-audio';
-
-/** The application this opens its store as, self-claimed (ADR-0324, ADR-0334). */
-const APP_ID = 'so.epicenter.whispering';
 
 /** One account's retained replica of the portable work. */
 export type WhisperingAccountData = ReplicaData<typeof whisperingDefinition>;

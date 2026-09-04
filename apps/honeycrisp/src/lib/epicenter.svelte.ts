@@ -29,6 +29,7 @@ import { createEpicenter } from '@epicenter/app';
 import { fromEpicenter } from '@epicenter/svelte';
 import { authClient } from '#platform/auth';
 import { binding } from '#platform/binding';
+import { APP_ID } from '$lib/app-id';
 import { honeycrispDefinition } from '$lib/data/index.js';
 
 /**
@@ -40,7 +41,7 @@ import { honeycrispDefinition } from '$lib/data/index.js';
  * application imports is the session, which has no close on it at all.
  */
 const handle = createEpicenter({
-	appId: honeycrispDefinition.id,
+	appId: APP_ID,
 	definition: honeycrispDefinition,
 	account: authClient,
 	binding,
