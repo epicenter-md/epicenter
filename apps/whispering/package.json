@@ -9,23 +9,7 @@
 		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"imports": {
-		"#platform/commands": "./src/lib/commands.tauri.ts",
 		"#platform/analytics": "./src/lib/services/analytics/index.tauri.ts",
-		"#platform/blobs": {
-			"epicenter-host": "./src/lib/services/blobs/index.epicenter-host.ts",
-			"default": "./src/lib/services/blobs/index.browser.ts"
-		},
-		"#platform/download": "./src/lib/services/download/index.tauri.ts",
-		"#platform/http": "./src/lib/services/http/index.tauri.ts",
-		"#platform/os": "./src/lib/platform/os.tauri.ts",
-		"#platform/system-shortcuts": "./src/lib/platform/system-shortcuts.tauri.ts",
-		"#platform/recorder": "./src/lib/services/recorder/index.tauri.ts",
-		"#platform/recording-mic-level": "./src/lib/recording-overlay/mic-level.tauri.ts",
-		"#platform/dictation-indicator": "./src/lib/dictation-indicator/DictationIndicator.tauri.svelte",
-		"#platform/text": "./src/lib/services/text/index.tauri.ts",
-		"#platform/manual-recorder-config": "./src/lib/state/manual-recorder-config.tauri.ts",
-		"#platform/tauri": "./src/lib/tauri.tauri.ts",
-		"#platform/os-notify": "./src/lib/report/os-notify.tauri.ts",
 		"#platform/auth": {
 			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
@@ -34,6 +18,26 @@
 			"epicenter-host": "./src/lib/platform/base-path.epicenter-host.ts",
 			"default": "./src/lib/platform/base-path.browser.ts"
 		},
+		"#platform/binding": {
+			"epicenter-host": "./src/lib/platform/binding.epicenter-host.ts",
+			"default": "./src/lib/platform/binding.browser.ts"
+		},
+		"#platform/blobs": {
+			"epicenter-host": "./src/lib/services/blobs/index.epicenter-host.ts",
+			"default": "./src/lib/services/blobs/index.browser.ts"
+		},
+		"#platform/commands": "./src/lib/commands.tauri.ts",
+		"#platform/dictation-indicator": "./src/lib/dictation-indicator/DictationIndicator.tauri.svelte",
+		"#platform/download": "./src/lib/services/download/index.tauri.ts",
+		"#platform/http": "./src/lib/services/http/index.tauri.ts",
+		"#platform/manual-recorder-config": "./src/lib/state/manual-recorder-config.tauri.ts",
+		"#platform/os": "./src/lib/platform/os.tauri.ts",
+		"#platform/os-notify": "./src/lib/report/os-notify.tauri.ts",
+		"#platform/recorder": "./src/lib/services/recorder/index.tauri.ts",
+		"#platform/recording-mic-level": "./src/lib/recording-overlay/mic-level.tauri.ts",
+		"#platform/system-shortcuts": "./src/lib/platform/system-shortcuts.tauri.ts",
+		"#platform/tauri": "./src/lib/tauri.tauri.ts",
+		"#platform/text": "./src/lib/services/text/index.tauri.ts",
 		"#platform/window-events": "./src/lib/window-events.tauri.ts"
 	},
 	"scripts": {
@@ -74,6 +78,7 @@
 	"type": "module",
 	"dependencies": {
 		"@aptabase/web": "^0.4.3",
+		"@epicenter/app": "workspace:*",
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/blobs": "workspace:*",

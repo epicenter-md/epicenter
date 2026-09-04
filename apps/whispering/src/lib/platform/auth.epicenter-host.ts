@@ -8,9 +8,10 @@ import { desktopAuthBootstrap } from './desktop-auth-bootstrap.epicenter-host';
  * It holds no credential, so `openWebSocket` denies permanently: desktop sync
  * belongs to the host process, not a window.
  */
-export const auth = fromAuth(
-	createDesktopBrokerAuth({
-		bootstrap: desktopAuthBootstrap,
-		brokerBaseURL: window.location.origin,
-	}),
-);
+export const authClient = createDesktopBrokerAuth({
+	bootstrap: desktopAuthBootstrap,
+	brokerBaseURL: window.location.origin,
+});
+
+// Boot code takes `authClient`; a component that must track takes `auth`.
+export const auth = fromAuth(authClient);

@@ -1,23 +1,8 @@
+import { createEpicenter } from '@epicenter/app';
 import type { AuthClient } from '@epicenter/auth';
-
-/** The principal half of an account address, as the auth client states it. */
-type PrincipalId = Extract<
-	AuthClient['state'],
-	{ principalId: unknown }
->['principalId'];
-
 import type { ReplicaData } from '@epicenter/data';
-import {
-	type DatabaseAccount,
-	openDatabase,
-	resolveGeneration,
-} from '@epicenter/data/browser';
-import {
-	attachStoreSync,
-	type SyncConnection,
-	type SyncConnectionStatus,
-} from '@epicenter/data/sync';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import type { SyncConnectionStatus } from '@epicenter/data/sync';
+import { binding } from '#platform/binding';
 import {
 	type WhisperingSettingValues,
 	whisperingDefinition,
@@ -41,22 +26,6 @@ const APP_ID = 'so.epicenter.whispering';
 /** One account's retained replica of the portable work. */
 export type WhisperingAccountData = ReplicaData<typeof whisperingDefinition>;
 
-/**
- * Failures that reach `reportBackgroundError`: work nobody is awaiting, so the
- * only honest response is a log line. The `cause` is `unknown` because these
- * arrive from rejected promises and transport callbacks the app fired and
- * forgot.
- */
-export const WhisperingBackgroundError = defineErrors({
-	AppFailed: ({ cause }: { cause: unknown }) => ({
-		message: 'Whispering app background work failed',
-		cause,
-	}),
-});
-export type WhisperingBackgroundError = InferErrors<
-	typeof WhisperingBackgroundError
->;
-
 /** Environment-owned inputs for one fully acquired Whispering app. */
 export type WhisperingAppDependencies = {
 	/**
@@ -69,7 +38,6 @@ export type WhisperingAppDependencies = {
 	 * Where work nobody awaited goes when it fails: a sync dial that could not
 	 * reach the network, a discard on the way to adopting a superseded document.
 	 */
-	reportBackgroundError(cause: unknown): void;
 };
 
 /**
@@ -181,7 +149,7 @@ export type WhisperingApp = {
  * later.
  */
 export async function openWhisperingApp(
-	{ auth, blobs, reportBackgroundError }: WhisperingAppDependencies,
+	{ auth, blobs }: WhisperingAppDependencies,
 	{ signal }: { signal?: AbortSignal } = {},
 ): Promise<WhisperingApp> {
 	signal?.throwIfAborted();
@@ -195,12 +163,7 @@ export async function openWhisperingApp(
 		);
 	}
 	signal?.throwIfAborted();
-	const account = await openAccountRuntime({
-		auth,
-		principalId: auth.state.principalId,
-		reportBackgroundError,
-		signal,
-	});
+	const account = await openAccountRuntime({ auth, signal });
 
 	const work = account.data;
 	const settingsDomain = createWhisperingSettings({ kv: work.kv });
@@ -237,91 +200,57 @@ type AccountRuntime = {
 };
 
 /**
- * Open one account's replica and see it through its bound gate.
+ * Open one account's replica through the one opener there is (ADR-0339).
  *
- * Everything sync-shaped lives here, so nothing in a device-only generation can
- * so much as name it. On any failure it lets go of everything it acquired and
- * rethrows.
+ * This file used to hold its own copy: resolve the generation, open the exact
+ * address, attach sync, hand back a disposer, and unwind all of it by hand on
+ * the way out. Every line of that is in `@epicenter/app`, and one line of it
+ * was not here at all: the shared opener registers the page-hide flush, so the
+ * last few seconds before a tab closes reach durable storage instead of being
+ * lost with no error anywhere.
+ *
+ * Construction is inert and `open` is the verb (ADR-0344), so the handle is
+ * built and opened in one place and the abort is checked around it rather than
+ * threaded through it. The handle is module-local to this call because
+ * `close` is on it, and this app's disposal is the only thing allowed to run
+ * it.
  */
 async function openAccountRuntime({
 	auth,
-	principalId,
-	reportBackgroundError,
 	signal,
 }: {
 	auth: AuthClient;
-	/** Exactly what an account address needs, beside the server URL. */
-	principalId: PrincipalId;
-	reportBackgroundError(cause: unknown): void;
 	signal?: AbortSignal;
 }): Promise<AccountRuntime> {
-	const account = whisperingAccount(auth, principalId);
-	const generation = await resolveAccountGeneration(auth, principalId);
-	const opened = await openDatabase(whisperingDefinition, {
+	const handle = createEpicenter({
 		appId: APP_ID,
-		generation,
-		account,
+		definition: whisperingDefinition,
+		account: auth,
+		binding,
 	});
+	const opened = await handle.open();
 	if (opened.error !== null) throw opened.error;
-	// The store and the thing that ends it, separately (ADR-0340): what has to
-	// be released here is more than the document.
-	const { store: data, close } = opened.data;
+	const data = opened.data;
 
-	let sync: SyncConnection | undefined;
+	// An abort that lands while the open was in flight releases everything the
+	// open took, which is the whole of what this used to unwind by hand.
 	try {
 		signal?.throwIfAborted();
-		const connection = attachStoreSync({
-			store: data,
-			transport: {
-				openWebSocket: (url) => auth.openWebSocket(url),
-			},
-			onTransportError: reportBackgroundError,
-		});
-		sync = connection;
-
-		return {
-			data,
-			syncStatus: () => {
-				const status = connection.status();
-				return status.denied ? undefined : status;
-			},
-			dispose: async () => {
-				connection[Symbol.dispose]();
-				await close();
-			},
-		};
 	} catch (cause) {
-		sync?.[Symbol.dispose]();
-		await close().catch(() => undefined);
+		await handle.close();
 		throw cause;
 	}
-}
 
-/**
- * The generation this device opens: its own newest copy, or the account's, and
- * a mint only when the account holds none (ADR-0292, ADR-0293).
- */
-async function resolveAccountGeneration(
-	auth: AuthClient,
-	principalId: PrincipalId,
-): Promise<number> {
-	const resolved = await resolveGeneration(whisperingDefinition, {
-		appId: APP_ID,
-		account: whisperingAccount(auth, principalId),
-	});
-	if (resolved.error !== null) throw resolved.error;
-	return resolved.data.generation;
-}
-
-/** The account half of every call in this file, spelled once. */
-function whisperingAccount(
-	auth: AuthClient,
-	principalId: PrincipalId,
-): DatabaseAccount {
 	return {
-		baseURL: auth.connection.baseURL,
-		principalId,
-		fetch: (input, init) => auth.fetch(input, init),
+		data,
+		// Read off the store's own connection (ADR-0340) rather than off a
+		// `SyncConnection` this file held: a denied replica works offline and
+		// shows nothing, correctly.
+		syncStatus: () => {
+			const status = data.sync.status();
+			return status?.denied === false ? status : undefined;
+		},
+		dispose: () => handle.close(),
 	};
 }
 

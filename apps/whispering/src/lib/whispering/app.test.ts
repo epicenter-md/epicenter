@@ -193,7 +193,6 @@ function dependencies(auth: AuthClient): WhisperingAppDependencies {
 	return {
 		auth,
 		blobs: { local, remote: null },
-		reportBackgroundError: () => undefined,
 	};
 }
 

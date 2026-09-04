@@ -5,14 +5,15 @@ import { fromAuth } from '@epicenter/auth/svelte';
 // so it authenticates with the first-party Better Auth session cookie rather than
 // running PKCE against its own origin. See createSameOriginCookieAuth. The default
 // callbackURL (the current path) returns the user to where they were after sign-in.
-export const auth = fromAuth(
-	createSameOriginCookieAuth({
-		baseURL: window.location.origin,
-	}),
-);
+export const authClient = createSameOriginCookieAuth({
+	baseURL: window.location.origin,
+});
+
+// Boot code takes `authClient`; a component that must track takes `auth`.
+export const auth = fromAuth(authClient);
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
-		auth[Symbol.dispose]();
+		authClient[Symbol.dispose]();
 	});
 }
