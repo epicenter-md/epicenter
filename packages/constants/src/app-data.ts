@@ -36,6 +36,7 @@ export const EPICENTER_BUNDLE_IDENTIFIER = 'so.epicenter';
  * pulling `node:os` in behind it.
  */
 export { isAppId } from './app-id.js';
+
 import { isAppId } from './app-id.js';
 
 /**
@@ -47,17 +48,19 @@ import { isAppId } from './app-id.js';
  * apps are composed directly, so admission has no other way to know the names
  * are taken.
  *
- * One entry, and `local-mail` is deliberately not the second any more. Local
- * Mail became an Epicenter application and its storage moved under its
- * reverse-domain application id (ADR-0317), so the bare label reserves a
- * directory nothing writes to. Reserving a name no owner holds is a claim that
- * has to be read as true and is not.
+ * One entry, and it is reverse domain like every other app id (ADR-0204). Local
+ * Mail is deliberately not the second: it became an Epicenter application and
+ * its storage moved under its own reverse-domain id (ADR-0317), so a bare label
+ * here would reserve a directory nothing writes to, and reserving a name no
+ * owner holds is a claim that has to be read as true and is not. Local Books
+ * kept a bare label longer than that, which is the whole reason `isAppId` used
+ * to admit one; it took ADR-0204's rename and the grammar closed behind it.
  *
  * An app id is deliberately not a surface id: Local Books has no launchable
  * surface at all, and coupling a mailbox's location to a name Home's launcher
  * owns would let a surface rename strand data (ADR-0201).
  */
-export const COMPOSED_APP_IDS = ['local-books'] as const;
+export const COMPOSED_APP_IDS = ['so.epicenter.local-books'] as const;
 
 export type ComposedAppId = (typeof COMPOSED_APP_IDS)[number];
 

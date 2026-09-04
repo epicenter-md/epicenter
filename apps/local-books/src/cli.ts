@@ -87,7 +87,7 @@ Options:
 Environment:
   QB_SANDBOX_CLIENT_ID / QB_SANDBOX_CLIENT_SECRET          Intuit sandbox app keys (auth --qb-env sandbox).
   QB_PRODUCTION_CLIENT_ID / QB_PRODUCTION_CLIENT_SECRET    Intuit production app keys (auth --qb-env production).
-  EPICENTER_DATA_DIR                Where Epicenter stores everything; local-books lives in <root>/apps/local-books.
+  EPICENTER_DATA_DIR                Where Epicenter stores everything; local-books lives in <root>/apps/so.epicenter.local-books.
   LOCAL_BOOKS_QB_REALM              Target company when more than one is connected (same as --realm).
   LOCAL_BOOKS_TOKEN_FILE            Override the credentials file path (default: <app-dir>/credentials.json).
   LOCAL_BOOKS_READ_ONLY             Disable recategorize (reads only).

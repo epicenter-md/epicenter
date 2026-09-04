@@ -78,5 +78,9 @@ export function tempRoot(): {
 	cleanup: () => void;
 } {
 	const { dir, cleanup } = tempDir();
-	return { root: dir, appDir: join(dir, 'apps', 'local-books'), cleanup };
+	return {
+		root: dir,
+		appDir: join(dir, 'apps', 'so.epicenter.local-books'),
+		cleanup,
+	};
 }

@@ -23,7 +23,7 @@ export type QbEnvironment = Static<typeof QbEnvironmentSchema>;
  */
 export type AppConfig = {
 	/**
-	 * Local Books' one directory, `<epicenter-root>/apps/local-books`. Not the
+	 * Local Books' one directory, `<epicenter-root>/apps/so.epicenter.local-books`. Not the
 	 * Epicenter root above it: the app never sees that, and never computes an OS
 	 * application-data path (ADR-0201).
 	 */

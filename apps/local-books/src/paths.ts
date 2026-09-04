@@ -7,7 +7,7 @@ import {
 } from '@epicenter/constants/app-data';
 
 /**
- * Local Books' one directory: `<epicenter-root>/apps/local-books`.
+ * Local Books' one directory: `<epicenter-root>/apps/so.epicenter.local-books`.
  *
  * The app computes no OS application-data path of its own. Epicenter owns
  * exactly one root and `EPICENTER_DATA_DIR` is the only override, so a CLI run
@@ -20,7 +20,10 @@ import {
  * claimable by an admitted folder of the same name (ADR-0201).
  */
 export function booksDataDir(): string {
-	return appDataDir(epicenterDataRoot(), 'local-books' satisfies ComposedAppId);
+	return appDataDir(
+		epicenterDataRoot(),
+		'so.epicenter.local-books' satisfies ComposedAppId,
+	);
 }
 
 /**

@@ -161,9 +161,11 @@ describe('credentials path resolution', () => {
 		try {
 			withFileEnv(undefined, () => {
 				const config = loadConfig();
-				expect(config.dataDir).toBe('/tmp/lb-resolve/apps/local-books');
+				expect(config.dataDir).toBe(
+					'/tmp/lb-resolve/apps/so.epicenter.local-books',
+				);
 				expect(config.credentialsPath).toBe(
-					credentialsFilePath('/tmp/lb-resolve/apps/local-books'),
+					credentialsFilePath('/tmp/lb-resolve/apps/so.epicenter.local-books'),
 				);
 			});
 		} finally {

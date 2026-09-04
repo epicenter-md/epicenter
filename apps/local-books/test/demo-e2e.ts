@@ -12,7 +12,7 @@ import { makeInvoice, startMockQbServer } from './mock-qb-server.ts';
 
 const BIN = join(import.meta.dir, '../src/bin.ts');
 const ROOT = '/tmp/local-books-demo';
-const APP_DIR = join(ROOT, 'apps', 'local-books');
+const APP_DIR = join(ROOT, 'apps', 'so.epicenter.local-books');
 rmSync(ROOT, { recursive: true, force: true });
 
 async function sh(

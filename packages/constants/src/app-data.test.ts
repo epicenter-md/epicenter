@@ -189,7 +189,9 @@ test('an app directory sits under apps/', () => {
 	expect(appDataDir('/root', 'so.epicenter.local-mail')).toBe(
 		'/root/apps/so.epicenter.local-mail',
 	);
-	expect(appDataDir('/root', 'local-books')).toBe('/root/apps/local-books');
+	expect(appDataDir('/root', 'so.epicenter.local-books')).toBe(
+		'/root/apps/so.epicenter.local-books',
+	);
 });
 
 test('every id the composition root spent composes', () => {
@@ -198,10 +200,14 @@ test('every id the composition root spent composes', () => {
 	}
 });
 
-test('an admitted folder name is an app id too', () => {
-	// The id space is open: an admitted app's id is its folder name (ADR-0179),
-	// and it names its directory the same way a composed engine's literal does.
-	expect(appDataDir('/root', 'field-notes')).toBe('/root/apps/field-notes');
+test('a bare folder name is not an app id', () => {
+	// The id space is closed to one grammar (ADR-0204): an app declares one
+	// reverse-domain identifier and that identifier names its directory. This
+	// used to assert the opposite, citing ADR-0179's admitted-folder clause,
+	// which ADR-0204 withdrew and ADR-0227 then emptied by refusing the
+	// installed-app plane outright.
+	expect(isAppId('field-notes')).toBe(false);
+	expect(() => appDataDir('/root', 'field-notes')).toThrow(/app id/);
 });
 
 test('an app id that is not one lowercase segment is refused', () => {
@@ -223,13 +229,13 @@ test('an app id that is not one lowercase segment is refused', () => {
 });
 
 test('a partition sits under the app-chosen kind directory', () => {
-	const mail = appDataDir('/root', 'local-mail');
+	const mail = appDataDir('/root', 'so.epicenter.local-mail');
 	expect(partitionDir(mail, 'accounts', '104217392837465102938')).toBe(
-		'/root/apps/local-mail/accounts/104217392837465102938',
+		'/root/apps/so.epicenter.local-mail/accounts/104217392837465102938',
 	);
-	const books = appDataDir('/root', 'local-books');
+	const books = appDataDir('/root', 'so.epicenter.local-books');
 	expect(partitionDir(books, 'companies', '9130354674627613')).toBe(
-		'/root/apps/local-books/companies/9130354674627613',
+		'/root/apps/so.epicenter.local-books/companies/9130354674627613',
 	);
 });
 
