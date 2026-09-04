@@ -16,7 +16,7 @@
 
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
+import { bearerSubprotocol } from '@epicenter/sync';
 import { Ok, type Result } from 'wellcrafted/result';
 // PersistedAuth and OAuthTokenGrant are intentionally not on the public root:
 // they are the credential-shaped cell and grant, internal to auth core.
@@ -769,9 +769,10 @@ test('network gate: no WebSocket bearer protocol until /api/session confirms sam
 		},
 	});
 
-	const socketPromise = auth.openWebSocket('ws://localhost:8787/sync', [
-		'epicenter.v1',
-	]);
+	const socketPromise = auth.openWebSocket({
+		url: 'ws://localhost:8787/sync',
+		protocols: ['epicenter.v1'],
+	});
 	await Promise.resolve();
 	expect(openings).toEqual([]);
 	resolveApiSession(json(apiSessionBody('user-1')));
@@ -779,7 +780,7 @@ test('network gate: no WebSocket bearer protocol until /api/session confirms sam
 	expect(openings).toEqual([
 		{
 			url: 'ws://localhost:8787/sync',
-			protocols: ['epicenter.v1', `${BEARER_SUBPROTOCOL_PREFIX}access-token`],
+			protocols: ['epicenter.v1', bearerSubprotocol('access-token')],
 		},
 	]);
 	auth[Symbol.dispose]();
@@ -799,7 +800,7 @@ test('openWebSocket rejects with a permanent denial when signed out', async () =
 	});
 
 	await expect(
-		auth.openWebSocket('ws://localhost:8787/sync'),
+		auth.openWebSocket({ url: 'ws://localhost:8787/sync', protocols: [] }),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
 		permanence: 'permanent',
@@ -828,7 +829,7 @@ test('openWebSocket rejects with a permanent denial after /api/session rejects t
 	});
 
 	await expect(
-		auth.openWebSocket('ws://localhost:8787/sync'),
+		auth.openWebSocket({ url: 'ws://localhost:8787/sync', protocols: [] }),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
 		permanence: 'permanent',
@@ -863,7 +864,7 @@ test('a stale grant that cannot REACH the token endpoint denies transiently and 
 	});
 
 	await expect(
-		auth.openWebSocket('ws://localhost:8787/sync'),
+		auth.openWebSocket({ url: 'ws://localhost:8787/sync', protocols: [] }),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
 		permanence: 'transient',
@@ -920,7 +921,7 @@ test('openWebSocket rejects with a transient denial when /api/session is unreach
 	});
 
 	await expect(
-		auth.openWebSocket('ws://localhost:8787/sync'),
+		auth.openWebSocket({ url: 'ws://localhost:8787/sync', protocols: [] }),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
 		permanence: 'transient',

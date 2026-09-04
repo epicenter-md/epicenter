@@ -1,8 +1,6 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import {
-	BEARER_SUBPROTOCOL_PREFIX,
-	type OpenWebSocketDenial,
-} from '@epicenter/sync/auth-subprotocol';
+import { bearerSubprotocol } from '@epicenter/sync/auth-subprotocol';
+import type { OpenWebSocketDenial } from '@epicenter/sync/transport';
 import type { Logger } from 'wellcrafted/logger';
 import type { AuthClient, AuthFetch } from './auth-contract.js';
 import { OpenWebSocketDenied } from './auth-errors.js';
@@ -136,7 +134,7 @@ export function createOAuthAppAuth({
 		},
 		fetch: authedFetch,
 		getProfile: () => getProfileVia(authedFetch, baseURL),
-		async openWebSocket(url, protocols = []) {
+		async openWebSocket(address) {
 			const authorization = await authority.authorize();
 			if (authorization.status === 'denied') {
 				const denial: OpenWebSocketDenial = OpenWebSocketDenied({
@@ -145,9 +143,9 @@ export function createOAuthAppAuth({
 				}).error;
 				throw denial;
 			}
-			return new WebSocketImpl(String(url), [
-				...protocols,
-				`${BEARER_SUBPROTOCOL_PREFIX}${authorization.accessToken}`,
+			return new WebSocketImpl(address.url, [
+				...address.protocols,
+				bearerSubprotocol(authorization.accessToken),
 			]);
 		},
 		[Symbol.dispose]() {

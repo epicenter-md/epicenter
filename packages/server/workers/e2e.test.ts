@@ -17,7 +17,13 @@
  * single shared authority looks like, which would be a data leak rather than a
  * feature.
  */
+
 import { env, runInDurableObject, SELF } from 'cloudflare:test';
+import {
+	bearerSubprotocol,
+	formatSubprotocols,
+	MAIN_SUBPROTOCOL,
+} from '@epicenter/sync';
 import { describe, expect, it } from 'vitest';
 
 import type { ReplicaReport, StoreTestReplica } from './replica.js';
@@ -196,7 +202,10 @@ describe('two devices on one account converge', () => {
 			new Request(`${ORIGIN}/api/store/v1/sync?dataId=../escape&cursor=0`, {
 				headers: {
 					Upgrade: 'websocket',
-					'sec-websocket-protocol': 'epicenter, bearer.device:someone',
+					'sec-websocket-protocol': formatSubprotocols([
+						MAIN_SUBPROTOCOL,
+						bearerSubprotocol('device:someone'),
+					]),
 				},
 			}),
 		);

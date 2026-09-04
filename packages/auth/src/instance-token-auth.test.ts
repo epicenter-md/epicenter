@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
+import { bearerSubprotocol } from '@epicenter/sync';
 import type {
 	AuthClient,
 	AuthFetch,
@@ -166,12 +166,13 @@ describe('createInstanceTokenAuth', () => {
 		});
 		await flush();
 
-		await auth.openWebSocket('ws://localhost:8788/api/rooms/r', [
-			'existing-protocol',
-		]);
+		await auth.openWebSocket({
+			url: 'ws://localhost:8788/api/rooms/r',
+			protocols: ['existing-protocol'],
+		});
 		expect(wsCalls.at(-1)).toEqual({
 			url: 'ws://localhost:8788/api/rooms/r',
-			protocols: ['existing-protocol', `${BEARER_SUBPROTOCOL_PREFIX}${token}`],
+			protocols: ['existing-protocol', bearerSubprotocol(token)],
 		});
 	});
 

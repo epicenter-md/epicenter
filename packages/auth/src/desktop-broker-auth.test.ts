@@ -129,7 +129,7 @@ test('openWebSocket is denied permanently', async () => {
 	});
 
 	expect(
-		auth.openWebSocket('wss://api.epicenter.so/rooms'),
+		auth.openWebSocket({ url: 'wss://api.epicenter.so/rooms', protocols: [] }),
 	).rejects.toMatchObject({
 		permanence: 'permanent',
 		code: 'auth-unavailable',

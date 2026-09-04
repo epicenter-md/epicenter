@@ -36,49 +36,17 @@ export function parseSubprotocols(header: string | null): string[] {
 	return header.split(',').map((s) => s.trim());
 }
 
-/**
- * Rejection an auth-owned `openWebSocket` throws when it refuses to open a
- * socket because no usable bearer can be attached right now.
- *
- * `permanence` carries the same semantics as the server's auth close codes,
- * so a sync host makes one stop-or-backoff decision for both failure
- * carriers:
- *
- * - `'permanent'` (like close 4401): only an auth state change can produce a
- *   credential (signed out, reauth required, a window that holds no
- *   credential at all). Report `denied` to the sync driver, which stops for
- *   good; an auth change reloads the app, and the next generation dials
- *   fresh. There is no in-place resume.
- * - `'transient'` (like close 4503): credential verification was unreachable;
- *   the grant may be perfectly good. Report `closed`; the driver backs off
- *   and retries.
- *
- * `code` names the specific refusal (`'signed-out'`, `'reauth-required'`,
- * `'auth-unavailable'`) for status surfaces and logs; consumers branch on
- * `permanence`, not `code`.
- *
- * Declared here, beside the subprotocol carrier, because it is the other half
- * of the same client-side transport contract: `@epicenter/auth` constructs it
- * and the sync supervisor classifies it, and both already depend on this
- * package.
- */
-export type OpenWebSocketDenial = {
-	name: 'OpenWebSocketDenied';
-	message: string;
-	permanence: 'permanent' | 'transient';
-	code: string;
-};
+/** The subprotocol entry carrying one bearer credential. */
+export function bearerSubprotocol(token: string): string {
+	return `${BEARER_SUBPROTOCOL_PREFIX}${token}`;
+}
 
-/** Classify an unknown rejection as an {@link OpenWebSocketDenial}. */
-export function isOpenWebSocketDenial(
-	value: unknown,
-): value is OpenWebSocketDenial {
-	if (typeof value !== 'object' || value === null) return false;
-	const candidate = value as Partial<OpenWebSocketDenial>;
-	return (
-		candidate.name === 'OpenWebSocketDenied' &&
-		(candidate.permanence === 'permanent' ||
-			candidate.permanence === 'transient') &&
-		typeof candidate.code === 'string'
-	);
+/**
+ * Render a subprotocol list as a `Sec-WebSocket-Protocol` header value.
+ *
+ * The inverse of {@link parseSubprotocols}, for the callers that write the
+ * header themselves rather than hand the list to a `WebSocket` constructor.
+ */
+export function formatSubprotocols(protocols: readonly string[]): string {
+	return protocols.join(', ');
 }

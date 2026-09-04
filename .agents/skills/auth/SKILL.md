@@ -223,7 +223,7 @@ export type AuthClient = {
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 	getProfile(): Promise<Result<Principal, AuthError>>;
-	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
+	openWebSocket(address: WebSocketAddress): Promise<WebSocket>;
 	[Symbol.dispose](): void;
 };
 ```
@@ -411,20 +411,18 @@ const response = await auth.fetch(`${EPICENTER_API_URL}/api/ai/chat`, {
 401 after a forced refresh, and pauses network auth on a second 401. Storage
 writes are awaited before a refreshed token is used.
 
-Use `auth.openWebSocket` for sync:
+An `AuthClient` implements `SocketTransport` (`@epicenter/sync/transport`), so
+it is handed straight to the store's dial:
 
 ```ts
-const collaboration = openCollaboration(workspace.ydoc, {
-	url: roomWsUrl({ baseURL, principalId, guid: workspace.ydoc.guid, nodeId }),
-	waitFor: idb.whenLoaded,
-	openWebSocket: signedIn.openWebSocket,
-	onReconnectSignal: signedIn.onReconnectSignal,
-});
+attachStoreSync({ store, transport: auth, onTransportError });
 ```
 
-Browsers cannot attach `Authorization` headers to `new WebSocket()`, so auth
-carries the bearer token as a WebSocket subprotocol
-(`BEARER_SUBPROTOCOL_PREFIX`). The rooms route extracts that credential itself
+`openWebSocket` takes a `WebSocketAddress` (`{ url, protocols }`) that
+`STORE_SYNC_ROUTE.address` built, and appends `bearerSubprotocol(token)` to the
+list. Browsers cannot attach `Authorization` headers to `new WebSocket()`, which
+is why the credential rides the subprotocol list and why the URL and that list
+are one value. The rooms route extracts that credential itself
 on upgrade (an explicit `Authorization` header wins; else exactly one
 `bearer.<token>` entry) and feeds the bare token to the deployment's
 `ResolveBearerPrincipal`. Nothing rewrites `c.req.raw`: Bun's `server.upgrade`

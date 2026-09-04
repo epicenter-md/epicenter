@@ -596,5 +596,6 @@ Two habits make the link hard to forget:
 | [0335](0335-a-person-is-an-origin-and-an-app-is-a-path-under-it.md) | A person is an origin, and an app is a path under it | Accepted (unbuilt; amends 0326 at its web deployment line) |
 | [0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) | An authority mints every generation, so every store has an account | Accepted (supersedes 0233 and 0279; amends 0324, 0293, and 0262) |
 | [0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md) | The folder is a working copy, and pull and push are the whole cycle | Accepted (unbuilt; amends 0271, 0289, and 0329: the continuous render and the watcher go, pull and push replace them) |
+| [0346](0346-a-socket-address-is-one-value-the-route-builds-and-auth-completes.md) | A socket address is one value the route builds and auth completes | Proposed |
 
 When you add an ADR, add its row here.

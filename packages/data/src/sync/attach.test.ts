@@ -1,7 +1,7 @@
 import { defineTable, field, plainText } from '@epicenter/data/definition';
 /**
- * What the shared dial has to get right: the URL it asks for, and how it
- * classifies a rejection.
+ * What the shared dial has to get right: the address it asks for, including
+ * the subprotocol the server requires, and how it classifies a rejection.
  *
  * The driver underneath is already covered by `connection.test.ts` against a
  * real hub and authority. What is only here is the translation layer, and it is
@@ -15,8 +15,13 @@ import { expect, test } from 'bun:test';
 import { defineData } from '@epicenter/data/definition';
 import { asPrincipalId } from '@epicenter/principal';
 import { createBunSqliteAdapter } from '@epicenter/sqlite/bun';
+import { MAIN_SUBPROTOCOL } from '@epicenter/sync';
+import type {
+	SocketTransport,
+	WebSocketAddress,
+} from '@epicenter/sync/transport';
 import { createAccountStore, type ReplicaDocument } from '../store/store.js';
-import { attachStoreSync, type StoreSocketTransport } from './attach.js';
+import { attachStoreSync } from './attach.js';
 
 const database = defineData({
 	id: 'so.epicenter.attach-test',
@@ -56,21 +61,23 @@ function openStore(): AddressedTestStore {
 }
 
 /** Record every dial and settle it however the test says. */
-function createTransport(open: (url: string) => Promise<WebSocket>) {
-	const urls: string[] = [];
-	const transport: StoreSocketTransport = {
-		openWebSocket(url) {
-			urls.push(String(url));
-			return open(String(url));
+function createTransport(
+	open: (address: WebSocketAddress) => Promise<WebSocket>,
+) {
+	const dials: WebSocketAddress[] = [];
+	const transport: SocketTransport = {
+		openWebSocket(address) {
+			dials.push(address);
+			return open(address);
 		},
 	};
-	return { transport, urls };
+	return { transport, dials };
 }
 
-test('the first dial names the dataId and a cursor of zero', async () => {
+test('the first dial names the dataId, a cursor of zero, and the main subprotocol', async () => {
 	const store = openStore();
 	await using _store = store;
-	const { transport, urls } = createTransport(
+	const { transport, dials } = createTransport(
 		() => new Promise<WebSocket>(() => {}),
 	);
 	const connection = attachStoreSync({
@@ -82,8 +89,12 @@ test('the first dial names the dataId and a cursor of zero', async () => {
 	});
 	using _ = connection;
 
-	expect(urls).toHaveLength(1);
-	const url = new URL(urls[0] as string);
+	expect(dials).toHaveLength(1);
+	const dial = dials[0] as WebSocketAddress;
+	// The subprotocol travels with the URL: the server refuses a non-empty
+	// offer without it (ADR-0346).
+	expect(dial.protocols).toEqual([MAIN_SUBPROTOCOL]);
+	const url = new URL(dial.url);
 	expect(url.protocol).toBe('wss:');
 	expect(url.pathname).toBe('/api/store/v1/sync');
 	expect(url.searchParams.get('dataId')).toBe(database.id);
@@ -123,7 +134,7 @@ test('a permanent denial stops the driver and is not a transport error', async (
 		permanence: 'permanent',
 		code: 'SignedOut',
 	};
-	const { transport, urls } = createTransport(() => Promise.reject(denial));
+	const { transport, dials } = createTransport(() => Promise.reject(denial));
 	const transportErrors: unknown[] = [];
 	const connection = attachStoreSync({
 		store,
@@ -138,7 +149,7 @@ test('a permanent denial stops the driver and is not a transport error', async (
 	expect(transportErrors).toEqual([]);
 	expect(store.sync.status()?.denied).toBe(true);
 	// Stopped for good: no backoff can produce a second dial.
-	expect(urls).toHaveLength(1);
+	expect(dials).toHaveLength(1);
 });
 
 test('a transient denial is reported and left to the backoff', async () => {
@@ -205,4 +216,63 @@ test('abandoning an attempt closes a socket that arrives late', async () => {
 	arrival.resolve(socket);
 	await Bun.sleep(1);
 	expect(closes).toBe(1);
+});
+
+/**
+ * A socket recorder that starts in whatever state a transport hands back, and
+ * keeps the listeners so a test can fire the events itself.
+ */
+function createSocket(readyState: number) {
+	const listeners = new Map<string, () => void>();
+	const socket = {
+		binaryType: '',
+		readyState,
+		addEventListener: (event: string, listen: () => void) =>
+			listeners.set(event, listen),
+		send: () => {},
+		close: () => {},
+	} as unknown as WebSocket;
+	return { socket, fire: (event: string) => listeners.get(event)?.() };
+}
+
+test('a socket handed back already open is attached without an open event', async () => {
+	const store = openStore();
+	await using _store = store;
+	// What a Worker's upgrade produces: `fetch` answers with an accepted
+	// socket, which is live and will never fire `open`. Waiting for one leaves
+	// the driver holding a healthy socket it never sends on, and nothing times
+	// out.
+	const { socket } = createSocket(1);
+	const { transport } = createTransport(() => Promise.resolve(socket));
+	const connection = attachStoreSync({
+		store,
+		transport,
+		onTransportError: (cause) => {
+			throw cause;
+		},
+	});
+	using _ = connection;
+
+	await Bun.sleep(1);
+	expect(connection.status().connected).toBe(true);
+});
+
+test('a connecting socket is attached only once it opens', async () => {
+	const store = openStore();
+	await using _store = store;
+	const { socket, fire } = createSocket(0);
+	const { transport } = createTransport(() => Promise.resolve(socket));
+	const connection = attachStoreSync({
+		store,
+		transport,
+		onTransportError: (cause) => {
+			throw cause;
+		},
+	});
+	using _ = connection;
+
+	await Bun.sleep(1);
+	expect(connection.status().connected).toBe(false);
+	fire('open');
+	expect(connection.status().connected).toBe(true);
 });
