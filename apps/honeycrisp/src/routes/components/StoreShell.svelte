@@ -3,7 +3,7 @@
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { ReactiveData } from '@epicenter/svelte';
 	import { createHoneycrisp, setHoneycrisp } from '$lib/app.svelte.js';
-	import type { HoneycrispData } from '$lib/data/index.js';
+	import type { HoneycrispData } from '$lib/data';
 	import { openWorkingCopy } from '#platform/folder';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import CommandPalette from './CommandPalette.svelte';

@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Input } from '@epicenter/ui/input';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import type { Entry } from '@epicenter/vocab';
+	import type { Entry } from '$lib/data';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { getVocabSurface } from '$lib/surface';

@@ -30,7 +30,7 @@ import { fromEpicenter } from '@epicenter/svelte';
 import { authClient } from '#platform/auth';
 import { binding } from '#platform/binding';
 import { APP_ID } from '$lib/app-id';
-import { honeycrispDefinition } from '$lib/data/index.js';
+import { honeycrispDefinition } from '$lib/data';
 
 /**
  * The handle, module-private, because `close` is on it.

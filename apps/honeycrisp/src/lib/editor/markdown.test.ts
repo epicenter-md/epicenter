@@ -3,7 +3,7 @@ import * as Y from '@y/y';
 
 import { expectOk } from 'wellcrafted/testing';
 
-import { honeycrispDefinition } from '../data/index.js';
+import { honeycrispDefinition } from '../data.js';
 import { parseNoteBody, serializeNoteBody } from './markdown.js';
 import { noteSchema } from './schema.js';
 

@@ -25,8 +25,8 @@
 
 import { createEpicenter } from '@epicenter/app';
 import { fromEpicenter } from '@epicenter/svelte';
-import { vocabDefinition } from '@epicenter/vocab';
 import { APP_ID } from '$lib/app-id';
+import { vocabDefinition } from '$lib/data';
 import { authClient } from '$lib/platform/auth';
 import { binding } from '$lib/platform/binding';
 

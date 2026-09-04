@@ -1,5 +1,5 @@
 import { field } from '@epicenter/data/definition';
-import { APP_ID } from '../app-id.js';
+import { APP_ID } from './app-id.js';
 /**
  * Honeycrisp's inert data definition.
  *
@@ -24,8 +24,8 @@ import { fragmentToPm, pmToFragment } from '@y/prosemirror';
 import * as Y from '@y/y';
 import { EditorState } from 'prosemirror-state';
 import { Ok } from 'wellcrafted/result';
-import { parseNoteBody, serializeNoteBody } from '../editor/markdown.js';
-import { noteSchema } from '../editor/schema.js';
+import { parseNoteBody, serializeNoteBody } from './editor/markdown.js';
+import { noteSchema } from './editor/schema.js';
 
 /** Runtime-minted structural note row id. */
 export type NoteId = string;

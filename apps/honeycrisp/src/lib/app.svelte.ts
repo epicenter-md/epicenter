@@ -1,18 +1,18 @@
 import type { RowAbsentError } from '@epicenter/data';
 import { InstantString } from '@epicenter/data/field';
 import {
-	deleteHoneycrispFolder,
-	type FolderId,
-	type HoneycrispData,
-	type Note,
-	type NoteId,
-} from '@epicenter/honeycrisp';
-import {
 	fromSubscription,
 	type ReactiveData,
 	type Tracked,
 } from '@epicenter/svelte';
 import { createContext } from 'svelte';
+import {
+	deleteHoneycrispFolder,
+	type FolderId,
+	type HoneycrispData,
+	type Note,
+	type NoteId,
+} from '$lib/data';
 import { notePreview, noteTitle } from './editor/node-text.js';
 import { navigation } from './navigation.svelte.js';
 

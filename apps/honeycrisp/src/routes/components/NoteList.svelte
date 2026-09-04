@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Note } from '@epicenter/honeycrisp';
+	import type { Note } from '$lib/data';
 	import { Button } from '@epicenter/ui/button';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
 	import PlusIcon from '@lucide/svelte/icons/plus';

@@ -12,7 +12,7 @@
  */
 
 import type { ReplicaData } from '@epicenter/data';
-import type { vocabDefinition } from '@epicenter/vocab';
+import type { vocabDefinition } from '$lib/data';
 
 const APPLICATION_DEFAULTS = { showReadings: true } as const;
 

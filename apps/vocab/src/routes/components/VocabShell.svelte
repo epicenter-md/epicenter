@@ -2,9 +2,9 @@
 	import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
 	import { Button } from '@epicenter/ui/button';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from '@epicenter/vocab';
+	import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from '$lib/data';
 	import type { ReactiveData } from '@epicenter/svelte';
-	import type { vocabDefinition } from '@epicenter/vocab';
+	import type { vocabDefinition } from '$lib/data';
 	import type { ReplicaData } from '@epicenter/data';
 	import { onDestroy } from 'svelte';
 	import { runVocabMutation } from '$lib/mutation';

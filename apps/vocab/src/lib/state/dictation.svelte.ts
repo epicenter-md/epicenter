@@ -30,9 +30,9 @@ import {
 	type DeviceStreamError,
 	type VadRecorderError,
 } from '@epicenter/recorder';
-import { VOCAB_STT_MODEL } from '@epicenter/vocab';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { base } from '$app/paths';
+import { VOCAB_STT_MODEL } from '$lib/data';
 import { inferenceConnections } from './inference-connections.svelte';
 
 /**

@@ -14,8 +14,8 @@ import { InstantString } from '@epicenter/data/field';
 import { openMemory } from '@epicenter/data/memory';
 import { pmToFragment } from '@y/prosemirror';
 import { expectOk } from 'wellcrafted/testing';
-import { parseNoteBody } from '../editor/markdown.js';
-import { honeycrispDefinition } from './index.js';
+import { honeycrispDefinition } from './data.js';
+import { parseNoteBody } from './editor/markdown.js';
 
 /** The notes table's real codec, which is what these tests are about. */
 const noteFile = honeycrispDefinition.tables.notes.content;

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Note } from '@epicenter/honeycrisp';
+	import type { Note } from '$lib/data';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as ContextMenu from '@epicenter/ui/context-menu';

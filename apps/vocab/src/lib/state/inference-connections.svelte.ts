@@ -13,7 +13,7 @@ import { toHostedCatalog } from '@epicenter/constants/ai-providers';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { VOCAB_MODEL } from '@epicenter/vocab';
+import { VOCAB_MODEL } from '$lib/data';
 import { auth } from '$lib/platform/auth';
 
 export const inferenceConnections = createInferenceConnections({

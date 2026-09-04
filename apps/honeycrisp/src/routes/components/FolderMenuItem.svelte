@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Folder } from '@epicenter/honeycrisp';
+	import type { Folder } from '$lib/data';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';

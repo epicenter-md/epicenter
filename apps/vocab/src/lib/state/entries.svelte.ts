@@ -13,7 +13,7 @@
  */
 
 import { InstantString } from '@epicenter/data/field';
-import type { Entry, VocabData } from '@epicenter/vocab';
+import type { Entry, VocabData } from '$lib/data';
 
 export function createEntriesState({ data }: { data: VocabData }) {
 	let rows = $state.raw<Entry[]>([]);

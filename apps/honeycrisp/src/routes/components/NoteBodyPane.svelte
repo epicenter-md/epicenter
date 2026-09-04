@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { NoteId } from '@epicenter/honeycrisp';
+	import type { NoteId } from '$lib/data';
 	import HoneycrispEditor from '$lib/editor/Editor.svelte';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
 

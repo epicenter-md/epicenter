@@ -34,7 +34,6 @@
 		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",
-		"@epicenter/honeycrisp": "workspace:*",
 		"@epicenter/local-mail": "workspace:*",
 		"@epicenter/matter-core": "workspace:*",
 		"@epicenter/server": "workspace:*",

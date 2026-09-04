@@ -1,12 +1,14 @@
 import { field } from '@epicenter/data/definition';
-import { APP_ID } from '../app-id.js';
+import { APP_ID } from './app-id.js';
 /**
  * Vocab's inert workspace declaration: the workspace id it owns, its tables, and its device-local
  * values. Isomorphic: no IndexedDB, WebSockets, Svelte state, or browser APIs.
  *
- * Distribution: this file is the target of the package's `"."` export, so the
- * rest of the app imports it as `@epicenter/vocab` rather than by path. It sits
- * beside the app id it declares, the way Honeycrisp's definition does. The shapes here are the wire contract for
+ * The app imports it as `$lib/data`, which is the one specifier there is for
+ * it. It used to be the target of a `"."` package export as well, so the same
+ * file arrived as `@epicenter/vocab` in some modules and by relative path in
+ * others; nothing outside the app ever imported the package, so the export was
+ * a second name for a local file and nothing else. The shapes here are the wire contract for
  * sync; forking a field shape breaks sync compatibility with peers running the
  * canonical workspace.
  *
