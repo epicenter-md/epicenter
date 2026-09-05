@@ -119,8 +119,8 @@ handle.
 refusals `open` answers with, and it arrives as `failed` carrying
 `StoreError.AlreadyOpen`. Promoting it would put one failure in the state
 machine and the rest in an error, so a surface would switch on `status` and then
-switch on `name` anyway. Honeycrisp already does the second switch, in one
-place, in `boot-failure.ts`.
+switch on `name` anyway. Honeycrisp already does the second switch, in its boot
+node, narrowing on `DataOpenError`'s `name`.
 
 **`AlreadyOpen` means a confirmed ownership conflict and nothing else.** Three
 refusals are split out of it, because an application's boot gate names a repair

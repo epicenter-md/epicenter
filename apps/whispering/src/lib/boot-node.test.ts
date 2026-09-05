@@ -21,6 +21,7 @@
  * - Every ancestor layout of the callback opens nothing and imports no session
  * - The callback page itself opens nothing
  * - The boot node DOES open, which is what proves the assertion has teeth
+ * - The shell it mounts does not open, so the boot cannot drift downward
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -36,6 +37,8 @@ const callback = join(routes, 'auth/callback/+page.svelte');
 const SESSION_MODULE = '$lib/epicenter';
 /** The one node that is allowed to open, and is not an ancestor of the callback. */
 const BOOT_NODE = 'src/routes/(app)/+layout.svelte';
+/** What the boot node mounts once the store is open, which must not open it. */
+const SHELL = 'src/routes/(app)/_components/WhisperingShell.svelte';
 
 /**
  * Every `+layout.svelte` that renders the callback, nearest first.
@@ -96,5 +99,15 @@ describe('the callback opens nothing', () => {
 		const bootNode = join(appRoot, BOOT_NODE);
 		expect(await Bun.file(bootNode).text()).toContain('epicenter.open');
 		expect(ancestorLayouts(callback)).not.toContain(bootNode);
+	});
+
+	test('the shell renders and does not open', async () => {
+		// The other direction the boot can drift. The shell holds everything that
+		// exists because the store is open, and the open itself is the one thing
+		// that must not follow it down: a shell that opened would still build,
+		// still start, and still pass every test above, because it is not an
+		// ancestor of the callback.
+		const shell = join(appRoot, SHELL);
+		expect(await Bun.file(shell).text()).not.toContain('epicenter.open');
 	});
 });

@@ -16,8 +16,9 @@ signed-out document needed. There is nothing left to boot a signed-out person
 into.
 
 That was recorded nowhere. ADR-0088 is still `Accepted`, still says no app
-gates, and every app that boots today gates: Honeycrisp renders `AccountGate`
-on `signed-out`, and Whispering does not boot at all. Nine live citations of
+gates, and every app that boots today gates: each of the three renders its own
+sign-in screen from its boot node on `signed-out`, and opens nothing until
+somebody signs in. Nine live citations of
 ADR-0088 exist in `packages/` and none of them is about gating. They cite its
 corollary, that a page lifetime is one auth generation, which is load-bearing
 and unaffected.

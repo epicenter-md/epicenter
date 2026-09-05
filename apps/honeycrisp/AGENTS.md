@@ -24,20 +24,23 @@ owner its platform actually has.
 mints every generation (ADR-0336), so there is no accountless notebook.
 **Nothing opens at construction, and opening is a verb.** `routes/+page.svelte`
 calls `epicenter.open()` once, after reading auth, so a signed-out person
-meeting the gate pays no Web Lock, no IndexedDB, and no round trip, and
-`/auth/callback` renders under the same layout without opening anything.
+meeting the sign-in screen pays no Web Lock, no IndexedDB, and no round trip,
+and `/auth/callback` renders under the same layout without opening anything.
 Calling `open` again while it is opening joins the one attempt; calling it
-after a failure retries, which is what the gate's Try again button is.
+after a failure retries, which is what the Try again button is.
 
 ```text
-epicenter/v4/so.epicenter.honeycrisp/so.epicenter.honeycrisp/<n>
+epicenter/v5/so.epicenter.honeycrisp/<principal-id>/so.epicenter.honeycrisp/<n>
 ```
 
-The first segment after the version is the OPENING application and the second
-is the data id (ADR-0324). They are the same string here and nothing writes the
-first one down: the constructor states the opening application explicitly.
-An application that opened another's data would state its different id, and
-would then hold two stores, which ADR-0339 refuses until something needs it.
+Three segments after the version: the OPENING application, the principal whose
+copy this is, then the data id (ADR-0324, amended by ADR-0348). The first and
+last are the same string here and nothing writes the first one down: the
+constructor states the opening application explicitly. An application that
+opened another's data would state its different id, and would then hold two
+stores, which ADR-0339 refuses until something needs it. The principal segment
+is why two accounts on one device hold two replicas instead of one contested
+one, and why erasing reaches only the account that asked.
 
 **The generation is not in the URL and there is no picker.** `open` takes the
 newest copy this device holds, else the account's newest, else mints, and
@@ -54,7 +57,8 @@ That file exports ONE name, `epicenter`, which is `fromEpicenter` composed over
 the handle. Its lifecycle member is `state`: `closed | opening | ready |
 failed`, with the store on `ready` and the error and the erase on `failed`.
 Signed-out is NOT one of them and is not this package's to answer: the route
-reads `auth.state` once and renders the gate, which is why the session's
+reads `auth.state` once and renders its sign-in screen, which is why the
+session's
 `closed` means one thing. Constructing the wrapper reads one state and
 subscribes and acquires nothing, so importing the leaf opens nothing.
 
@@ -149,14 +153,21 @@ only the default one is checked by an editor.
 
 - Do not hand a component `epicenter`, or a lifecycle verb off it, when it only
   needs the notes. `StoreShell` takes `data={epicenter.state.data}`.
-- Do not render a store error to a person as the message. `bootFailure`
-  (`@epicenter/app-shell/boot-gate`) picks the sentence someone reads; the
-  library's own wording goes underneath as detail, so a bug report keeps it and
-  a wrong arm stays visible. Give a new failure a `name` before giving it an
-  arm, and only add an arm when the repair is specific enough to be worth
-  saying. The sentences take this application's nouns, which `routes/+page.svelte`
-  states as its `vocabulary`; add a noun there, never a Honeycrisp branch in the
-  package.
+- Do not render a store error to a person as the message. `routes/+page.svelte`
+  writes the sentence someone reads, as a literal string. There are three
+  screens, and a failure earns its own only by changing what a person can DO:
+  `AlreadyOpen`, because they can close the other window, and
+  `LocksUnsupported`, because a retry button there would be a lie. Everything
+  else shares one sentence and one Try again. The branch is
+  `epicenter.state.error.name`, which the compiler checks against
+  `DataOpenError`, so a misspelt name is a build failure rather than a screen
+  nobody reaches.
+- Do not print a library message under a screen whose sentence is already total.
+  `extractErrorMessage` goes under the shared retry arm, where it keeps a bug
+  report useful and a wrong guess visible. It does NOT go under the two named
+  arms: both of those library messages name the storage address, which now
+  carries the principal id, and the sentences above them say everything a person
+  can act on.
 - Do not put `workspace`, `replica`, `authority`, `document`, or `sync cursor`
   in anything a person reads. They are the right words in this file and in
   `packages/data`, and the wrong ones in a tooltip.
@@ -167,11 +178,12 @@ only the default one is checked by an editor.
   account, not by copying a file.
 - Do not reintroduce a second notebook. There is one store, because an
   authority mints every generation (ADR-0336); a signed-out person meets the
-  sign-in gate rather than an empty local notebook, and `bootFailure`
-  writes one set of sentences rather than choosing between two.
-- Do not soften a boot failure into one message. A generation that is missing
-  and one that is unreachable say which, because a retry fixes the second and
-  never the first (`packages/app-shell/src/boot-gate/boot-failure.ts`).
+  sign-in screen rather than an empty local notebook, and the boot node writes
+  one set of sentences rather than choosing between two.
+- Do not add a boot screen for a distinction a person cannot act on. A
+  generation that is missing and one that is unreachable both mean "try again
+  when the world has changed", so they share a sentence; splitting them wrote
+  two screens whose only difference was the word "downloaded".
 - Do not put the generation back in the URL, and do not add a picker. Nobody
   chose that number and no link carries it. When importing a replica ships, an
   import ends in a document reload and a device holding an older number is told

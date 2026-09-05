@@ -147,7 +147,7 @@ Audience decides vocabulary: what a person reads uses the word they already have
 | UI copy, errors shown to them, deep links, README front doors | types, functions, library error messages |
 
 - Do not soften `authority`, `replica`, `projection`, or `principal` in code to sound friendlier, and do not let one of them reach a person.
-- A library states a failure precisely; the app decides what a person is told about it. Worked example: `packages/app-shell/src/boot-gate/boot-failure.ts`, which takes each app's nouns rather than choosing them. Vocabulary decision: ADR-0244.
+- A library states a failure precisely; the app decides what a person is told about it. Worked example: the failed screens in `apps/honeycrisp/src/routes/+page.svelte`, where each sentence is a literal string in the app rather than a template a shared component fills in. Vocabulary decision: ADR-0244.
 - Keep user-facing text direct and concrete.
 
 **Punctuation.** Avoid en dash characters (`U+2013`). Prefer colon, comma, semicolon, or sentence break over em dash characters (`U+2014`), especially in UI strings, docs, comments, JSDoc, and commit messages.

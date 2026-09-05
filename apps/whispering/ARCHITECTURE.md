@@ -23,8 +23,8 @@ defineData()                            src/lib/data.ts (inert schema)
   -> whisperingDependencies             src/lib/whispering/dependencies.ts (auth + blobs)
     -> openWhisperingApp()              src/lib/whispering/app.ts (transactional async open)
       -> openWhisperingUiSession()      src/lib/whispering/ui-session.ts (app + query runtime)
-        -> (app)/+layout.svelte         raw {#await} owns pending / ready / failed
-          -> WhisperingUiSessionProvider      typed context for ready-only descendants
+        -> (app)/+layout.svelte         the boot node: opens, and renders the four states
+          -> WhisperingShell.svelte     the session, its context, and the app chrome
 ```
 
 `src/lib/data.ts` defines the fixed application id, flat table fields, required row `content` codecs, and KV settings schema with no platform APIs.
@@ -33,7 +33,7 @@ defineData()                            src/lib/data.ts (inert schema)
 
 `openWhisperingApp(dependencies, { signal })` requires a signed-in account and refuses otherwise, because a store is one replica of an authority and a signed-out generation has no document to fall back to. It opens that account's replica through `createEpicenter` from `@epicenter/app`, then hands back settings, recordings, and recipes as UI-free product namespaces. Any failure releases everything it opened and rejects.
 
-The `(app)` layout wraps that open in one UI session (`openWhisperingUiSession`), which composes the Svelte reactivity adapters, a session-scoped TanStack `QueryClient`, and the query namespace over the ready app, and owns their ordered disposal. The layout creates the session promise during component initialisation, so the `{#await}` observes it from the first microtask. The fulfilled branch mounts `WhisperingUiSessionProvider`, which only publishes the ready session: typed `getWhisperingApp()` / `getWhisperingQueries()` context plus the session's query client. Boot retry is a full page reload; unmount and HMR abort the acquisition, and the layout is the single owner of session disposal.
+The `(app)` layout is the boot node and does two things: it calls `epicenter.open()` once during initialisation, and it renders the four states of that session (ADR-0344). Its `ready` branch mounts `WhisperingShell`, which owns everything that exists because the store is open: the UI session (`createWhisperingUiSession`, composing the Svelte reactivity adapters, a session-scoped TanStack `QueryClient`, and the query namespace), the typed `getWhisperingApp()` / `getWhisperingQueries()` context, and the whole app chrome. Boot retry is another `open()` rather than a document reload, because a failed session is not memoized. The shell owns the session's ordered disposal; it does not own the replica, which is the document's (ADR-0088).
 
 The app's recordings namespace owns row and blob consistency: audio storage, upload, download, purge, the `uploadedAt` marker, and deletion of the online copy, device copy, and row as one workflow. A row's values and its `content` node both live in the one Yjs 14 database document; there is no SQLite projection beside it (ADR-0269).
 
