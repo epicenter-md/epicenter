@@ -6,17 +6,49 @@ import { createWhisperingQueryRuntime } from '../queries/client';
 import { createRecordings } from '../state/recordings.svelte';
 import { createSettingsView } from '../state/settings.svelte';
 import {
-	openWhisperingApp,
+	createWhisperingApp,
+	type WhisperingAccountData,
 	type WhisperingApp,
-	type WhisperingAppDependencies,
+	type WhisperingBlobs,
 } from './app';
 
-function createWhisperingUiSession(core: WhisperingApp) {
+/**
+ * Everything that lives for as long as the app UI is mounted, over a store that
+ * already lives longer.
+ *
+ * **Two lifetimes, and this is the shorter one.** The replica is the document's
+ * (ADR-0088): it is opened once by the `(app)` layout and ended by the
+ * document being replaced when identity changes. A query client, a settings
+ * view, a recordings projection, the manual-recording watcher, and the
+ * push-to-talk registration are the UI's, so they are built when the boot
+ * reaches `ready` and released when that subtree goes.
+ *
+ * It is synchronous, and that is the whole shape change. It used to be
+ * `openWhisperingUiSession(dependencies, signal)`: an `await` over an opener
+ * that acquired a store, wrapped in an `AbortSignal` because a route could
+ * unmount mid-acquisition, rendered through an `{#await}`, and disposed by a
+ * helper that existed to arbitrate the resolve-after-unmount race. Nothing here
+ * acquires now, so there is no in-flight anything to abort and no race to
+ * arbitrate.
+ */
+export function createWhisperingUiSession({
+	data,
+	blobs,
+}: {
+	data: WhisperingAccountData;
+	blobs: WhisperingBlobs;
+}) {
+	const core = createWhisperingApp({ data, blobs });
+	// Named members rather than a spread of `core`, which used to carry
+	// `[Symbol.dispose]` into the object handed to every component through
+	// context. Disposal is off `WhisperingApp` entirely now, and `core` is the
+	// only thing holding it; writing the members out is what keeps a new one
+	// from arriving here unwrapped.
 	const app: WhisperingApp = {
-		...core,
 		settings: createSettingsView(core.settings),
 		recordings: createRecordings(core),
 		recipes: core.recipes,
+		syncStatus: core.syncStatus,
 	};
 	const queryRuntime = createWhisperingQueryRuntime();
 	const queries = createWhisperingQueries(app, queryRuntime);
@@ -35,7 +67,7 @@ function createWhisperingUiSession(core: WhisperingApp) {
 					await pushToTalk.dispose(app);
 				} finally {
 					queryRuntime.queryClient.clear();
-					await core[Symbol.asyncDispose]();
+					core[Symbol.dispose]();
 				}
 			})();
 			return disposal;
@@ -54,16 +86,3 @@ export const WhisperingUiSessionError = defineErrors({
 export type WhisperingUiSessionError = InferErrors<
 	typeof WhisperingUiSessionError
 >;
-
-export async function openWhisperingUiSession(
-	dependencies: WhisperingAppDependencies,
-	signal: AbortSignal,
-): Promise<WhisperingUiSession> {
-	const core = await openWhisperingApp(dependencies, { signal });
-	try {
-		return createWhisperingUiSession(core);
-	} catch (cause) {
-		await core[Symbol.asyncDispose]();
-		throw cause;
-	}
-}

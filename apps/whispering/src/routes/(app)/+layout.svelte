@@ -1,37 +1,30 @@
 <!--
-	The (app) route layout is the session root and the boot owner. It mounts
-	once and persists across navigation, so the app is acquired
-	exactly once per launch: the raw {#await} below owns pending, fulfilled,
-	and failed rendering from the moment this component initialises, and the
-	fulfilled branch mounts the provider that supplies the ready app
-	to every descendant. AppEffects, GlobalDialogs, and the build-selected
-	DictationIndicator start exactly once, inside the ready subtree. Only the
-	nav chrome and ContentShell swap on a breakpoint change.
+	The (app) route layout is the boot node: the narrowest node that is NOT
+	shared with `/auth/callback` or `/recording-overlay` (ADR-0345). It mounts
+	once per launch and persists across navigation inside the group, so the
+	store is opened once and the UI session is built once.
+
+	It renders the four states of one data session (ADR-0344) rather than the
+	three of an `{#await}` over an opener it started itself. The difference that
+	matters is the retry: a failure is not memoized, so opening again is a real
+	repair instead of a document reload sent to re-ask a question that was
+	already answered.
 -->
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
 	import { Loading } from '@epicenter/ui/loading';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { onDestroy } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
-	import { createLogger } from 'wellcrafted/logger';
-	import { auth } from '#platform/auth';
+	import { authClient } from '#platform/auth';
 	import DictationIndicator from '#platform/dictation-indicator';
-	import { whisperingDependencies } from '$lib/whispering/dependencies';
+	import { epicenter } from '$lib/epicenter.svelte';
 	import WhisperingUiSessionProvider from '$lib/whispering/WhisperingUiSessionProvider.svelte';
-	import { createWhisperingUiSessionOpening } from '$lib/whispering/ui-session-opening';
-	import {
-		openWhisperingUiSession,
-		WhisperingUiSessionError,
-	} from '$lib/whispering/ui-session';
+	import AccountGate from './_components/AccountGate.svelte';
 	import AppEffects from './_components/AppEffects.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import ContentShell from './_components/ContentShell.svelte';
 	import GlobalDialogs from './_components/GlobalDialogs.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
-
-	const log = createLogger('whispering/app-layout');
 
 	let { children } = $props();
 
@@ -40,25 +33,27 @@
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
 
-	// Created during component initialisation, so the {#await} owns the
-	// acquisition before any failure can settle. Boot retry is a full page
-	// reload. Unmount/HMR aborts an in-flight acquisition; after fulfillment,
-	// this route owner drains shell, query, and app resources together.
-	const owner = createWhisperingUiSessionOpening((signal) =>
-		openWhisperingUiSession(whisperingDependencies, signal),
-	);
-	const opening = owner.opening;
-	const dispose = () =>
-		void owner[Symbol.asyncDispose]().catch((cause) => {
-			log.warn(WhisperingUiSessionError.TeardownFailed({ cause }));
-		});
-	onDestroy(dispose);
+	// Signed-out is read once, here, rather than tracked, and `authClient` is
+	// what makes that structural: the raw client has no Svelte subscriber on it,
+	// so this read cannot start tracking. A page lifetime is one auth generation
+	// (ADR-0088): the root layout's `reloadOnAuthChange` replaces the document on
+	// every transition that invalidates this boot, so a second, competing answer
+	// to auth underneath it would be dead for the transitions that reload and
+	// wrong for the one that deliberately does not. An account is required,
+	// because a store is one replica of an authority (ADR-0336). A deep link
+	// opened while signed out stays on its URL, and the post-sign-in reload lands
+	// where the link pointed.
+	const signedOut = authClient.state.status === 'signed-out';
+
+	// Not awaited: what the open reports is `epicenter.state`, which is what
+	// every branch below renders from.
+	if (!signedOut) void epicenter.open();
 </script>
 
-{#await opening}
-	<Loading class="h-dvh" />
-{:then session}
-	<WhisperingUiSessionProvider {session}>
+{#if signedOut}
+	<AccountGate />
+{:else if epicenter.state.status === 'ready'}
+	<WhisperingUiSessionProvider data={epicenter.state.data}>
 		<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
 		<Tooltip.Provider>
 			<AppEffects />
@@ -83,15 +78,15 @@
 			<DictationIndicator />
 		</Tooltip.Provider>
 	</WhisperingUiSessionProvider>
-{:catch error}
-	<div class="flex h-dvh flex-col items-center justify-center gap-4 p-8 text-center">
-		<h1 class="text-lg font-semibold">Whispering could not start</h1>
-		<p class="text-muted-foreground max-w-md text-sm">
-			{error instanceof Error ? error.message : String(error)}
-		</p>
-		<div class="flex gap-2">
-			<Button onclick={() => location.reload()}>Reload</Button>
-			<Button variant="outline" onclick={() => auth.signOut()}>Sign out</Button>
-		</div>
-	</div>
-{/await}
+{:else if epicenter.state.status === 'failed'}
+	<AccountGate
+		error={epicenter.state.error}
+		erase={epicenter.state.eraseReplica}
+		retry={() => void epicenter.open()}
+	/>
+{:else}
+	<!-- `closed` and `opening` are one screen. A signed-in person meets `closed`
+	     for the one tick between this component initialising and the open above
+	     starting, and there is nothing for them to do in it. -->
+	<Loading class="h-dvh" />
+{/if}
