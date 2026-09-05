@@ -98,11 +98,13 @@ export const notes = fromEpicenter(
 </script>
 
 {#if auth.state.status === 'signed-out'}
-  <SignInGate />
+  <BootGate {vocabulary} {auth} />
 {:else if notes.state.status === 'ready'}
   <Notes data={notes.state.data} />
 {:else if notes.state.status === 'failed'}
-  <BootFailure
+  <BootGate
+    {vocabulary}
+    {auth}
     error={notes.state.error}
     erase={notes.state.eraseReplica}
     retry={() => void notes.open()}

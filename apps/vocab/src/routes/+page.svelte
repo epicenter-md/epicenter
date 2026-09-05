@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
+	import { BootGate } from '@epicenter/app-shell/boot-gate';
 	import { Loading } from '@epicenter/ui/loading';
-	import { extractErrorMessage } from 'wellcrafted/error';
-	import { authClient } from '$lib/platform/auth';
+	import { auth, authClient } from '$lib/platform/auth';
 	import { epicenter } from '$lib/epicenter.svelte.js';
 	import VocabShell from './components/VocabShell.svelte';
 
@@ -10,7 +9,9 @@
 	// (ADR-0344). It replaces the `{#await}` over an open the layout started
 	// during its own initialisation: opening is a verb now, so the states are
 	// read off `epicenter.state` and a failure is retried by opening again
-	// rather than by reloading the document.
+	// rather than by reloading the document. Vocab's protected surface is one
+	// route at `/`, so the page is the narrowest node not shared with
+	// `/auth/callback`, and no route group would add one (ADR-0345).
 	//
 	// Signed-out is read once, here, rather than tracked, and `authClient` is
 	// what makes that structural: the raw client has no Svelte subscriber on it,
@@ -22,38 +23,34 @@
 	const signedOut = authClient.state.status === 'signed-out';
 
 	if (!signedOut) void epicenter.open();
+
+	// The nouns the shared gate borrows. `conversations` is the word this
+	// application already syncs under, in `VocabSidebar`'s account popover.
+	//
+	// This screen used to be hand-rolled here: `extractErrorMessage` under one
+	// Try again, with no arm for a second window, no arm for a browser without
+	// Web Locks, and no erase. A copy belonging to another account was a dead
+	// end, because `epicenter.state.eraseReplica` was never offered to anyone.
+	const vocabulary = {
+		appName: 'Vocab',
+		subject: 'conversations',
+		eraseDescription:
+			'Every conversation and entry on this device will be deleted. Whatever had already reached the account they belong to is still there; anything that had not is gone. This action cannot be undone.',
+	};
 </script>
 
-{#if epicenter.state.status === 'ready'}
+{#if signedOut}
+	<BootGate {vocabulary} {auth} />
+{:else if epicenter.state.status === 'ready'}
 	<VocabShell data={epicenter.state.data} />
-{:else if signedOut || epicenter.state.status === 'failed'}
-	<div
-		class="flex h-dvh flex-col items-center justify-center gap-4 p-8 text-center"
-	>
-		<h1 class="text-lg font-semibold">
-			{signedOut ? 'Sign in to open Vocab' : 'Vocab could not start'}
-		</h1>
-		{#if epicenter.state.status === 'failed'}
-			<p class="text-muted-foreground max-w-md text-sm">
-				<!-- `extractErrorMessage`, not `String(error)`: a tagged error is a
-				     plain object with a `message`, so stringifying one renders
-				     "[object Object]" and hides the only useful thing it carries. -->
-				{extractErrorMessage(epicenter.state.error)}
-			</p>
-		{/if}
-		<div class="flex gap-2">
-			{#if signedOut}
-				<Button onclick={() => void authClient.startSignIn()}>Sign in</Button>
-			{:else}
-				<!-- Opening again, not reloading. The failure is not memoized, so the
-				     session opens from where it is (ADR-0344). -->
-				<Button onclick={() => void epicenter.open()}>Try again</Button>
-				<Button variant="outline" onclick={() => authClient.signOut()}>
-					Sign out
-				</Button>
-			{/if}
-		</div>
-	</div>
+{:else if epicenter.state.status === 'failed'}
+	<BootGate
+		{vocabulary}
+		{auth}
+		error={epicenter.state.error}
+		erase={epicenter.state.eraseReplica}
+		retry={() => void epicenter.open()}
+	/>
 {:else}
 	<!-- `closed` and `opening` are one screen. -->
 	<Loading class="h-dvh" />

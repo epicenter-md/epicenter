@@ -149,11 +149,14 @@ only the default one is checked by an editor.
 
 - Do not hand a component `epicenter`, or a lifecycle verb off it, when it only
   needs the notes. `StoreShell` takes `data={epicenter.state.data}`.
-- Do not render a store error to a person as the message. `src/lib/boot-failure.ts`
-  picks the sentence someone reads; the library's own wording goes underneath as
-  detail, so a bug report keeps it and a wrong arm stays visible. Give a new
-  failure a `name` before giving it an arm, and only add an arm when the repair
-  is specific enough to be worth saying.
+- Do not render a store error to a person as the message. `bootFailure`
+  (`@epicenter/app-shell/boot-gate`) picks the sentence someone reads; the
+  library's own wording goes underneath as detail, so a bug report keeps it and
+  a wrong arm stays visible. Give a new failure a `name` before giving it an
+  arm, and only add an arm when the repair is specific enough to be worth
+  saying. The sentences take this application's nouns, which `routes/+page.svelte`
+  states as its `vocabulary`; add a noun there, never a Honeycrisp branch in the
+  package.
 - Do not put `workspace`, `replica`, `authority`, `document`, or `sync cursor`
   in anything a person reads. They are the right words in this file and in
   `packages/data`, and the wrong ones in a tooltip.
@@ -168,7 +171,7 @@ only the default one is checked by an editor.
   writes one set of sentences rather than choosing between two.
 - Do not soften a boot failure into one message. A generation that is missing
   and one that is unreachable say which, because a retry fixes the second and
-  never the first (`boot-failure.ts`).
+  never the first (`packages/app-shell/src/boot-gate/boot-failure.ts`).
 - Do not put the generation back in the URL, and do not add a picker. Nobody
   chose that number and no link carries it. When importing a replica ships, an
   import ends in a document reload and a device holding an older number is told

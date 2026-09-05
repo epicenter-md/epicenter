@@ -172,6 +172,32 @@ Three verbs and no enumeration, and no way to ask whether this runtime keeps a
 secret across a session: a browser build answers `null` from `get` after a
 reload, which is the same answer a new desktop device gives.
 
+## Where an application puts this
+
+Three places, and every Epicenter application uses the same three.
+
+**One composition module, at module scope.** `src/lib/epicenter.svelte.ts`
+holds `createEpicenter` beside `fromEpicenter` (`@epicenter/svelte`), exports
+the adapted session, and closes the handle from its hot-reload disposer.
+Nothing else can reach `close`, because the adapter does not forward it: the
+document is the lifetime (ADR-0088), and the one caller that wants a shorter
+one is the module being replaced.
+
+**One boot node, which calls `open`.** It is the narrowest node that is not
+shared with `/auth/callback`, because that route must claim no Web Lock, touch
+no IndexedDB, and make no round trip on its way through (ADR-0345). Whichever
+node that is, it reads `auth.state` once, calls `open` when the read is not
+signed out, and renders the four states. Honeycrisp and Vocab boot from
+`routes/+page.svelte` because their protected surface is one route at `/`;
+Whispering boots from `routes/(app)/+layout.svelte` because it has a shell and
+two siblings that must escape it.
+
+**One gate, shared.** `BootGate` (`@epicenter/app-shell/boot-gate`) renders
+signed-out and `failed` from one component, and `bootFailure` turns a store
+refusal into the sentence and the repair a person is offered. It takes the
+application's nouns rather than choosing them, so a new failure that reaches a
+person is a sentence to write in one place.
+
 ## Names are checked where they are minted
 
 `DatabaseName` and `SecretLabel` are branded, so the check happens once at the

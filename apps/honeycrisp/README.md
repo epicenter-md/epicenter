@@ -75,17 +75,19 @@ Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and 
 ### Auth and sync
 
 Signing in comes before the notes, because an authority mints every generation
-(ADR-0336): there is no signed-out notebook to fall back to, and `AccountGate`
-is what a signed-out person meets. Signing in opens the store and attaches
-sync, and that is the whole of the sharing model. Every device signed into one
-account dials one authority
+(ADR-0336): there is no signed-out notebook to fall back to, and `BootGate`
+(`@epicenter/app-shell/boot-gate`) is what a signed-out person meets. Signing
+in opens the store and attaches sync, and that is the whole of the sharing
+model. Every device signed into one account dials one authority
 (`principals/<id>/data/so.epicenter.honeycrisp`) and converges; there is
 nothing to pair, invite, or approve.
 
 A store records the account it was created for and refuses to open as anybody
-else (ADR-0325). When somebody else's notes are still on the device,
-`AccountGate` says so and offers two ways out: sign in as that account, or
-erase this device's copy. Nothing is deleted until a person confirms it.
+else (ADR-0325). When somebody else's notes are still on the device, `BootGate`
+says so and offers two ways out: sign in as that account, or erase this
+device's copy. Nothing is deleted until a person confirms it. The gate is
+shared with every other Epicenter application and takes this one's nouns;
+`routes/+page.svelte` states them.
 
 `src/lib/sync.ts` is Honeycrisp's entire share of the transport: a URL.
 Reconnecting on close, reconnecting when the client is stuck behind a gap,

@@ -26,7 +26,7 @@ docs/          reference materials
 
 One runtime: a desktop SPA in a WebView over a client-owned store (ADR-0227). The host serves bundles and brokers credentials and owns no application data (ADR-0226).
 
-ADR-0227 was executed as a clean break, so these are broken on purpose until they are rebuilt against the store: `apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`, `packages/skills`, and app-shell's agent chat. `apps/whispering` is rebuilt: it opens its account replica through `createEpicenter`, boots in an `(app)` route group (ADR-0345), and typechecks under both of its conditions.
+ADR-0227 was executed as a clean break, so these are broken on purpose until they are rebuilt against the store: `apps/skills`, `apps/epicenter`, `packages/chat`, `packages/skills`, and app-shell's agent chat. `apps/whispering` is rebuilt: it opens its account replica through `createEpicenter`, boots in an `(app)` route group (ADR-0345), and typechecks under both of its conditions. `apps/vocab` is rebuilt too, and boots from its one page rather than a group, which is the same rule stated for a smaller tree (ADR-0345).
 
 Migration reference: `docs/the-store-and-what-it-replaced.md`.
 
@@ -147,7 +147,7 @@ Audience decides vocabulary: what a person reads uses the word they already have
 | UI copy, errors shown to them, deep links, README front doors | types, functions, library error messages |
 
 - Do not soften `authority`, `replica`, `projection`, or `principal` in code to sound friendlier, and do not let one of them reach a person.
-- A library states a failure precisely; the app decides what a person is told about it. Worked example: `apps/honeycrisp/src/lib/boot-failure.ts`. Vocabulary decision: ADR-0244.
+- A library states a failure precisely; the app decides what a person is told about it. Worked example: `packages/app-shell/src/boot-gate/boot-failure.ts`, which takes each app's nouns rather than choosing them. Vocabulary decision: ADR-0244.
 - Keep user-facing text direct and concrete.
 
 **Punctuation.** Avoid en dash characters (`U+2013`). Prefer colon, comma, semicolon, or sentence break over em dash characters (`U+2014`), especially in UI strings, docs, comments, JSDoc, and commit messages.

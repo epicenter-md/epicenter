@@ -11,15 +11,15 @@
 	already answered.
 -->
 <script lang="ts">
+	import { BootGate } from '@epicenter/app-shell/boot-gate';
 	import { Loading } from '@epicenter/ui/loading';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { MediaQuery } from 'svelte/reactivity';
-	import { authClient } from '#platform/auth';
+	import { auth, authClient } from '#platform/auth';
 	import DictationIndicator from '#platform/dictation-indicator';
 	import { epicenter } from '$lib/epicenter.svelte';
 	import WhisperingUiSessionProvider from '$lib/whispering/WhisperingUiSessionProvider.svelte';
-	import AccountGate from './_components/AccountGate.svelte';
 	import AppEffects from './_components/AppEffects.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import ContentShell from './_components/ContentShell.svelte';
@@ -48,10 +48,21 @@
 	// Not awaited: what the open reports is `epicenter.state`, which is what
 	// every branch below renders from.
 	if (!signedOut) void epicenter.open();
+
+	// The nouns the shared gate borrows. They are the application's, so they are
+	// stated at the one node that renders the gate rather than in a package that
+	// has never met the person reading them (ADR-0244). The erase description is
+	// stated rather than templated because this one has to name the audio.
+	const vocabulary = {
+		appName: 'Whispering',
+		subject: 'recordings',
+		eraseDescription:
+			'Every recording on this device will be deleted, along with its audio. Whatever had already reached the account they belong to is still there; anything that had not is gone. This action cannot be undone.',
+	};
 </script>
 
 {#if signedOut}
-	<AccountGate />
+	<BootGate {vocabulary} {auth} />
 {:else if epicenter.state.status === 'ready'}
 	<WhisperingUiSessionProvider data={epicenter.state.data}>
 		<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
@@ -79,7 +90,9 @@
 		</Tooltip.Provider>
 	</WhisperingUiSessionProvider>
 {:else if epicenter.state.status === 'failed'}
-	<AccountGate
+	<BootGate
+		{vocabulary}
+		{auth}
 		error={epicenter.state.error}
 		erase={epicenter.state.eraseReplica}
 		retry={() => void epicenter.open()}

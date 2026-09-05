@@ -11,6 +11,7 @@
 	holds the only reference that could end it.
 -->
 <script lang="ts">
+	import type { ReactiveData } from '@epicenter/svelte';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { onDestroy, type Snippet } from 'svelte';
 	import { createLogger } from 'wellcrafted/logger';
@@ -28,7 +29,14 @@
 		data,
 		children,
 	}: {
-		data: WhisperingAccountData;
+		/**
+		 * The open replica, adapted. `ReactiveData` rather than the raw store,
+		 * because this only ever receives `epicenter.state.data` from the `ready`
+		 * branch and that value went through `fromData` on its way here. Taking
+		 * the raw type accepted an unadapted store, whose reads do not track, and
+		 * every domain built below would have gone quiet with nothing to say why.
+		 */
+		data: ReactiveData<WhisperingAccountData>;
 		children: Snippet;
 	} = $props();
 

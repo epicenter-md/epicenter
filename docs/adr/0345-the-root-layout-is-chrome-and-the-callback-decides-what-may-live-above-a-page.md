@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-03
-- **Built:** all of it, and none of it by this record. Whispering routes `(app)` around its shell, `apps/api/ui` gates at `/dashboard/+layout.svelte`, and Honeycrisp and Vocab open from `+page.svelte`. This states the rule those four already follow and names the trigger for the next app, so the invariant stops living in two source comments.
+- **Unbuilt:** nothing.
 - **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md) (a page lifetime is one auth generation, which is the part of 0088 this depends on), [ADR-0342](0342-sign-in-is-the-door-to-keeping-not-to-using.md) (why every app gates today), [ADR-0344](0344-an-epicenter-owns-one-data-session-and-opening-it-is-a-verb.md) (opening is a verb, so someone has to own the call)
 
 ## Context

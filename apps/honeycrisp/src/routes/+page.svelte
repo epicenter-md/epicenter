@@ -1,8 +1,8 @@
 <script lang="ts">
+	import { BootGate } from '@epicenter/app-shell/boot-gate';
 	import { Loading } from '@epicenter/ui/loading';
-	import { authClient } from '#platform/auth';
+	import { auth, authClient } from '#platform/auth';
 	import { epicenter } from '$lib/epicenter.svelte.js';
-	import AccountGate from './components/AccountGate.svelte';
 	import StoreShell from './components/StoreShell.svelte';
 
 	// The notes are here, at the one URL this application has. The generation
@@ -14,7 +14,9 @@
 	// **This is where the notes are opened, and the call is explicit.** It is
 	// this route rather than the layout because the layout also wraps
 	// `/auth/callback`, which must claim no Web Lock, touch no IndexedDB, and
-	// make no round trip on its way through.
+	// make no round trip on its way through. This is the narrowest node that is
+	// not shared with the callback, and Honeycrisp's protected surface is one
+	// route at `/`, so that node is the page (ADR-0345).
 	//
 	// Signed-out is read once, here, rather than tracked, and `authClient` is
 	// what makes that structural: the raw client has no Svelte subscriber on it,
@@ -30,14 +32,26 @@
 	// Not awaited: what the open reports is `epicenter.state`, which is what
 	// every branch below renders from.
 	if (!signedOut) void epicenter.open();
+
+	// The nouns the shared gate borrows. They are the application's, so they are
+	// stated at the one node that renders the gate rather than in a package that
+	// has never met the person reading them (ADR-0244).
+	const vocabulary = {
+		appName: 'Honeycrisp',
+		subject: 'notes',
+		eraseDescription:
+			'Every note on this device will be deleted. Whatever had already reached the account they belong to is still there; anything that had not is gone. This action cannot be undone.',
+	};
 </script>
 
 {#if signedOut}
-	<AccountGate />
+	<BootGate {vocabulary} {auth} />
 {:else if epicenter.state.status === 'ready'}
 	<StoreShell data={epicenter.state.data} />
 {:else if epicenter.state.status === 'failed'}
-	<AccountGate
+	<BootGate
+		{vocabulary}
+		{auth}
 		error={epicenter.state.error}
 		erase={epicenter.state.eraseReplica}
 		retry={() => void epicenter.open()}
