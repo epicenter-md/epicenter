@@ -10,13 +10,14 @@
  *
  * The key is the durable document's own address, which is what makes the guard
  * exact. On Bun that is the dataId, because an application folder holds one
- * document; in a browser it is `epicenter/v4/<appId>/<dataId>/<generation>`
- * (ADR-0324, ADR-0292), so two applications naming one data id may be open at
- * once, two generations of one database may be open at once, and a second open
- * of either is still refused. It no longer separates two accounts, because the
- * account left the address: what holds them apart is the binding ADR-0325
- * writes inside the database, and a second account meets `BoundElsewhere`
- * rather than a claim.
+ * document; in a browser it is
+ * `epicenter/v5/<appId>/<principalId>/<dataId>/<generation>` (ADR-0324,
+ * ADR-0292), so two applications naming one data id may be open at once, two
+ * accounts on one device may be open at once, two generations of one database
+ * may be open at once, and a second open of any of them is still refused. Two
+ * accounts are held apart by the address rather than by this: they never
+ * contend for one key, so a claim here is always a genuine conflict over one
+ * copy.
  *
  * A lifecycle here is legitimate under ADR-0203 rather than a platform forming:
  * one file and one document with two claimants is genuinely contended. It holds
@@ -85,7 +86,7 @@ const originLocks = new Map<string, () => void>();
  *
  * **Three refusals, not one.** A held lock is `AlreadyOpen`, a missing API is
  * `LocksUnsupported`, and a request that threw is `ClaimFailed`. They were one
- * name until an application's boot gate started switching on it: `AlreadyOpen`
+ * name until an application's boot node started switching on it: `AlreadyOpen`
  * is what makes Honeycrisp tell a person to close another window, and two of
  * these three are not another window.
  */

@@ -46,22 +46,28 @@
 		syncNoun: string;
 		/**
 		 * When set, the account actions that reload the page (sign in, sign out,
-		 * forget device, and connecting, retrying, or changing a self-hosted
-		 * instance) are disabled and this reason is shown, as the trigger tooltip, a
-		 * line inside the popover, and a line inside the instance modal while it is
-		 * open. The trigger itself stays openable so the reason is discoverable (a
-		 * disabled trigger swallows hover, hiding the one message that matters). Lets
-		 * a host block account changes at an unsafe moment, e.g. while a recording is
-		 * in progress. Omit to leave it enabled.
+		 * and forget device) are disabled and this reason is shown, as the trigger
+		 * tooltip and as a line inside the popover. The trigger itself stays
+		 * openable so the reason is discoverable (a disabled trigger swallows hover,
+		 * hiding the one message that matters). Lets a host block account changes at
+		 * an unsafe moment, e.g. while a recording is in progress. Omit to leave it
+		 * enabled.
 		 */
 		disabledReason?: string;
 		/**
-		 * If provided, exposes a Forget this device button. The callback is
-		 * the destructive primitive that clears the local replica. The popover
-		 * confirms with the user, awaits the
-		 * callback, then reloads the page; reload after wipe is universal
-		 * in this context so the component owns it rather than asking
-		 * every caller to remember.
+		 * If provided, exposes a Forget this device button. The callback is the
+		 * destructive primitive that clears this account's replica on this device.
+		 * The popover confirms, awaits the callback, then reloads the page; reload
+		 * after wipe is universal in this context so the component owns it rather
+		 * than asking every caller to remember.
+		 *
+		 * **Pass it only when the store is all of this account's local data.** The
+		 * copy below promises that everything synced is safe and everything local
+		 * is gone, and an application that also keeps account data outside the
+		 * store would be making the second half of that promise falsely.
+		 *
+		 * Throw to report a failure; the popover catches it and shows it. A
+		 * handle's `eraseReplica` answers a `Result`, so the application unwraps it.
 		 */
 		onForgetDevice?: () => void | Promise<void>;
 		/** Optional replacement for the compact account icon trigger. */
@@ -148,7 +154,12 @@
 		popoverOpen = false;
 		confirmationDialog.open({
 			title: 'Forget this device?',
-			description: 'This deletes local data for this account on this device.',
+			// What it does and what it does not, in that order. The account keeps
+			// everything that reached it, so the only loss is work this device never
+			// managed to send, and a person deciding this should be told which half
+			// is which.
+			description:
+				'This deletes this account’s data on this device. Anything already synced to your account stays there; anything not yet synced is gone.',
 			confirm: { text: 'Forget device', variant: 'destructive' },
 			onConfirm: async () => {
 				forgettingDevice = true;

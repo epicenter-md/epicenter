@@ -271,7 +271,7 @@ export type CreateEpicenterOptions = {
  *
  * Named because four surfaces state it and three of them were writing the
  * union out. It is deliberately not narrowed to "the ones a person sees": a
- * boot gate switches on `name` and falls through, so a new refusal reaching an
+ * boot node switches on `name` and falls through, so a new refusal reaching an
  * application is a sentence to write rather than a type to widen.
  *
  * `DataSessionError` is in it because an open can end for a reason that is
@@ -302,7 +302,7 @@ export type DataOpenError =
  * refusals `open` can answer with, and it arrives as `failed` carrying
  * `StoreError.AlreadyOpen`. Promoting it would put one failure in the state
  * machine and the other six in an error, so a surface would switch on
- * `status` and then switch on `name` anyway; Honeycrisp's boot gate already
+ * `status` and then switch on `name` anyway; Honeycrisp's boot node already
  * does the second switch, and it does it in one place.
  *
  * **`data` is the typed application data and nothing else.** It carries no
@@ -385,7 +385,7 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 			 * opens again.
 			 *
 			 * It resolves a `Result`, and the error is the store's own rather than
-			 * `AppError.StorageFailed` wrapping it. An application's boot gate
+			 * `AppError.StorageFailed` wrapping it. An application's boot node
 			 * switches on the failure's `name` to choose between a retry and an
 			 * erase; wrapping hid that name under `cause`, so every arm became the
 			 * fallback and both repairs disappeared.
@@ -402,16 +402,36 @@ export type Epicenter<TDefinition extends DataDefinition = never> = {
 				listener: (state: EpicenterState<TDefinition>) => void,
 			): () => void;
 			/**
-			 * Erase this device's copy, whoever it belongs to (ADR-0325).
+			 * Erase this account's copy on this device, and nothing at the
+			 * authority.
 			 *
-			 * `replica` because it erases this device's copy and touches nothing at
-			 * the authority, and it is the word a developer reads unsoftened. It
-			 * takes every generation, because the refusal it repairs is about the
-			 * address rather than about one number.
+			 * `replica` because that is exactly what it deletes, and it is the word
+			 * a developer reads unsoftened. It takes every generation this account
+			 * holds through this application: erasing only the newest would leave
+			 * the number below it to be opened next boot.
 			 *
-			 * It takes the same claim an open takes, so it succeeds only while this
-			 * session holds nothing: that is `closed` or `failed`, and a session
-			 * that is `ready` refuses itself.
+			 * **It closes the session first, so it succeeds from every state.**
+			 * Erasing takes the same Web Lock an open holds, and this handle is the
+			 * one thing that can let that lock go, so requiring a caller to close
+			 * first would be a two-step verb whose first step only this object can
+			 * perform. A person invokes this from an account surface while their
+			 * data is open, which is the whole live path.
+			 *
+			 * **A failure rolls the close back.** A session that was serving data,
+			 * or acquiring it, and whose erase did not happen is REOPENING when
+			 * this resolves: the state is `opening` and settles to `ready` on its
+			 * own. What it must never be is `closed`, which is the one state
+			 * nothing leaves by itself and no boot node offers a button for. The
+			 * close is a means, not the act, and it is not kept when the act fails.
+			 *
+			 * The caller reports the error through a surface that OUTLIVES the
+			 * shell, because the close already unmounted the one that invoked this.
+			 * That is why an application's confirmation dialog and toaster are
+			 * mounted above its boot node rather than inside it.
+			 *
+			 * `AlreadyOpen` is still reachable and still means what it says: ANOTHER
+			 * window of this application holds the same address, and closing it is
+			 * the repair.
 			 */
 			eraseReplica(): Promise<Result<void, StoreError>>;
 			/**
@@ -563,6 +583,30 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 		return attempt;
 	};
 
+	const close = (): Promise<void> =>
+		// Memoized while it runs, so a second caller awaits the same release
+		// rather than finding `held` already cleared and reporting `closed` over
+		// a lock the first one is still letting go of. Cleared afterwards,
+		// because a closed session opens again.
+		(closing ??= (async () => {
+			try {
+				epoch += 1;
+				// Awaited before anything is released, so a close during an open
+				// ends what that open acquires rather than returning while it is
+				// still acquiring it. The open's own settle sees the stale epoch,
+				// closes itself, and clears `current`, which is why nothing is
+				// read off this.
+				const inFlight = current;
+				if (inFlight !== undefined) await inFlight.attempt;
+				const acquired = held;
+				held = undefined;
+				if (acquired !== undefined) await acquired.close();
+				if (state.status !== 'closed') publish({ status: 'closed' });
+			} finally {
+				closing = undefined;
+			}
+		})());
+
 	return Object.freeze({
 		...capabilities,
 		account,
@@ -576,29 +620,34 @@ export function createEpicenter<const TDefinition extends DataDefinition>(
 				listeners.delete(listener);
 			};
 		},
-		eraseReplica: () => eraseReplicaOf({ appId, definition }),
-		// Memoized while it runs, so a second caller awaits the same release
-		// rather than finding `held` already cleared and reporting `closed` over
-		// a lock the first one is still letting go of. Cleared afterwards,
-		// because a closed session opens again.
-		close: () =>
-			(closing ??= (async () => {
-				try {
-					epoch += 1;
-					// Awaited before anything is released, so a close during an open
-					// ends what that open acquires rather than returning while it is
-					// still acquiring it. The open's own settle sees the stale epoch,
-					// closes itself, and clears `current`, which is why nothing is
-					// read off this.
-					const inFlight = current;
-					if (inFlight !== undefined) await inFlight.attempt;
-					const acquired = held;
-					held = undefined;
-					if (acquired !== undefined) await acquired.close();
-					if (state.status !== 'closed') publish({ status: 'closed' });
-				} finally {
-					closing = undefined;
-				}
-			})()),
+		// Closed first, because erasing takes the Web Lock this session is holding
+		// and this handle is the only thing that can release it. `close` is
+		// idempotent and returns the session to `closed`, which is where a
+		// successful erase leaves it: there is nothing on this device to reopen.
+		//
+		// **A failed erase rolls the session back.** Closing is not the deletion,
+		// it is what the deletion needs, so a session that was serving data before
+		// an erase that did not happen has to be serving it again afterwards.
+		// Without this the handle publishes `closed` and stops: the surface that
+		// invoked this unmounts with it, the failure is reported to nobody, and
+		// the person is left on a screen with no data and no button. Reopening is
+		// the same call a retry would make, and it takes the lock straight back
+		// because nothing else claimed it in between.
+		//
+		// **Every state but `closed` is rolled back**, rather than `ready` alone.
+		// `closed` is the one where declining is right: nothing was serving data,
+		// and a test or a hot reload that closed deliberately should stay closed.
+		// `opening` and `failed` were both sessions somebody was looking at, and
+		// this verb is forwarded at the top level of `fromEpicenter` precisely so
+		// it can be called from anywhere, so the guarantee has to be the
+		// unconditional one the boot nodes state.
+		eraseReplica: async () => {
+			const wasOpen = state.status !== 'closed';
+			await close();
+			const erased = await eraseReplicaOf({ appId, definition, account });
+			if (erased.error !== null && wasOpen) void open();
+			return erased;
+		},
+		close,
 	}) as Epicenter<TDefinition>;
 }

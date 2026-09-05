@@ -10,6 +10,7 @@
 	import { auth } from '#platform/auth';
 	import type { WorkingCopy } from '@epicenter/data/artifact/checkout';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
+	import { epicenter } from '$lib/epicenter.svelte.js';
 	import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 	import PullToFolder from './PullToFolder.svelte';
@@ -48,6 +49,15 @@
 				<AccountPopover
 					{auth}
 					syncNoun="notes"
+					onForgetDevice={async () => {
+						// Honeycrisp keeps no account data outside the store: no blobs and no
+						// app-owned SQLite. The working copy is the person's own folder of
+						// notes, deliberately outside the store (ADR-0337), and is left
+						// alone: deleting somebody's own directory is not what this button
+						// says it does. Erasing the replica is the rest of it.
+						const { error } = await epicenter.eraseReplica();
+						if (error !== null) throw error;
+					}}
 				/>
 				<Sidebar.Trigger />
 			</div>

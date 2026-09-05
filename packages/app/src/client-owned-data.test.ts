@@ -5,7 +5,7 @@ installTestLocks();
 
 import { expect, test } from 'bun:test';
 import type { AuthClient } from '@epicenter/auth';
-import { createGeneration } from '@epicenter/data/browser';
+import { createGeneration, openDatabase } from '@epicenter/data/browser';
 import {
 	defineData,
 	defineTable,
@@ -22,8 +22,8 @@ import { createEpicenter } from './index.js';
  * that application wrote for itself. The opener is here now (ADR-0339), so the
  * coverage is too: a store opens and holds rows, a second boot reads them
  * offline, a refused credential costs sync and not the notes, a signed-out
- * account is refused without creating anything, another account's copy is
- * refused rather than merged, and `eraseReplica` is what clears it.
+ * account is refused without creating anything, two accounts on one device
+ * hold two replicas, and `eraseReplica` clears the one that asked.
  */
 
 const APP_ID = 'so.epicenter.test';
@@ -525,7 +525,7 @@ test('a refused credential costs sync, not the notes', async () => {
 test('a signed-out account is refused without creating anything', async () => {
 	await resetStorage();
 
-	// It RESOLVES the refusal rather than throwing it (ADR-0339): the boot gate
+	// It RESOLVES the refusal rather than throwing it (ADR-0339): the boot node
 	// switches on the name, and a rejection would hand it an `unknown`.
 	const opened = await handleFor(
 		createFakeAuth({ status: 'signed-out' }),
@@ -534,7 +534,7 @@ test('a signed-out account is refused without creating anything', async () => {
 	expect(await databaseNames()).toEqual([]);
 });
 
-test("another account's notes are refused, and erasing is what clears them", async () => {
+test('two accounts on one device hold two replicas', async () => {
 	await resetStorage();
 	{
 		const alice = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
@@ -544,24 +544,92 @@ test("another account's notes are refused, and erasing is what clears them", asy
 		await close();
 	}
 
-	// Bob signs into the same machine. The address stopped carrying who owns a
-	// store (ADR-0324), so what refuses him is the binding written inside it
-	// (ADR-0325), and nothing merges Alice's notes into his account.
-	// Bob's device holds Alice's copy, and cache-first resolution is what hands
-	// him her address: nothing asks his account, because this device already
-	// has a generation 1.
+	// Bob signs into the same machine. The principal is a segment of the
+	// address, so cache-first resolution never hands him Alice's copy: he asks
+	// his own account, mints his own generation, and opens it. There is no
+	// refusal to render and nothing for a person to repair.
 	const bob = createFakeAuth({ status: 'signed-in', principalId: 'bob' });
-	const refused = await handleFor(bob).open();
-	expect(refused.error?.name).toBe('BoundElsewhere');
+	await importEmptyGeneration(bob);
+	const bobOpened = await openedBy(bob);
+	expect(titles(bobOpened.data)).toEqual([]);
+	bobOpened.data.tables.notes.create({ title: "bob's note" });
+	await bobOpened.close();
 
-	// And nothing was deleted to say so (ADR-0281). Alice comes back to hers.
+	// And neither replica saw the other. Alice comes back to hers.
 	const alice = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
 	const back = await openedBy(alice);
 	expect(titles(back.data)).toEqual(["alice's note"]);
 	await back.close();
 
-	// The person invokes the erase, and only then is the copy gone.
+	// Alice forgets this device. Bob's copy is untouched, because an erase
+	// reaches only the account that asked for it.
 	const erased = await handleFor(alice).eraseReplica();
 	expect(erased.error).toBeNull();
+	const remaining = await databaseNames();
+	expect(remaining.some((name) => name.includes('/bob/'))).toBe(true);
+	expect(remaining.some((name) => name.includes('/alice/'))).toBe(false);
+});
+
+test('a ready session erases itself: it closes first', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	const epicenter = handleFor(account);
+	await epicenter.open();
+	expect(epicenter.state.status).toBe('ready');
+
+	// The live path: a person invokes this from an account surface while their
+	// data is open. Erasing takes the Web Lock this session is holding, and the
+	// handle is the one thing that can let it go, so the verb closes rather than
+	// refusing itself with `AlreadyOpen`.
+	const erased = await epicenter.eraseReplica();
+	expect(erased.error).toBeNull();
+	expect(epicenter.state.status).toBe('closed');
 	expect(await databaseNames()).toEqual([]);
+});
+
+test('a ready session whose erase fails is ready again', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	// Two generations, so one can be held open by something this handle does not
+	// own. Erasing claims every generation under the prefix before deleting any,
+	// so a second window on the older one refuses the whole erase (ADR-0281).
+	await importEmptyGeneration(account);
+	await importEmptyGeneration(account);
+
+	const epicenter = handleFor(account);
+	await epicenter.open();
+	expect(epicenter.state.status).toBe('ready');
+
+	const other = await openDatabase(definition, {
+		appId: APP_ID,
+		generation: 1,
+		account: {
+			baseURL: account.connection.baseURL,
+			principalId: 'alice' as never,
+			fetch: (input, init) => account.fetch(input, init),
+		},
+	});
+	if (other.error !== null) throw other.error;
+
+	// Closing is what the deletion needs, not the deletion. When the deletion
+	// does not happen, a session that was serving data has to be serving it
+	// again: otherwise the surface that invoked this unmounts, the failure is
+	// reported to nobody, and the person is left with no data and no button.
+	const refused = await epicenter.eraseReplica();
+	expect(refused.error?.name).toBe('AlreadyOpen');
+	// The reopen is in flight rather than awaited, so what the caller must never
+	// see is `closed`: that is the dead state, the one nothing leaves on its own
+	// and no boot node offers a button for. `opening` resolves itself.
+	expect(epicenter.state.status).toBe('opening');
+	// And it resolves to the session that was there before. Joining the
+	// in-flight attempt is what a second `open` does, so this waits rather than
+	// starting a rival.
+	expect((await epicenter.open()).error).toBeNull();
+	expect(epicenter.state.status).toBe('ready');
+	expect(await databaseNames()).not.toEqual([]);
+
+	await other.data.close();
+	await epicenter.close();
 });

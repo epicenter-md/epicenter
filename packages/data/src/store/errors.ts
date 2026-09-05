@@ -118,7 +118,7 @@ export const StoreError = defineErrors({
 	 * answer to four unrelated situations, of which three were not conflicts:
 	 * a runtime with no Web Locks (`LocksUnsupported`), a lock request that
 	 * threw (`ClaimFailed`), and an address that already holds state
-	 * (`GenerationExists`). An application's boot gate tells a person to close
+	 * (`GenerationExists`). An application's boot node tells a person to close
 	 * another window when it sees this name, so a name that can mean four
 	 * things tells three quarters of the people who reach it to do something
 	 * that cannot help.
@@ -176,11 +176,10 @@ export const StoreError = defineErrors({
 	 * The store was asked for something it cannot name.
 	 *
 	 * Three inputs reach this, and they are one refusal because they are one
-	 * sentence: an application id or a generation number that cannot be a
-	 * segment of an address (ADR-0324), and an account that states no server or
-	 * no principal, which is what a replica REPORTS and what ADR-0325 stamps
-	 * inside it. Guessing any of them would open bytes that belong to something
-	 * else, or take edits into a record nothing can claim afterwards.
+	 * sentence: an application id, a principal id, or a generation number that
+	 * cannot be a segment of an address. Guessing any of them would open bytes
+	 * that belong to something else, or take edits into a record nothing can
+	 * claim afterwards.
 	 *
 	 * A signed-out account states no principal, which is the live path here:
 	 * `@epicenter/app` hands the opener the account it has and lets this refuse
@@ -191,33 +190,6 @@ export const StoreError = defineErrors({
 	Unaddressable: ({ reason }: { reason: string }) => ({
 		message: `This database cannot be named: ${reason}`,
 		reason,
-	}),
-	/**
-	 * This device's copy of that generation belongs to a different account
-	 * (ADR-0325).
-	 *
-	 * The one refusal that replaces four address segments. A database records
-	 * the server and the principal it was created for, in the transaction that
-	 * created it, and never rewrites them; opening it as somebody else is
-	 * refused rather than merged, because Yjs converges instead of erroring and
-	 * generation numbers are small integers, so a `7` under one account and a
-	 * `7` under another usually both exist. The failure this prevents is silent
-	 * interleaving of two people's histories, not a crash.
-	 *
-	 * Nothing is deleted as a step in a protocol (ADR-0281). The caller is told,
-	 * and `eraseGenerations` is the verb a person invokes if they want the
-	 * device's copy gone.
-	 */
-	BoundElsewhere: ({
-		dataId,
-		generation,
-	}: {
-		dataId: string;
-		generation: number;
-	}) => ({
-		message: `Generation ${generation} of '${dataId}' on this device belongs to a different account`,
-		dataId,
-		generation,
 	}),
 	/**
 	 * This device holds no copy of the generation asked for, and has no account

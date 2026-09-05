@@ -153,12 +153,14 @@ test('the rest of the handle comes across, and reading it opens nothing', () => 
 	expect(typeof epicenter.sqlite.open).toBe('function');
 	expect(typeof epicenter.secrets.get).toBe('function');
 
-	// Ending the store is the module local's, erasing rides on `failed`, and
-	// the raw subscription is consumed rather than offered as a second way to
-	// watch what the rune already reports.
+	// Ending the store is the module local's, and the raw subscription is
+	// consumed rather than offered as a second way to watch what the rune
+	// already reports. Erasing IS forwarded, like every other verb: it closes
+	// the session itself, so an account surface can invoke it while the store
+	// is open.
 	expect('close' in epicenter).toBe(false);
 	expect('onStateChange' in epicenter).toBe(false);
-	expect('eraseReplica' in epicenter).toBe(false);
+	expect(typeof epicenter.eraseReplica).toBe('function');
 });
 
 test('`close` is dropped from the type, not only from the object', () => {
@@ -185,12 +187,15 @@ test('the store rides on ready, adapted once, with everything else intact', () =
 	const epicenter = fromEpicenter(held.epicenter);
 	expect(epicenter.state.status).toBe('opening');
 
-	held.publish({ status: 'ready', data: store('epicenter/v4/app/data/1') });
+	held.publish({
+		status: 'ready',
+		data: store('epicenter/v5/app/alice/data/1'),
+	});
 	if (epicenter.state.status !== 'ready') throw new Error('expected ready');
 	// Adapted, not narrowed: every member the store had is still there, which is
 	// what lets one object be handed over once instead of a store and a view of
 	// it. The address is the member the folder verbs read.
-	expect(epicenter.state.data.address).toBe('epicenter/v4/app/data/1');
+	expect(epicenter.state.data.address).toBe('epicenter/v5/app/alice/data/1');
 	expect(epicenter.state.data.transact(() => 'ran')).toBe('ran');
 
 	// One projection per store, built when the store appeared rather than on
@@ -202,7 +207,10 @@ test('the store rides on ready, adapted once, with everything else intact', () =
 test('the data on ready cannot end the session', () => {
 	const held = handle({ status: 'opening' });
 	const epicenter = fromEpicenter(held.epicenter);
-	held.publish({ status: 'ready', data: store('epicenter/v4/app/data/1') });
+	held.publish({
+		status: 'ready',
+		data: store('epicenter/v5/app/alice/data/1'),
+	});
 	if (epicenter.state.status !== 'ready') throw new Error('expected ready');
 
 	// A component is handed `state.data` and nothing else, so the lock, the
@@ -213,23 +221,39 @@ test('the data on ready cannot end the session', () => {
 	}
 });
 
-test('a failure carries the error and the erase, and nothing else does', async () => {
+test('a failure carries the error and nothing else', async () => {
 	const held = handle({ status: 'opening' });
 	const epicenter = fromEpicenter(held.epicenter);
 
-	held.publish({ status: 'failed', error: 'BoundElsewhere' });
+	held.publish({ status: 'failed', error: 'GenerationUnreachable' });
 	if (epicenter.state.status !== 'failed')
 		throw new Error('expected a failure');
-	expect(epicenter.state.error).toBe('BoundElsewhere');
+	expect(epicenter.state.error).toBe('GenerationUnreachable');
 
-	// Erasing takes the same claim an open takes, so it can only succeed in the
-	// state that hands it over: a failed open released its claim before it
-	// returned.
-	await epicenter.state.eraseReplica();
-	expect(held.erases()).toBe(1);
+	// The erase does not ride here any more. It closes the session itself, so
+	// no state is the one place it can succeed, and hanging it on a variant
+	// would be the placement rule saying something untrue.
+	expect('eraseReplica' in epicenter.state).toBe(false);
 
 	// And the repair is a second `open`, which is the state machine's own way
 	// back rather than a document reload.
 	held.publish({ status: 'closed' });
 	expect((epicenter.state as { status: string }).status).toBe('closed');
+});
+
+test('erasing is forwarded at the top level, reachable from every state', async () => {
+	const held = handle({ status: 'opening' });
+	const epicenter = fromEpicenter(held.epicenter) as unknown as {
+		eraseReplica(): Promise<unknown>;
+	};
+	held.publish({
+		status: 'ready',
+		data: store('epicenter/v5/app/alice/data/1'),
+	});
+
+	// The live path is an account surface, which is mounted while the store is
+	// open. The handle closes before it erases, so `ready` is exactly where this
+	// has to work.
+	await epicenter.eraseReplica();
+	expect(held.erases()).toBe(1);
 });

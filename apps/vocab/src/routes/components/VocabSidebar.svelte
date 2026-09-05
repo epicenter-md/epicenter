@@ -8,6 +8,7 @@
 	import MessageSquareTextIcon from '@lucide/svelte/icons/message-square-text';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { auth } from '$lib/platform/auth';
+	import { epicenter } from '$lib/epicenter.svelte';
 	import { dictation } from '$lib/state/dictation.svelte';
 	import EntriesPanel from './EntriesPanel.svelte';
 
@@ -40,6 +41,12 @@
 					disabledReason={dictation.status !== 'idle'
 						? 'Finish dictating to change your account'
 						: undefined}
+					onForgetDevice={async () => {
+						// Vocab keeps no account data outside the store, so erasing the
+						// replica is the whole of what forgetting this device means.
+						const { error } = await epicenter.eraseReplica();
+						if (error !== null) throw error;
+					}}
 				/>
 			</div>
 		</div>

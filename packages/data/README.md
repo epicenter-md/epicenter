@@ -52,21 +52,26 @@ In a browser the caller also names the application doing the opening and which
 generation it means (ADR-0324, ADR-0292):
 
 ```text
-epicenter/v4/<appId>/<dataId>/<n>
+epicenter/v5/<appId>/<principalId>/<dataId>/<n>
 ```
 
 That address is the IndexedDB database name, so there is one database per
-GENERATION, and two applications naming one data id keep their own replicas
-(ADR-0304). `v4` is the storage epoch: bumping it strands every existing record
-instead of migrating it, which is how the record's shape is allowed to change.
+GENERATION, two applications naming one data id keep their own replicas
+(ADR-0304), and two accounts on one device keep their own replicas. `v5` is the
+storage epoch: bumping it strands every existing record instead of migrating
+it, which is how the record's shape is allowed to change. Stranded records are
+left alone; nothing reads, adopts, or reaps them.
 
-Nothing about WHO owns the store is in that name. A generation records the
-server and the principal it was created for, in the transaction that created
-it, and opening it as anybody else answers `StoreError.BoundElsewhere`
-(ADR-0325). `eraseGenerations` is the verb a person invokes to be rid of a copy
-that is not theirs; nothing erases on its own. A store cannot be opened without
-an account, and one that names no server or principal is refused with
-`StoreError.Unaddressable` rather than addressed.
+The principal is a segment, so whose copy this is comes from the name rather
+than from anything written inside the record. The SERVER is not a segment: a
+build names one authority (ADR-0326) and is served from one origin, so it is a
+device-wide constant rather than an address.
+
+`eraseGenerations` is the verb a person invokes to be rid of this account's copy
+on this device; nothing erases on its own, and an erase reaches only the account
+that asked for it. A store cannot be opened without an account, and one that
+names no principal is refused with `StoreError.Unaddressable` rather than
+addressed.
 
 Opening replays a durable log into one `Y.Doc`. After that every read is a
 property access on a document already in memory, so nothing below returns a

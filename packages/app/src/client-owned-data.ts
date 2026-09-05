@@ -60,7 +60,7 @@ type PrincipalId = Extract<
  * that opened a store.
  *
  * **A signed-out client states no principal, and that fact is handed to the
- * opener rather than thrown here.** `canonicalBinding` refuses an account
+ * opener rather than thrown here.** The address builder refuses an account
  * naming no principal before anything is claimed or created, so the refusal a
  * caller sees comes from the one place that decides it.
  */
@@ -191,19 +191,34 @@ export async function openReplica<TDefinition extends DataDefinition>({
 }
 
 /**
- * Erase every generation of this definition this device holds (ADR-0325).
+ * Erase this account's copy of this definition on this device.
  *
- * Every generation rather than one, because the refusal it repairs is about
- * the address rather than about one number: erasing only the copy that was
- * refused would refuse the next number down and ask again.
+ * Scoped to the account the client is signed in as, because the principal is a
+ * segment of the address: forgetting one person's copy on a shared device
+ * leaves the other person's alone, and there is no reachable way to erase
+ * somebody else's.
+ *
+ * Every generation rather than one, because a person forgetting their copy
+ * means all of it: erasing only the newest would leave the number below it to
+ * be opened next boot.
+ *
+ * A signed-out client names no principal and is refused here the same way it is
+ * refused at open, by the address builder, rather than being allowed to erase
+ * something it cannot name.
  */
 export async function eraseReplicaOf({
 	appId,
 	definition,
+	account,
 }: {
 	appId: string;
 	definition: DataDefinition;
+	account: AuthClient;
 }): Promise<Result<void, StoreError>> {
-	const erased = await eraseGenerations({ appId, dataId: definition.id });
+	const erased = await eraseGenerations({
+		appId,
+		principalId: addressOf(account).principalId,
+		dataId: definition.id,
+	});
 	return erased.error !== null ? erased : Ok(undefined);
 }

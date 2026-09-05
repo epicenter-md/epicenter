@@ -28,7 +28,7 @@
  * because reading `data` would otherwise open into `Unaddressable`. With
  * opening explicit, an application that has not authenticated simply has not
  * called `open`, and the session is `closed`, which is exactly true. The gate
- * moves to the application, which is where the auth client already is, and this
+ * moves to the boot node, which is where the auth client already is, and this
  * package stops carrying a second opinion about authentication. **That gate is
  * still this wrapper's precondition**: a page lifetime is one auth generation
  * (ADR-0088), and an application whose layout does not mount `reloadOnAuthChange`
@@ -52,19 +52,13 @@
  *   <Loading />
  * {:else if epicenter.state.status === 'ready'}
  *   <Notes data={epicenter.state.data} />
- * {:else}
- *   <BootGate
- *     {vocabulary}
- *     {auth}
- *     error={epicenter.state.error}
- *     erase={epicenter.state.eraseReplica}
- *     retry={() => void epicenter.open()}
- *   />
+ * {:else if epicenter.state.status === 'failed'}
+ *   <p>{sentenceFor(epicenter.state.error)}</p>
+ *   <button onclick={() => void epicenter.open()}>Try again</button>
  * {/if}
  * ```
  */
 
-import type { Result } from 'wellcrafted/result';
 import {
 	type AdaptableData,
 	fromData,
@@ -90,12 +84,11 @@ export type AdaptableEpicenterState<TData extends AdaptableData, TError> =
  * Neither acquires anything, which is why this can be read and subscribed at
  * module scope.
  */
-type AdaptableEpicenter<TData extends AdaptableData, TError, TEraseError> = {
+type AdaptableEpicenter<TData extends AdaptableData, TError> = {
 	readonly state: AdaptableEpicenterState<TData, TError>;
 	onStateChange(
 		listener: (state: AdaptableEpicenterState<TData, TError>) => void,
 	): () => void;
-	eraseReplica(): Promise<Result<void, TEraseError>>;
 };
 
 /**
@@ -103,37 +96,24 @@ type AdaptableEpicenter<TData extends AdaptableData, TError, TEraseError> = {
  * store adapted. `ReactiveEpicenterState` rather than `EpicenterState`, which is
  * the core's: the two differ exactly where `ReactiveData` differs from `Data`.
  *
- * The shape is the core's, one member at a time, with two differences and both
- * are this package's job. `ready` carries a `ReactiveData` rather than the raw
- * store, and `failed` carries the erase.
- *
- * **`eraseReplica` is on `failed` and nowhere else**, and that is an invariant
- * rather than a convenience: erasing takes the same claim an open takes, so
- * erasing while the store is open is refused by the store itself. A failed open
- * released its claim before it returned, which makes `failed` the one state
- * where the verb can succeed. A `closed` session could also erase, and it is
- * not offered there either: nothing in a surface asks to erase a notebook it
- * has not tried to open.
+ * The shape is the core's, one member at a time, with one difference and it is
+ * this package's job: `ready` carries a `ReactiveData` rather than the raw
+ * store.
  *
  * **One rule places every verb: a verb rides on the state when that state is
  * the only one it can succeed in, and stays at the top level otherwise.**
  * `open` is at the top level because it succeeds from three of the four, which
  * is what makes it both the first call and the retry, and putting it on a
- * variant would mean writing it on three of them.
+ * variant would mean writing it on three of them. `eraseReplica` was on
+ * `failed` while erasing needed a session that held no claim; the handle closes
+ * before it erases now, so the verb succeeds from every state and no state is
+ * the one place to hang it.
  */
-export type ReactiveEpicenterState<
-	TData extends AdaptableData,
-	TError,
-	TEraseError,
-> =
+export type ReactiveEpicenterState<TData extends AdaptableData, TError> =
 	| { readonly status: 'closed' }
 	| { readonly status: 'opening' }
 	| { readonly status: 'ready'; readonly data: ReactiveData<TData> }
-	| {
-			readonly status: 'failed';
-			readonly error: TError;
-			eraseReplica(): Promise<Result<void, TEraseError>>;
-	  };
+	| { readonly status: 'failed'; readonly error: TError };
 
 /**
  * Adapt one application handle into Svelte reactivity: the same epicenter,
@@ -148,11 +128,12 @@ export type ReactiveEpicenterState<
  *
  * Three members do not come across. `state` is replaced. `onStateChange` is
  * consumed here, and forwarding it would offer a route a second way to watch
- * the same thing that is not a rune. `close` is left behind on purpose, so the
- * only reference to it is the module local that built the handle, which is the
- * one place a hot reload can reach and no route can (ADR-0340). `eraseReplica`
- * rides on the `failed` variant instead, where it is the one state it can
- * succeed in.
+ * the same thing that is not a rune. `close` is left behind because ending the
+ * session is not a route's decision, which is a narrower claim than "no route
+ * can reach it": `eraseReplica` IS forwarded and it closes, so a route can end
+ * the session, but only as a step in a deletion the person asked for. The two
+ * callers are the module local that built the handle, which is what a hot
+ * reload reaches (ADR-0340), and that erase.
  *
  * The forwarding copies property DESCRIPTORS rather than spreading, so a member
  * an application adds as a getter stays one.
@@ -160,12 +141,11 @@ export type ReactiveEpicenterState<
 export function fromEpicenter<
 	TData extends AdaptableData,
 	TError,
-	TEraseError,
 	TEpicenter extends object,
 >(
-	epicenter: AdaptableEpicenter<TData, TError, TEraseError> & TEpicenter,
-): Omit<TEpicenter, 'state' | 'onStateChange' | 'close' | 'eraseReplica'> & {
-	readonly state: ReactiveEpicenterState<TData, TError, TEraseError>;
+	epicenter: AdaptableEpicenter<TData, TError> & TEpicenter,
+): Omit<TEpicenter, 'state' | 'onStateChange' | 'close'> & {
+	readonly state: ReactiveEpicenterState<TData, TError>;
 } {
 	/**
 	 * Adapt one core state into this package's.
@@ -176,19 +156,10 @@ export function fromEpicenter<
 	 */
 	const adapt = (
 		next: AdaptableEpicenterState<TData, TError>,
-	): ReactiveEpicenterState<TData, TError, TEraseError> => {
-		switch (next.status) {
-			case 'ready':
-				return { status: 'ready', data: fromData(next.data) };
-			case 'failed':
-				return {
-					status: 'failed',
-					error: next.error,
-					eraseReplica: () => epicenter.eraseReplica(),
-				};
-			default:
-				return next;
-		}
+	): ReactiveEpicenterState<TData, TError> => {
+		return next.status === 'ready'
+			? { status: 'ready', data: fromData(next.data) }
+			: next;
 	};
 
 	let state = $state.raw(adapt(epicenter.state));
@@ -201,12 +172,7 @@ export function fromEpicenter<
 
 	const forwarded: PropertyDescriptorMap = {};
 	for (const key of Reflect.ownKeys(epicenter)) {
-		if (
-			key === 'state' ||
-			key === 'onStateChange' ||
-			key === 'close' ||
-			key === 'eraseReplica'
-		) {
+		if (key === 'state' || key === 'onStateChange' || key === 'close') {
 			continue;
 		}
 		const descriptor = Object.getOwnPropertyDescriptor(epicenter, key);
@@ -223,10 +189,7 @@ export function fromEpicenter<
 				},
 			},
 		}),
-	) as Omit<
-		TEpicenter,
-		'state' | 'onStateChange' | 'close' | 'eraseReplica'
-	> & {
-		readonly state: ReactiveEpicenterState<TData, TError, TEraseError>;
+	) as Omit<TEpicenter, 'state' | 'onStateChange' | 'close'> & {
+		readonly state: ReactiveEpicenterState<TData, TError>;
 	};
 }

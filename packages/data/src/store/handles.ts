@@ -629,7 +629,7 @@ export type ReplicaDocument = DataDocument & {
  * That this store replicates, and the key its transport is registered against.
  *
  * It carries no facts, and it used to carry one: the document identity, which
- * was a boot gate's whole question (ADR-0231). The generation is in the address
+ * was a boot node's whole question (ADR-0231). The generation is in the address
  * now, so a replica is bound the moment it opens and there is nothing left to
  * wait for (ADR-0292). What is left is the discriminant the store types already
  * had, plus an object identity `syncEngineOf` can key on, so a wrapper that
