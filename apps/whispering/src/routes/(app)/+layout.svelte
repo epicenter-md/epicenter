@@ -9,97 +9,111 @@
 	matters is the retry: a failure is not memoized, so opening again is a real
 	repair instead of a document reload sent to re-ask a question that was
 	already answered.
+
+	**This node opens, and `WhisperingShell` renders.** Everything that exists
+	because the store is open lives in the shell; what is left here is the boot
+	itself and the screens a person meets before their recordings.
+
+	Every screen below is written here in this application's words rather than
+	taken from a shared gate (ADR-0244). See
+	`apps/honeycrisp/src/routes/+page.svelte` for why the explanation lives in
+	one place and the markup in three, why `authClient` rather than `auth`, and
+	why `signIn` has no `finally`.
 -->
 <script lang="ts">
-	import { BootGate } from '@epicenter/app-shell/boot-gate';
+	import { Button } from '@epicenter/ui/button';
 	import { Loading } from '@epicenter/ui/loading';
-	import * as Sidebar from '@epicenter/ui/sidebar';
-	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { MediaQuery } from 'svelte/reactivity';
-	import { auth, authClient } from '#platform/auth';
-	import DictationIndicator from '#platform/dictation-indicator';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import { extractErrorMessage } from 'wellcrafted/error';
+	import { authClient } from '#platform/auth';
 	import { epicenter } from '$lib/epicenter.svelte';
-	import WhisperingUiSessionProvider from '$lib/whispering/WhisperingUiSessionProvider.svelte';
-	import AppEffects from './_components/AppEffects.svelte';
-	import BottomNav from './_components/BottomNav.svelte';
-	import ContentShell from './_components/ContentShell.svelte';
-	import GlobalDialogs from './_components/GlobalDialogs.svelte';
-	import VerticalNav from './_components/VerticalNav.svelte';
+	import WhisperingShell from './_components/WhisperingShell.svelte';
 
 	let { children } = $props();
 
-	let sidebarOpen = $state(false);
-
-	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
-	const isNarrow = new MediaQuery('(max-width: 767px)');
-
-	// Signed-out is read once, here, rather than tracked, and `authClient` is
-	// what makes that structural: the raw client has no Svelte subscriber on it,
-	// so this read cannot start tracking. A page lifetime is one auth generation
-	// (ADR-0088): the root layout's `reloadOnAuthChange` replaces the document on
-	// every transition that invalidates this boot, so a second, competing answer
-	// to auth underneath it would be dead for the transitions that reload and
-	// wrong for the one that deliberately does not. An account is required,
-	// because a store is one replica of an authority (ADR-0336). A deep link
-	// opened while signed out stays on its URL, and the post-sign-in reload lands
-	// where the link pointed.
 	const signedOut = authClient.state.status === 'signed-out';
 
 	// Not awaited: what the open reports is `epicenter.state`, which is what
 	// every branch below renders from.
 	if (!signedOut) void epicenter.open();
 
-	// The nouns the shared gate borrows. They are the application's, so they are
-	// stated at the one node that renders the gate rather than in a package that
-	// has never met the person reading them (ADR-0244). The erase description is
-	// stated rather than templated because this one has to name the audio.
-	const vocabulary = {
-		appName: 'Whispering',
-		subject: 'recordings',
-		eraseDescription:
-			'Every recording on this device will be deleted, along with its audio. Whatever had already reached the account they belong to is still there; anything that had not is gone. This action cannot be undone.',
-	};
+	// Pending until the page or the process is replaced. Clearing on success
+	// would re-enable the button while OAuth is still running elsewhere.
+	let signingIn = $state(false);
+	let signInError = $state<string | undefined>(undefined);
+
+	async function signIn() {
+		signInError = undefined;
+		signingIn = true;
+		const { error } = await authClient.startSignIn();
+		if (error !== null) {
+			signInError = error.message;
+			signingIn = false;
+		}
+	}
 </script>
 
 {#if signedOut}
-	<BootGate {vocabulary} {auth} />
+	<div class="flex h-dvh items-center justify-center p-6 text-center">
+		<div class="flex max-w-sm flex-col items-center gap-4">
+			<div class="space-y-2">
+				<h1 class="text-lg font-semibold">Whispering</h1>
+				<p class="text-sm text-muted-foreground">
+					Sign in to open your recordings.
+				</p>
+				{#if signInError !== undefined}
+					<p class="text-xs text-destructive">{signInError}</p>
+				{/if}
+			</div>
+			<Button size="lg" disabled={signingIn} onclick={signIn}>
+				{#if signingIn}
+					<Spinner class="size-4" />
+					Signing in…
+				{:else}
+					Sign in with Epicenter
+				{/if}
+			</Button>
+		</div>
+	</div>
 {:else if epicenter.state.status === 'ready'}
-	<WhisperingUiSessionProvider data={epicenter.state.data}>
-		<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
-		<Tooltip.Provider>
-			<AppEffects />
-
-			{#if isNarrow.current}
-				<div class="flex h-full min-h-svh flex-col">
-					<div class="flex-1 pb-14">
-						<ContentShell>{@render children()}</ContentShell>
-					</div>
-					<BottomNav />
-				</div>
-			{:else}
-				<Sidebar.Provider bind:open={sidebarOpen}>
-					<VerticalNav />
-					<Sidebar.Inset>
-						<ContentShell>{@render children()}</ContentShell>
-					</Sidebar.Inset>
-				</Sidebar.Provider>
-			{/if}
-
-			<GlobalDialogs />
-			<DictationIndicator />
-		</Tooltip.Provider>
-	</WhisperingUiSessionProvider>
+	<WhisperingShell data={epicenter.state.data}>
+		{@render children()}
+	</WhisperingShell>
 {:else if epicenter.state.status === 'failed'}
-	<BootGate
-		{vocabulary}
-		{auth}
-		error={epicenter.state.error}
-		erase={epicenter.state.eraseReplica}
-		retry={() => void epicenter.open()}
-	/>
+	<div class="flex h-dvh items-center justify-center p-6 text-center">
+		<div class="flex max-w-sm flex-col items-center gap-4">
+			<div class="space-y-2">
+				<h1 class="text-lg font-semibold">Whispering</h1>
+				{#if epicenter.state.error.name === 'AlreadyOpen'}
+					<p class="text-sm text-muted-foreground">
+						Another Whispering window already has your recordings open. Close
+						it, then try again.
+					</p>
+				{:else if epicenter.state.error.name === 'LocksUnsupported'}
+					<p class="text-sm text-muted-foreground">
+						This browser is too old to open your recordings safely. Update it,
+						or use a different one.
+					</p>
+				{:else}
+					<p class="text-sm text-muted-foreground">
+						Your recordings could not be opened. Check your connection and try
+						again.
+					</p>
+					<p class="text-xs text-muted-foreground/70">
+						{extractErrorMessage(epicenter.state.error)}
+					</p>
+				{/if}
+			</div>
+			{#if epicenter.state.error.name !== 'LocksUnsupported'}
+				<Button size="lg" onclick={() => void epicenter.open()}>
+					Try again
+				</Button>
+			{/if}
+		</div>
+	</div>
 {:else}
-	<!-- `closed` and `opening` are one screen. A signed-in person meets `closed`
-	     for the one tick between this component initialising and the open above
-	     starting, and there is nothing for them to do in it. -->
-	<Loading class="h-dvh" />
+	<!-- `closed` and `opening` are one screen; `closed` is unreachable during a
+	     boot, and the one caller that returns a session to it reopens on
+	     failure. -->
+	<Loading class="h-dvh" label="Opening your recordings…" />
 {/if}

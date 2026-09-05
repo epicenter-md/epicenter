@@ -68,9 +68,9 @@ application that has not authenticated has not called `open`, and the session is
 `closed`, which is exactly true. The gate belongs to the application, which is
 where the auth client already is.
 
-`eraseReplica` rides on `failed` and nowhere else. Erasing takes the same claim
-an open takes, so erasing an open store is refused by the store; a failed open
-released its claim before it returned.
+`eraseReplica` is forwarded like every other verb. It closes the session before
+it erases, so it succeeds from every state, which is what lets an account
+surface offer it while the store is open.
 
 `close` and `onStateChange` do not come across. The close stays with the module
 local that built the handle, which is the one place a hot reload can reach and
@@ -98,17 +98,14 @@ export const notes = fromEpicenter(
 </script>
 
 {#if auth.state.status === 'signed-out'}
-  <BootGate {vocabulary} {auth} />
+  <SignIn />
 {:else if notes.state.status === 'ready'}
   <Notes data={notes.state.data} />
 {:else if notes.state.status === 'failed'}
-  <BootGate
-    {vocabulary}
-    {auth}
-    error={notes.state.error}
-    erase={notes.state.eraseReplica}
-    retry={() => void notes.open()}
-  />
+  <!-- `error` is `DataOpenError`, a discriminated union, so the arms narrow
+       on `.name` and the compiler checks them. -->
+  <p>{sentenceFor(notes.state.error)}</p>
+  <button onclick={() => void notes.open()}>Try again</button>
 {:else}
   <Loading />
 {/if}

@@ -83,7 +83,7 @@ epicenter.state              // EpicenterState<TDefinition>, read-only
 epicenter.open()             // Promise<Result<ReplicaData<TDefinition>, DataOpenError>>
 epicenter.onStateChange(fn)  // () => void, the unsubscribe
 epicenter.close()            // Promise<void>
-epicenter.eraseReplica()     // Promise<Result<void, StoreError>>
+epicenter.eraseReplica()     // Promise<Result<void, StoreError>>, closes first
 ```
 
 ```ts
@@ -114,8 +114,8 @@ application could not say when it happened, a surface could not retry it, and a
 `{ ...epicenter }` anywhere claimed a lock.
 
 `open` resolves a `Result`, and the error is the store's own rather than an
-`AppError` wrapping it: a boot gate switches on the failure's `name` to choose
-between a retry and an erase. Two variants are the session's rather than the
+`AppError` wrapping it: a boot node switches on the failure's `name` to choose
+which screen a person sees and whether a retry can help. Two variants are the session's rather than the
 store's. `DataSessionError.SessionClosed` answers a caller whose open was closed
 underneath, instead of handing back `Ok` over a store whose every verb throws;
 `DataSessionError.OpenerThrew` contains an opener that rejected, which would
@@ -192,11 +192,14 @@ signed out, and renders the four states. Honeycrisp and Vocab boot from
 Whispering boots from `routes/(app)/+layout.svelte` because it has a shell and
 two siblings that must escape it.
 
-**One gate, shared.** `BootGate` (`@epicenter/app-shell/boot-gate`) renders
-signed-out and `failed` from one component, and `bootFailure` turns a store
-refusal into the sentence and the repair a person is offered. It takes the
-application's nouns rather than choosing them, so a new failure that reaches a
-person is a sentence to write in one place.
+**Each application writes its own boot screens.** There was a shared gate
+taking an application's nouns as parameters; what it templated turned out to be
+one sentence per screen with a hole where the noun goes, so the hole is closed
+and the sentences live at the boot node (ADR-0244). A failure earns its own
+screen only by changing what a person can DO, which is two of them:
+`AlreadyOpen`, because they can close the other window, and `LocksUnsupported`,
+because a retry button there would be a lie. The branch is
+`epicenter.state.error.name`, checked by the compiler against `DataOpenError`.
 
 ## Names are checked where they are minted
 
