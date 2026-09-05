@@ -35,17 +35,19 @@
  *   which is worth more than the diagnosis.
  * - Nudging on local work, by subscribing to the store rather than by asking
  *   every caller to remember.
- * - Stopping for good when the host reports a dial can never succeed
- *   (`denied`). A permanent credential refusal is not a transport failure, and
- *   retrying it on a timer is a hot loop against a wall; the repair is a new
- *   app generation, which the host owns (reload on auth change), not a state
- *   in this driver.
+ * - Reporting a credential refusal as data on the status, and dialling again
+ *   on the same backoff. A refusal is decided locally, before anything reaches
+ *   the wire: the host has no credential, or the one it has was already
+ *   refused. So a retry capped at thirty seconds costs a status read, and the
+ *   dial after a person signs back in simply succeeds. This driver runs for as
+ *   long as the store is open and has no parked state to resume from.
  *
  * Everything else is ordinary weather: a close, garbage on the wire, and every
  * failure reconnect on backoff. Nothing this driver sees can discard local
  * state, which is what makes "doubt never discards" structural rather than
  * careful.
  */
+import type { SyncRefusal } from '@epicenter/sync/auth-subprotocol';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import { type DataDocument, syncEngineOf } from '../store/store.js';
@@ -81,20 +83,17 @@ export type SyncAttempt = {
 	opened(socket: SyncSocket): void;
 	/** Bytes arrived from the authority. */
 	received(bytes: Uint8Array): void;
-	/** The socket is gone, for any reason. Safe to call more than once. */
-	closed(): void;
 	/**
-	 * No socket this host can make will ever succeed. Stops the driver for good.
+	 * The socket is gone, for any reason. Safe to call more than once.
 	 *
-	 * The one report that is not a transport failure: a credential model that
-	 * permanently refuses to open a socket (signed out, reauth required, a
-	 * window that holds no credential at all) cannot be repaired by time-based
-	 * retry, so `closed()` would spin the backoff forever against a refusal.
-	 * The driver releases everything it holds and never dials again; sync for
-	 * this replica resumes only in a new app generation, which the host starts
-	 * by reloading on an auth change.
+	 * `refusal` says the host's credential model declined to open one at all,
+	 * and which refusal it was. It is reported rather than raised, and it does
+	 * not stop anything: the driver records it on its status for a surface to
+	 * render, then dials again on the ordinary backoff. That retry is free
+	 * because a refusal is decided locally, with no request on the wire, so
+	 * nothing has to wake this driver when a credential arrives.
 	 */
-	denied(): void;
+	closed(refusal?: SyncRefusal): void;
 };
 
 /**
@@ -112,27 +111,32 @@ export type ReconnectReason =
 	/** The client is stuck behind a gap and asked to be reconnected. */
 	| 'resync'
 	/** A submission went unacknowledged past the watchdog's patience. */
-	| 'stalled';
+	| 'stalled'
+	/** The host's credential model refused to open a socket. */
+	| 'refused';
 
 export type SyncConnectionStatus = SyncClientStatus & {
 	/** Whether a socket is currently attached. */
 	connected: boolean;
 	/**
-	 * Whether the host reported that no dial can ever succeed.
+	 * Why the host's credential model refused the last dial, if it did.
 	 *
-	 * Once true it stays true: the driver has let go of everything and this
-	 * connection is permanently idle. A surface that renders sync should treat
-	 * a denied connection the same as no connection at all.
+	 * Set on a refused dial and cleared by the next dial that is not refused,
+	 * whether that one opens or fails on the wire: it describes the last dial's
+	 * outcome rather than a history. So a signed-in person who is merely
+	 * offline never reads a line about signing in. A surface maps it
+	 * exhaustively and renders nothing for the arms a person cannot act on.
 	 */
-	denied: boolean;
+	refusal: SyncRefusal | undefined;
 	/**
-	 * Failed attempts since the last one that stayed up long enough to count.
+	 * Failed dials since the last one that stayed up long enough to count.
 	 *
 	 * What the backoff is computed from, and the one number that says "this
 	 * device is not talking to anything" without needing an error to have been
-	 * produced.
+	 * produced. Under a standing refusal it climbs for the life of the store,
+	 * which is why a surface showing a refusal does not also show this.
 	 */
-	attempts: number;
+	failures: number;
 	/** Why the last reconnect happened, or undefined if none has. */
 	lastReconnect: ReconnectReason | undefined;
 };
@@ -155,8 +159,8 @@ export type SyncConnection = {
  * rather than an outage, and a replica that has backed off to minutes would sit
  * out a recovery that already happened.
  */
-function defaultBackoff(attempts: number): number {
-	return Math.min(30_000, 1_000 * 2 ** Math.max(0, attempts - 1));
+function defaultBackoff(failures: number): number {
+	return Math.min(30_000, 1_000 * 2 ** Math.max(0, failures - 1));
 }
 
 export function createSyncConnection({
@@ -192,7 +196,7 @@ export function createSyncConnection({
 	dial: SyncDial;
 	idleMs?: number;
 	schedule?: Schedule;
-	backoff?: (attempts: number) => number;
+	backoff?: (failures: number) => number;
 	healthyMs?: number;
 	unacknowledgedMs?: number;
 }): SyncConnection {
@@ -204,19 +208,19 @@ export function createSyncConnection({
 
 	let running = false;
 	let disposed = false;
-	let denied = false;
 	let connected = false;
-	let attempts = 0;
+	let refusal: SyncRefusal | undefined;
+	let failures = 0;
 	let lastReconnect: ReconnectReason | undefined;
 	/**
 	 * Which attempt is the live one.
 	 *
-	 * Every callback a host holds carries the generation it was made for. A
-	 * socket that closes after this driver has already moved on would otherwise
-	 * detach the client from its replacement, which reads as a connection that
-	 * silently stops carrying anything.
+	 * Every callback a host holds carries the attempt it was made for. A socket
+	 * that closes after this driver has already moved on would otherwise detach
+	 * the client from its replacement, which reads as a connection that silently
+	 * stops carrying anything.
 	 */
-	let generation = 0;
+	let attempt = 0;
 	let teardown: (() => void) | undefined;
 	let cancelRedial: (() => void) | undefined;
 	let cancelHealthy: (() => void) | undefined;
@@ -236,7 +240,7 @@ export function createSyncConnection({
 
 	/** Let go of the current socket, whatever state it is in. */
 	function abandon(): void {
-		generation += 1;
+		attempt += 1;
 		cancelTimers();
 		const stop = teardown;
 		teardown = undefined;
@@ -256,12 +260,12 @@ export function createSyncConnection({
 		if (!running) return;
 		lastReconnect = reason;
 		abandon();
-		attempts += 1;
+		failures += 1;
 		cancelRedial?.();
 		cancelRedial = schedule(() => {
 			cancelRedial = undefined;
 			open();
-		}, backoff(attempts));
+		}, backoff(failures));
 	}
 
 	/**
@@ -276,11 +280,7 @@ export function createSyncConnection({
 		if (client.status().needsResync) reconnect('resync');
 	}
 
-	/**
-	 * Let go of everything, permanently. Shared by disposal and denial: the
-	 * only difference between "the app is done with sync" and "sync can never
-	 * work in this app generation" is which flag the status reports.
-	 */
+	/** Let go of everything, permanently. Disposal, and nothing else. */
 	function shutdown(): void {
 		running = false;
 		stopLocalWork();
@@ -292,21 +292,24 @@ export function createSyncConnection({
 
 	function open(): void {
 		if (!running || teardown !== undefined) return;
-		const attempt = ++generation;
-		const live = () => running && generation === attempt;
+		const dialled = ++attempt;
+		const live = () => running && attempt === dialled;
 
 		teardown = dial({
 			cursor: client.cursor(),
 			opened(socket: SyncSocket) {
 				if (!live()) return;
 				connected = true;
+				// This dial was not refused, so whatever refused the one before it
+				// is no longer what happened.
+				refusal = undefined;
 				client.attach(socket);
 				// A socket that lasts is what proves the far end works. Anything
 				// shorter is an attempt that failed in a way that happens to include
 				// a successful upgrade.
 				cancelHealthy = schedule(() => {
 					cancelHealthy = undefined;
-					attempts = 0;
+					failures = 0;
 				}, healthyMs);
 				startWatchdog();
 				settle();
@@ -316,21 +319,21 @@ export function createSyncConnection({
 				client.receive(bytes);
 				settle();
 			},
-			closed() {
+			closed(refused?: SyncRefusal) {
 				if (!live()) return;
-				reconnect('closed');
-			},
-			denied() {
-				if (!live()) return;
-				denied = true;
-				shutdown();
+				// Assigned rather than merged, so a dial that reached the wire
+				// clears a refusal the one before it reported. The status answers
+				// for the last dial, and an offline signed-in device must not be
+				// told to sign in.
+				refusal = refused;
+				reconnect(refused === undefined ? 'closed' : 'refused');
 			},
 		});
 		// The attempt may have ended during dial() itself: a host that fails
-		// synchronously reports `closed` or `denied` before the teardown above is
-		// assigned, so the abandonment already ran and this assignment would
-		// otherwise resurrect a dead attempt and block every future redial.
-		if (generation !== attempt) {
+		// synchronously reports `closed` before the teardown above is assigned,
+		// so the abandonment already ran and this assignment would otherwise
+		// resurrect a dead attempt and block every future redial.
+		if (attempt !== dialled) {
 			const stop = teardown;
 			teardown = undefined;
 			stop?.();
@@ -365,13 +368,13 @@ export function createSyncConnection({
 
 	return Object.freeze({
 		start() {
-			if (disposed || denied || running) return;
+			if (disposed || running) return;
 			running = true;
 			open();
 		},
 
 		flush() {
-			if (disposed || denied) return Ok(undefined);
+			if (disposed) return Ok(undefined);
 			return client.flush();
 		},
 
@@ -379,8 +382,8 @@ export function createSyncConnection({
 			return {
 				...client.status(),
 				connected,
-				denied,
-				attempts,
+				refusal,
+				failures,
 				lastReconnect,
 			};
 		},
@@ -388,7 +391,7 @@ export function createSyncConnection({
 		[Symbol.dispose]() {
 			if (disposed) return;
 			disposed = true;
-			if (!denied) shutdown();
+			shutdown();
 		},
 	});
 }

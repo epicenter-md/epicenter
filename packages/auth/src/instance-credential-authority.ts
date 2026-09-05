@@ -109,18 +109,16 @@ export function createInstanceCredentialAuthority(
 	}
 
 	function deniedAuthorization(): BearerAuthorization {
-		if (state.status === 'signed-out' || connectionStatus === 'rejected') {
-			return {
-				status: 'denied',
-				permanence: 'permanent',
-				code: 'signed-out',
-			};
+		// Two facts, not one. A signed-out client holds no token at all. A
+		// rejected one holds a token the box refused, and the repair is a person
+		// entering a new one, which is exactly what `'reauth-required'` names.
+		if (state.status === 'signed-out') {
+			return { status: 'denied', code: 'signed-out' };
 		}
-		return {
-			status: 'denied',
-			permanence: 'transient',
-			code: 'auth-unavailable',
-		};
+		if (connectionStatus === 'rejected') {
+			return { status: 'denied', code: 'reauth-required' };
+		}
+		return { status: 'denied', code: 'auth-unavailable' };
 	}
 
 	async function confirmSession(): Promise<Result<undefined, AuthError>> {
@@ -146,7 +144,7 @@ export function createInstanceCredentialAuthority(
 				// reloads, the next boot is optimistic again, and the page spins at
 				// one `/api/session` round trip forever on any box whose token was
 				// rotated. `authorize` below already refuses on either fact, so the
-				// permanent denial is unchanged.
+				// refusal is unchanged.
 				update(() => {
 					connectionStatus =
 						error.name === 'Rejected' ? 'rejected' : 'unreachable';

@@ -112,10 +112,7 @@ export function createInstanceTokenAuth({
 		async openWebSocket(url, protocols = []) {
 			const authorization = await authority.authorize();
 			if (authorization.status === 'denied') {
-				throw OpenWebSocketDenied({
-					permanence: authorization.permanence,
-					code: authorization.code,
-				}).error;
+				throw OpenWebSocketDenied({ code: authorization.code }).error;
 			}
 			return new WebSocketImpl(String(url), [
 				...protocols,

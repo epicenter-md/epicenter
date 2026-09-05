@@ -43,7 +43,10 @@ const { main, bearer } = parseSubprotocols(
 ```
 
 `isOpenWebSocketDenial` classifies a rejected upgrade so a client can tell an
-auth refusal from a transport failure.
+auth refusal from a transport failure. The refusal carries a `SyncRefusal`
+code: `'signed-out'`, `'reauth-required'`, `'auth-unavailable'`, or
+`'no-credential-model'` for a client that can never open a socket. A refusal is
+data, not a stop signal; the sync driver reports it and dials again.
 
 `STORE_SYNC_ROUTE` is where a replica connects:
 

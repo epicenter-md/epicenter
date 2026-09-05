@@ -240,24 +240,12 @@ export function createOAuthCredentialAuthority(
 
 	function deniedAuthorization(): BearerAuthorization {
 		if (authSession.persistedAuth === null) {
-			return {
-				status: 'denied',
-				permanence: 'permanent',
-				code: 'signed-out',
-			};
+			return { status: 'denied', code: 'signed-out' };
 		}
 		if (authSession.networkAuthPaused) {
-			return {
-				status: 'denied',
-				permanence: 'permanent',
-				code: 'reauth-required',
-			};
+			return { status: 'denied', code: 'reauth-required' };
 		}
-		return {
-			status: 'denied',
-			permanence: 'transient',
-			code: 'auth-unavailable',
-		};
+		return { status: 'denied', code: 'auth-unavailable' };
 	}
 
 	async function authorize(

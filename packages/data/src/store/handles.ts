@@ -635,22 +635,22 @@ export type ReplicaDocument = DataDocument & {
  * had, plus an object identity `syncEngineOf` can key on, so a wrapper that
  * spreads the store keeps the door reachable.
  *
- * Connection health, attempts, and in-flight submissions belong to the
+ * Connection health, failed dials, and in-flight submissions belong to the
  * connection driving the socket and were never here.
  */
 export type SyncCapability = {
 	readonly replicates: true;
 	/**
 	 * What the attached connection reports, or `undefined` when none is
-	 * attached or the host denied it permanently.
+	 * attached.
 	 *
 	 * Pull-only, and polled rather than subscribed. Connection health changes on
 	 * a socket's schedule, so a reactive adapter holding it would be polling
 	 * underneath and calling the result state; `from-data.svelte.ts` refuses
 	 * that boundary by name. The store holds the connection so a status has one
 	 * owner, not so a reader can dial: there is no `connect`, no `disconnect`,
-	 * and no `retry` here, because the driver owns its backoff and a permanent
-	 * denial is a fact about this auth generation rather than a button.
+	 * and no `retry` here, because the driver owns its backoff and dials for as
+	 * long as the store is open, refusal or not.
 	 */
 	status(): SyncConnectionStatus | undefined;
 };

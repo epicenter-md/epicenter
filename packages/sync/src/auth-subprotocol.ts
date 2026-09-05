@@ -37,25 +37,29 @@ export function parseSubprotocols(header: string | null): string[] {
 }
 
 /**
+ * Why a credential model refused to open a socket.
+ *
+ * A closed union so a status surface can map every arm exhaustively.
+ */
+export type SyncRefusal =
+	/** No credential is held on this device. */
+	| 'signed-out'
+	/** The server refused the credential; only a sign-in produces a new one. */
+	| 'reauth-required'
+	/** The credential could not be verified right now; the next try may succeed. */
+	| 'auth-unavailable'
+	/** This client can never open a socket: a same-origin cookie, a desktop window. */
+	| 'no-credential-model';
+
+/**
  * Rejection an auth-owned `openWebSocket` throws when it refuses to open a
  * socket because no usable bearer can be attached right now.
  *
- * `permanence` carries the same semantics as the server's auth close codes,
- * so a sync host makes one stop-or-backoff decision for both failure
- * carriers:
- *
- * - `'permanent'` (like close 4401): only an auth state change can produce a
- *   credential (signed out, reauth required, a window that holds no
- *   credential at all). Report `denied` to the sync driver, which stops for
- *   good; an auth change reloads the app, and the next generation dials
- *   fresh. There is no in-place resume.
- * - `'transient'` (like close 4503): credential verification was unreachable;
- *   the grant may be perfectly good. Report `closed`; the driver backs off
- *   and retries.
- *
- * `code` names the specific refusal (`'signed-out'`, `'reauth-required'`,
- * `'auth-unavailable'`) for status surfaces and logs; consumers branch on
- * `permanence`, not `code`.
+ * `code` says which refusal it is, and that is the whole of it. A refusal is
+ * not a stop signal: the sync driver reports it as data on its status and
+ * dials again on its ordinary backoff. Every arm but `'auth-unavailable'` is
+ * decided locally with no request on the wire, so a dial capped at thirty
+ * seconds costs a status read and nothing else.
  *
  * Declared here, beside the subprotocol carrier, because it is the other half
  * of the same client-side transport contract: `@epicenter/auth` constructs it
@@ -65,9 +69,15 @@ export function parseSubprotocols(header: string | null): string[] {
 export type OpenWebSocketDenial = {
 	name: 'OpenWebSocketDenied';
 	message: string;
-	permanence: 'permanent' | 'transient';
-	code: string;
+	code: SyncRefusal;
 };
+
+const SYNC_REFUSALS: readonly SyncRefusal[] = [
+	'signed-out',
+	'reauth-required',
+	'auth-unavailable',
+	'no-credential-model',
+];
 
 /** Classify an unknown rejection as an {@link OpenWebSocketDenial}. */
 export function isOpenWebSocketDenial(
@@ -77,8 +87,6 @@ export function isOpenWebSocketDenial(
 	const candidate = value as Partial<OpenWebSocketDenial>;
 	return (
 		candidate.name === 'OpenWebSocketDenied' &&
-		(candidate.permanence === 'permanent' ||
-			candidate.permanence === 'transient') &&
-		typeof candidate.code === 'string'
+		SYNC_REFUSALS.includes(candidate.code as SyncRefusal)
 	);
 }

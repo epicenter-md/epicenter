@@ -114,17 +114,17 @@ export type AuthClient = {
 	 * Every client has this method, and not every client can honor it. It
 	 * resolves only with a credentialed socket; otherwise it rejects with an
 	 * `OpenWebSocketDenial` (`@epicenter/sync`) rather than opening a socket
-	 * doomed to a server 4401. `'transient'` means verification was unreachable
-	 * and a retry may succeed. `'permanent'` means only an auth state change can
-	 * help, and it covers both the client that is merely signed out and the
-	 * credential model that can never open one: a same-origin cookie cannot
-	 * carry the subprotocol the rooms route requires, and a desktop window holds
-	 * no credential at all.
+	 * without a usable bearer, which the server refuses at the upgrade with an
+	 * HTTP 401 a browser cannot read. Its `code` is a `SyncRefusal`:
+	 * `'signed-out'`,
+	 * `'reauth-required'`, `'auth-unavailable'` when verification was
+	 * unreachable, and `'no-credential-model'` for a client that can never open
+	 * one, which a same-origin cookie and a desktop window both are.
 	 *
-	 * That denial is the single answer to "can this client sync". There is no
+	 * That refusal is the single answer to "can this client sync". There is no
 	 * sync-capable subtype to demand, because a caller that opens a socket has
-	 * to handle the denial either way: the models that can never sync are the
-	 * permanent arm of a channel every caller already needs.
+	 * to handle the refusal either way: the models that can never sync are one
+	 * code on a channel every caller already needs.
 	 *
 	 * Waits for in-flight machine work (token refresh, `/api/session`
 	 * verification), never for a human.
@@ -139,8 +139,8 @@ export type AuthClient = {
  * A subtype rather than a member on {@link AuthClient}, and the asymmetry with
  * `openWebSocket` is the reason. Every client has `openWebSocket` because a
  * caller that opens a socket must handle `OpenWebSocketDenied` for a merely
- * signed-out client anyway, so "this model can never open one" is the permanent
- * arm of a channel that already exists. Callback completion has no such
+ * signed-out client anyway, so "this model can never open one" is one more code
+ * on a channel that already exists. Callback completion has no such
  * channel: a caller holding a callback URL either exchanges it or the call is
  * meaningless, and a `completeSignIn` on the desktop broker, the same-origin
  * cookie client, or the instance-token client could only answer with an error

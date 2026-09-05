@@ -97,7 +97,8 @@ test('the store answers for the connection driving it, and stops when it goes', 
 	const store = openStore();
 	await using _store = store;
 	// Nothing attached, so there is nothing to report. A surface renders that
-	// the same way it renders a denial: no status line (ADR-0340).
+	// the same way it renders a refusal it cannot act on: no status line
+	// (ADR-0340).
 	expect(store.sync.status()).toBeUndefined();
 
 	const { transport } = createTransport(() => new Promise<WebSocket>(() => {}));
@@ -114,41 +115,13 @@ test('the store answers for the connection driving it, and stops when it goes', 
 	expect(store.sync.status()).toBeUndefined();
 });
 
-test('a permanent denial stops the driver and is not a transport error', async () => {
+test('a denial is reported as a refusal code and is not a transport error', async () => {
 	const store = openStore();
 	await using _store = store;
 	const denial = {
 		name: 'OpenWebSocketDenied',
 		message: 'signed out',
-		permanence: 'permanent',
-		code: 'SignedOut',
-	};
-	const { transport, urls } = createTransport(() => Promise.reject(denial));
-	const transportErrors: unknown[] = [];
-	const connection = attachStoreSync({
-		store,
-		transport,
-		onTransportError: (cause) => transportErrors.push(cause),
-	});
-	using _ = connection;
-
-	await Bun.sleep(1);
-	// Not a transport error, and readable off the store: a denial is what a
-	// status line renders as nothing, and there is no second channel for it.
-	expect(transportErrors).toEqual([]);
-	expect(store.sync.status()?.denied).toBe(true);
-	// Stopped for good: no backoff can produce a second dial.
-	expect(urls).toHaveLength(1);
-});
-
-test('a transient denial is reported and left to the backoff', async () => {
-	const store = openStore();
-	await using _store = store;
-	const denial = {
-		name: 'OpenWebSocketDenied',
-		message: 'verification unreachable',
-		permanence: 'transient',
-		code: 'Unreachable',
+		code: 'signed-out',
 	};
 	const { transport } = createTransport(() => Promise.reject(denial));
 	const transportErrors: unknown[] = [];
@@ -160,11 +133,14 @@ test('a transient denial is reported and left to the backoff', async () => {
 	using _ = connection;
 
 	await Bun.sleep(1);
-	expect(transportErrors).toEqual([denial]);
-	expect(connection.status().denied).toBe(false);
+	// Not a transport error, and readable off the store: a refusal is what a
+	// status line renders, and there is no second channel for it.
+	expect(transportErrors).toEqual([]);
+	expect(store.sync.status()?.refusal).toBe('signed-out');
+	expect(store.sync.status()?.lastReconnect).toBe('refused');
 });
 
-test('an unrecognised rejection is a close, never a denial', async () => {
+test('an unrecognised rejection is a transport error and a close', async () => {
 	const store = openStore();
 	await using _store = store;
 	const cause = new TypeError('Failed to fetch');
@@ -179,7 +155,8 @@ test('an unrecognised rejection is a close, never a denial', async () => {
 
 	await Bun.sleep(1);
 	expect(transportErrors).toEqual([cause]);
-	expect(connection.status().denied).toBe(false);
+	expect(connection.status().refusal).toBeUndefined();
+	expect(connection.status().lastReconnect).toBe('closed');
 });
 
 test('abandoning an attempt closes a socket that arrives late', async () => {

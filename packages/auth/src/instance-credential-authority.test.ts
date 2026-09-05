@@ -34,7 +34,6 @@ test('offline verification denies a transient bearer grant without losing local 
 
 	expect(await authority.authorize()).toEqual({
 		status: 'denied',
-		permanence: 'transient',
 		code: 'auth-unavailable',
 	});
 	expect(authority.snapshot).toEqual({

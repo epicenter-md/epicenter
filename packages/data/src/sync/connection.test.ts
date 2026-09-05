@@ -142,7 +142,7 @@ function openDriven({
 	clock: Clock;
 	healthyMs?: number;
 	unacknowledgedMs?: number;
-	backoff?: (attempts: number) => number;
+	backoff?: (failures: number) => number;
 }) {
 	const data = createAccountStore({
 		definition: database,
@@ -221,7 +221,7 @@ function setup(
 	options: {
 		healthyMs?: number;
 		unacknowledgedMs?: number;
-		backoff?: (attempts: number) => number;
+		backoff?: (failures: number) => number;
 	} = {},
 ) {
 	const wire = createWire();
@@ -410,12 +410,12 @@ describe('a socket that dies is dialled again from the replica own cursor', () =
 			// window, so the redial happens and never counts as a good connection.
 			run(wire, clock, 1_000 * 2 ** attempt + 1);
 		}
-		expect(phone.connection.status().attempts).toBe(3);
+		expect(phone.connection.status().failures).toBe(3);
 
 		// One socket that lasts, and the count goes back to nothing.
 		run(wire, clock, 5_000);
 
-		expect(phone.connection.status().attempts).toBe(0);
+		expect(phone.connection.status().failures).toBe(0);
 	});
 });
 
@@ -470,19 +470,19 @@ describe('a submission nobody answers is not waited on forever', () => {
 	});
 });
 
-describe('a dial that can never succeed stops the driver for good', () => {
+describe('a refused dial is reported and dialled again', () => {
 	/**
 	 * A replica whose host refuses every dial the way an auth-owned
-	 * `openWebSocket` does: `denyEvery` reports the permanent refusal,
-	 * otherwise the attempt just closes, which is what a transient failure
-	 * (network loss, unreachable verification) is reported as.
+	 * `openWebSocket` does: `refuseEvery` reports the refusal's code, otherwise
+	 * the attempt just closes, which is what a transport failure (network loss,
+	 * an unreachable authority) is reported as.
 	 */
 	function openRefused({
 		clock,
-		denyEvery,
+		refuseEvery,
 	}: {
 		clock: Clock;
-		denyEvery: boolean;
+		refuseEvery: boolean;
 	}) {
 		const data = createAccountStore({
 			definition: database,
@@ -494,10 +494,10 @@ describe('a dial that can never succeed stops the driver for good', () => {
 		const connection = createSyncConnection({
 			store,
 			schedule: clock.schedule,
-			dial: ({ closed, denied }) => {
+			dial: ({ closed }) => {
 				dials += 1;
 				// Rejected before any socket opened, like a thrown `openWebSocket`.
-				if (denyEvery) denied();
+				if (refuseEvery) closed('reauth-required');
 				else closed();
 				return () => undefined;
 			},
@@ -505,39 +505,115 @@ describe('a dial that can never succeed stops the driver for good', () => {
 		return { db, connection, dials: () => dials };
 	}
 
-	test('denied stops dialling, and later local work does not restart it', () => {
+	test('a refusal is status, not a stop: the driver keeps dialling', () => {
 		const clock = createClock();
-		const replica = openRefused({ clock, denyEvery: true });
+		const replica = openRefused({ clock, refuseEvery: true });
 		replica.connection.start();
 		clock.advance(120_000);
 
-		expect(replica.dials()).toBe(1);
-		expect(replica.connection.status().denied).toBe(true);
+		// The whole point, pinned to the arithmetic rather than to a floor. The
+		// default backoff doubles from a second and caps at thirty, so under a
+		// standing refusal the dials land at 0, 1, 3, 7, 15, 31, 61 and 91
+		// seconds, and the ninth is due at 121.
+		expect(replica.dials()).toBe(8);
+		expect(replica.connection.status().failures).toBe(8);
+		expect(replica.connection.status().refusal).toBe('reauth-required');
+		expect(replica.connection.status().lastReconnect).toBe('refused');
 		expect(replica.connection.status().connected).toBe(false);
 
-		// A write on the replica still works (the store is local-first), but it
-		// must not wake the driver: the store subscription was released.
+		// The store subscription and the client are both still held, which the
+		// old `denied` path released. A local write reaches a live client and
+		// schedules its idle send, which is the timer counted here: a driver
+		// that had let go would take the write and schedule nothing.
+		const scheduled = clock.pending();
 		expectOk(replica.db.tables.notes.create({ title: 'local only' }));
-		clock.advance(120_000);
-		expect(replica.dials()).toBe(1);
-		expect(clock.pending()).toBe(0);
-
-		// Disposal after denial is a quiet no-op, not a double teardown.
-		replica.connection[Symbol.dispose]();
-		expect(replica.connection.status().denied).toBe(true);
+		expect(clock.pending()).toBe(scheduled + 1);
 	});
 
-	test('CONTROL: the same refusal reported as closed retries forever', () => {
-		// The isolation: it is `denied`, not the failed dial itself, that stops
-		// the driver. A close keeps the backoff going, which is right for a
-		// transient failure and a hot loop against a permanent one.
+	test('disposal under a standing refusal lets go of everything', () => {
 		const clock = createClock();
-		const replica = openRefused({ clock, denyEvery: false });
+		const replica = openRefused({ clock, refuseEvery: true });
+		replica.connection.start();
+		clock.advance(120_000);
+		const dialled = replica.dials();
+
+		replica.connection[Symbol.dispose]();
+		clock.advance(120_000);
+
+		expect(replica.dials()).toBe(dialled);
+		expect(clock.pending()).toBe(0);
+	});
+
+	test('a dial that reaches the wire clears the refusal even when it fails', () => {
+		const clock = createClock();
+		const data = createAccountStore({
+			definition: database,
+			sqlite: createBunSqliteAdapter(new Database(':memory:')),
+		});
+		let refuse = true;
+		const connection = createSyncConnection({
+			store: data,
+			schedule: clock.schedule,
+			dial: ({ closed }) => {
+				if (refuse) closed('reauth-required');
+				else closed();
+				return () => undefined;
+			},
+		});
+		connection.start();
+		expect(connection.status().refusal).toBe('reauth-required');
+
+		// A person signs back in and the network is down. The credential model
+		// no longer refuses, so the status must stop saying it does: telling a
+		// signed-in person to sign in is the one thing this must not do.
+		refuse = false;
+		clock.advance(2_000);
+
+		expect(connection.status().refusal).toBeUndefined();
+		expect(connection.status().lastReconnect).toBe('closed');
+		connection[Symbol.dispose]();
+	});
+
+	test('a socket that opens clears the refusal', () => {
+		const clock = createClock();
+		const data = createAccountStore({
+			definition: database,
+			sqlite: createBunSqliteAdapter(new Database(':memory:')),
+		});
+		let refuse = true;
+		let dials = 0;
+		const connection = createSyncConnection({
+			store: data,
+			schedule: clock.schedule,
+			dial: ({ closed, opened }) => {
+				dials += 1;
+				if (refuse) closed('reauth-required');
+				else opened({ send: () => undefined });
+				return () => undefined;
+			},
+		});
+		connection.start();
+		expect(connection.status().refusal).toBe('reauth-required');
+
+		refuse = false;
+		clock.advance(120_000);
+
+		expect(dials).toBeGreaterThan(1);
+		expect(connection.status().refusal).toBeUndefined();
+		expect(connection.status().connected).toBe(true);
+		connection[Symbol.dispose]();
+	});
+
+	test('CONTROL: an ordinary close reports no refusal and retries the same way', () => {
+		const clock = createClock();
+		const replica = openRefused({ clock, refuseEvery: false });
 		replica.connection.start();
 		clock.advance(120_000);
 
-		expect(replica.dials()).toBeGreaterThan(3);
-		expect(replica.connection.status().denied).toBe(false);
+		expect(replica.dials()).toBe(8);
+		expect(replica.connection.status().refusal).toBeUndefined();
+		expect(replica.connection.status().lastReconnect).toBe('closed');
+		replica.connection[Symbol.dispose]();
 	});
 });
 

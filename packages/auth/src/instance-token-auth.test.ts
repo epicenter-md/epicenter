@@ -98,6 +98,15 @@ describe('createInstanceTokenAuth', () => {
 		await flush();
 		expect(auth.state.status).toBe('signed-in');
 		expect(connection(auth).status).toBe('rejected');
+		// A refused token is repaired by a person entering a new one, which is
+		// what `'reauth-required'` names. It is not `'signed-out'`: this client
+		// holds a token, and the box would not take it.
+		await expect(
+			auth.openWebSocket('ws://localhost:8788/api/rooms/r'),
+		).rejects.toMatchObject({
+			name: 'OpenWebSocketDenied',
+			code: 'reauth-required',
+		});
 	});
 
 	test('fetch attaches the bearer to the instance origin and resolves relative paths', async () => {

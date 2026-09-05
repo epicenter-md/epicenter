@@ -3,15 +3,16 @@
  *
  * ADR-0222 left a host exactly one thing to write: how to make a socket. This
  * is that one thing, written once, because it turned out to be the same
- * everywhere: build the store route's URL, hand the socket's four events to
- * the driver, and classify a rejection as a permanent denial or a close.
- * Reconnecting, backoff, cursor placement, and the unacknowledged-submission
- * watchdog all stay in `createSyncConnection`, where they always were.
+ * everywhere: build the store route's URL, hand the socket's events to the
+ * driver, and say whether a rejection was a credential refusal or a transport
+ * failure. Reconnecting, backoff, cursor placement, and the
+ * unacknowledged-submission watchdog all stay in `createSyncConnection`, where
+ * they always were.
  *
  * It lives beside the driver rather than in the app that first wrote it,
- * because the classification is correctness rather than taste: getting
- * "permanent" wrong spins a backoff against a refusal forever, or gives up on
- * a network blip. What an application actually varies is the data id it opens.
+ * because the classification decides what a person is shown: a refusal is a
+ * status line naming what auth needs, and anything else is a background error
+ * for the log. What an application actually varies is the data id it opens.
  *
  * The credential model arrives as a one-member port, not as an `AuthClient`.
  * The store says what a socket has to be able to do and nothing about how a
@@ -43,8 +44,9 @@ export type StoreSocketTransport = {
 	 *
 	 * Waits for in-flight machine work such as a token refresh, never for a
 	 * human, so a rejection means signed out rather than slow. A rejection
-	 * recognised by `isOpenWebSocketDenial` with `permanence: 'permanent'`
-	 * stops the driver for good; anything else is a transient close.
+	 * recognised by `isOpenWebSocketDenial` is reported as that refusal's code
+	 * and dialled again on the ordinary backoff; anything else is a transport
+	 * error and a close.
 	 *
 	 * `protocols` is what the CALLER needs the upgrade to offer. The credential
 	 * model appends its own bearer subprotocol to it rather than replacing it,
@@ -79,17 +81,17 @@ export type AttachStoreSyncOptions = {
 };
 
 /**
- * Attach sync to an open account replica, for this app generation's lifetime,
+ * Attach sync to an open account replica, for as long as the store is open,
  * and start it.
  *
- * Only an account generation calls this (ADR-0233): a local document never
- * syncs, so a signed-out boot has nothing to attach.
+ * Every store is an account replica, because an authority mints every
+ * generation (ADR-0336), so every open attaches this.
  *
- * Whether sync can work is decided by the first dial rather than by inspecting
- * auth here, and a permanent denial is not a failure: the store opened from
- * local state before this was called and works offline without it (ADR-0292).
- * A credential arriving later never resumes this connection; acquiring one
- * changes auth state, and reloading on that change dials fresh.
+ * Whether sync can work is decided by each dial rather than by inspecting auth
+ * here, and a refusal is not a failure: the store opened from local state
+ * before this was called and works offline without it (ADR-0292). A credential
+ * arriving later needs no signal, because the driver is still dialling and the
+ * next dial simply succeeds.
  */
 export function attachStoreSync({
 	store,
@@ -98,7 +100,7 @@ export function attachStoreSync({
 }: AttachStoreSyncOptions): SyncConnection {
 	const connection = createSyncConnection({
 		store,
-		dial: ({ cursor, opened, received, closed, denied }) => {
+		dial: ({ cursor, opened, received, closed }) => {
 			let socket: WebSocket | undefined;
 			let abandoned = false;
 			void transport
@@ -136,20 +138,14 @@ export function attachStoreSync({
 					},
 					(cause) => {
 						if (abandoned) return;
-						// A permanent denial means no dial in this generation can ever
-						// succeed, so the driver stops instead of retrying a refusal on
-						// backoff. Expected whenever this generation's credential needs
-						// reauth, so it is a lifecycle fact, not a background error.
-						if (
-							isOpenWebSocketDenial(cause) &&
-							cause.permanence === 'permanent'
-						) {
-							// No callback beside it. A denial is readable from
-							// `store.sync.status().denied` for as long as this
-							// connection is attached, and the one surface that renders
-							// it polls that (ADR-0340); a second channel saying the same
-							// thing had no caller in this repository.
-							denied();
+						// A refusal is a lifecycle fact, not a background error: the
+						// credential model said no, which is expected the whole time a
+						// person is signed out or needs to reauth. It travels as data
+						// on the one close callback and is readable from
+						// `store.sync.status().refusal` for as long as this connection
+						// is attached, which is what the status line renders (ADR-0340).
+						if (isOpenWebSocketDenial(cause)) {
+							closed(cause.code);
 							return;
 						}
 						onTransportError(cause);

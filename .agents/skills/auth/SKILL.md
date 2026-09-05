@@ -229,10 +229,17 @@ export type AuthClient = {
 ```
 
 There is no `SyncAuthClient` subtype. `openWebSocket` is on every client, and
-a client that can never open one rejects with a permanent `OpenWebSocketDenial`
-instead. The reasoning is in `auth-contract.ts`: a caller has to handle the
-denial either way, so the models that can never sync are the permanent arm of
-a channel every caller already needs, not a type to demand.
+a client that can never open one rejects with an `OpenWebSocketDenial` carrying
+`code: 'no-credential-model'` instead. The reasoning is in `auth-contract.ts`:
+a caller has to handle the refusal either way, so the models that can never
+sync are one code on a channel every caller already needs, not a type to
+demand.
+
+The `code` is a `SyncRefusal` (`@epicenter/sync`), and it is data rather than
+control flow: `'signed-out'`, `'reauth-required'`, `'auth-unavailable'`, or
+`'no-credential-model'`. The sync driver records the code on its status and
+dials again on its ordinary backoff. Every arm but `'auth-unavailable'` is
+decided locally with no request on the wire, so retrying costs nothing.
 
 There IS a `CallbackAuthClient` subtype, and the asymmetry is the point:
 
@@ -269,8 +276,8 @@ the client. Only a self-hosted instance carries a live `connection.status` (the
 boot bearer check against the box); the other two report a constant
 `connected` and an `onChange` that never fires.
 
-Whether a client can sync is answered at runtime by `openWebSocket`'s denial,
-not by a type. A caller must handle the denial anyway, so a sync-capable
+Whether a client can sync is answered at runtime by `openWebSocket`'s refusal,
+not by a type. A caller must handle the refusal anyway, so a sync-capable
 subtype would buy a compile error on top of a branch that still has to exist.
 
 Read `auth.state` synchronously. Use `auth.onStateChange(fn)` for future changes
@@ -505,8 +512,8 @@ stateless JWT access token  ->  cannot revoke before exp
 3. Close codes and statuses carry meaning the client acts on:
 
    ```txt
-   WS close 4401  -> permanent auth failure; client gives up
-   WS close 4408/4503 -> transient; client reconnects with backoff
+   Refused upgrade          -> HTTP 401; the client reports the refusal on
+                               `status().refusal` and dials again on backoff
    HTTP 401 (InvalidToken)  -> discard and refresh the token
    HTTP 503 (ServerError)   -> retry; the token is fine, JWKS was unreachable
    ```
@@ -537,7 +544,8 @@ principal identity changed, or a credential was acquired (`reauth-required` to
 `signed-in`). **`signed-in` degrading to `reauth-required` deliberately does
 NOT reload**: it is the one transition that fires spontaneously, and a reload
 would interrupt someone mid-keystroke to rebuild an app that works exactly as
-well degraded. Sync discovers the denial on its next dial and stops.
+well degraded. Sync discovers the refusal on its next dial, reports it as
+`status().refusal`, and keeps dialling.
 
 So in a gated app, the only transition a reactive read will ever see outlive
 its paint is that one. Every other transition repaints into a dying document.

@@ -18,6 +18,10 @@ export {
 	type SyncClientStatus,
 	type SyncSocket,
 } from './client.js';
+// Re-exported beside the status that carries it: a surface reading
+// `SyncConnectionStatus.refusal` has to map the union exhaustively, and one
+// import is the whole of what that costs.
+export type { SyncRefusal } from '@epicenter/sync/auth-subprotocol';
 export {
 	createSyncConnection,
 	type ReconnectReason,

@@ -1,3 +1,5 @@
+import type { SyncRefusal } from '@epicenter/sync/auth-subprotocol';
+
 /** A transient bearer grant or the typed reason a transport cannot receive one. */
 export type BearerAuthorization =
 	| {
@@ -7,6 +9,5 @@ export type BearerAuthorization =
 	  }
 	| {
 			status: 'denied';
-			permanence: 'permanent' | 'transient';
-			code: 'signed-out' | 'reauth-required' | 'auth-unavailable';
+			code: SyncRefusal;
 	  };

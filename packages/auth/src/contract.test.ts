@@ -919,7 +919,7 @@ test('network gate: no WebSocket bearer protocol until /api/session confirms sam
 	auth[Symbol.dispose]();
 });
 
-test('openWebSocket rejects with a permanent denial when signed out', async () => {
+test('openWebSocket refuses with `signed-out` when signed out', async () => {
 	const setup = createStorage(null);
 	const { openings, WebSocketRecorder } = createWebSocketRecorder();
 	const auth = createOAuthAppAuth({
@@ -936,14 +936,13 @@ test('openWebSocket rejects with a permanent denial when signed out', async () =
 		auth.openWebSocket('ws://localhost:8787/sync'),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
-		permanence: 'permanent',
 		code: 'signed-out',
 	});
 	expect(openings).toEqual([]);
 	auth[Symbol.dispose]();
 });
 
-test('openWebSocket rejects with a permanent denial after /api/session rejects the cell', async () => {
+test('openWebSocket refuses with `reauth-required` after /api/session rejects the cell', async () => {
 	const setup = createStorage(cell());
 	const { openings, WebSocketRecorder } = createWebSocketRecorder();
 	const auth = createOAuthAppAuth({
@@ -965,7 +964,6 @@ test('openWebSocket rejects with a permanent denial after /api/session rejects t
 		auth.openWebSocket('ws://localhost:8787/sync'),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
-		permanence: 'permanent',
 		code: 'reauth-required',
 	});
 	await Promise.resolve();
@@ -973,13 +971,7 @@ test('openWebSocket rejects with a permanent denial after /api/session rejects t
 	auth[Symbol.dispose]();
 });
 
-test('a stale grant that cannot REACH the token endpoint denies transiently and stays signed in', async () => {
-	// This test used to assert the opposite, and said so: refreshGrant paused
-	// network auth on ANY thrown refresh failure, so a tunnel looked exactly
-	// like a revoked token and a signed-in person was told to sign in again.
-	// Its own comment predicted this change ("if the gate ever distinguishes
-	// refresh outage from refresh rejection, this case should flip to a
-	// transient denial"), so this is that flip.
+test('a stale grant that cannot REACH the token endpoint refuses as unavailable and stays signed in', async () => {
 	const setup = createStorage(
 		cell({ grant: grant({ accessTokenExpiresAt: now - 1 }) }),
 	);
@@ -1000,7 +992,7 @@ test('a stale grant that cannot REACH the token endpoint denies transiently and 
 		auth.openWebSocket('ws://localhost:8787/sync'),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
-		permanence: 'transient',
+		code: 'auth-unavailable',
 	});
 	// The grant on disk is still the best one there is, and the next attempt
 	// with a network can use it.
@@ -1038,7 +1030,7 @@ test('a token endpoint having a bad minute does not sign anyone out', async () =
 	auth[Symbol.dispose]();
 });
 
-test('openWebSocket rejects with a transient denial when /api/session is unreachable', async () => {
+test('openWebSocket refuses with `auth-unavailable` when /api/session is unreachable', async () => {
 	const setup = createStorage(cell());
 	const { openings, WebSocketRecorder } = createWebSocketRecorder();
 	const auth = createOAuthAppAuth({
@@ -1057,7 +1049,6 @@ test('openWebSocket rejects with a transient denial when /api/session is unreach
 		auth.openWebSocket('ws://localhost:8787/sync'),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
-		permanence: 'transient',
 		code: 'auth-unavailable',
 	});
 	await Promise.resolve();

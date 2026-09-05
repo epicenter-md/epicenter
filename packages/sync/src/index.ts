@@ -17,6 +17,7 @@ export {
 	MAIN_SUBPROTOCOL,
 	type OpenWebSocketDenial,
 	parseSubprotocols,
+	type SyncRefusal,
 } from './auth-subprotocol';
 export {
 	GENERATIONS_ROUTE,

@@ -2,9 +2,8 @@
  * Which auth transitions end a page's auth generation.
  *
  * The subtle pair is reauth: degrading to `reauth-required` must NOT reload
- * (it can fire spontaneously, mid-keystroke), while repairing it must (this
- * generation's sync already stopped for good when its dials were denied, so
- * only a fresh boot dials again).
+ * (it can fire spontaneously, mid-keystroke), while repairing it currently
+ * does, because everything downstream of the boot read is built once.
  */
 
 import { beforeEach, expect, mock, test } from 'bun:test';
@@ -76,7 +75,7 @@ test('an account switch pair reloads exactly once', () => {
 test('degrading to reauth-required does NOT reload', () => {
 	// The one transition that can happen spontaneously (a refresh token
 	// expiring in the background). The degraded generation keeps working
-	// locally; sync stops itself when its next dial is denied.
+	// locally; sync reports the refusal on its status and keeps dialling.
 	const auth = createFakeAuth(signedIn('p1'));
 	reloadOnAuthChange(auth.client);
 	auth.emit(reauthRequired('p1'));
@@ -106,9 +105,9 @@ test('reloading on the degrade would be a boot loop, which is why it does not', 
 });
 
 test('repairing reauth into signed-in reloads, same principal', () => {
-	// Without this, a generation that booted degraded (or degraded mid-life)
-	// would never sync again after Reconnect: its connection stopped for good
-	// on the permanent denial, and only a fresh boot dials again.
+	// Sync no longer needs this: the driver kept dialling through the refusal
+	// and its next dial succeeds (ADR-0350). What still rides on it is
+	// everything else built from the one boot read.
 	const auth = createFakeAuth(reauthRequired('p1'));
 	reloadOnAuthChange(auth.client);
 	auth.emit(signedIn('p1'));

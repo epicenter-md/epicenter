@@ -97,9 +97,11 @@ export type WhisperingApp = {
 	readonly recordings: WhisperingRecordings;
 	readonly recipes: WhisperingRecipes;
 	/**
-	 * What sync is doing, or undefined when this generation's dials were
-	 * permanently denied. A denied replica works offline and shows nothing,
-	 * correctly.
+	 * What sync is doing, or undefined when no connection is attached.
+	 *
+	 * A refused dial is part of what it is doing: `status().refusal` names the
+	 * refusal, and the surface rendering it decides which ones a person can act
+	 * on.
 	 */
 	syncStatus(): SyncConnectionStatus | undefined;
 };
@@ -147,12 +149,9 @@ export function createWhisperingApp({
 		recordings: recordingsDomain.recordings,
 		recipes: recipesDomain,
 		// Read off the store's own connection (ADR-0340) rather than off a
-		// `SyncConnection` this file held: a denied replica works offline and
-		// shows nothing, correctly.
-		syncStatus: () => {
-			const status = data.sync.status();
-			return status?.denied === false ? status : undefined;
-		},
+		// `SyncConnection` this file held, and passed through whole: a refusal is
+		// data on that status, and the surface decides what to say about it.
+		syncStatus: () => data.sync.status(),
 		[Symbol.dispose]() {
 			if (disposed) return;
 			disposed = true;

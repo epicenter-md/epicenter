@@ -506,7 +506,6 @@ test('a refused credential costs sync, not the notes', async () => {
 		openWebSocket: () =>
 			Promise.reject({
 				name: 'OpenWebSocketDenied',
-				permanence: 'permanent',
 				code: 'reauth-required',
 			}),
 	});
@@ -514,11 +513,16 @@ test('a refused credential costs sync, not the notes', async () => {
 
 	// The reversal ADR-0292 bought. A fresh replica used to be unavailable
 	// until the authority stamped it; the store opens from local state before a
-	// socket is attempted, so a denial is a quiet status line.
+	// socket is attempted, so a refusal is a quiet status line and the notes
+	// still read.
 	const { data, close } = await openedBy(refusing);
-	expect(titles(data)).toEqual([]);
 	await Bun.sleep(1);
-	expect(data.sync.status()?.denied).toBe(true);
+	expect(data.sync.status()?.refusal).toBe('reauth-required');
+
+	// The notes half, and the whole of what "costs sync, not the notes" claims:
+	// a store whose every dial is refused still takes a write and reads it back.
+	data.tables.notes.create({ title: 'written while refused' });
+	expect(titles(data)).toEqual(['written while refused']);
 	await close();
 });
 

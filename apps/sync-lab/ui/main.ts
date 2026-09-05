@@ -110,7 +110,7 @@ function render(): void {
 	status.textContent = [
 		`device ${device}`,
 		`cursor ${state.cursor}`,
-		state.connected ? 'connected' : `dialling (attempt ${state.attempts})`,
+		state.connected ? 'connected' : `dialling (failures ${state.failures})`,
 		state.inFlight ? `in flight (${state.owed} B)` : 'idle',
 		state.lastError === undefined
 			? 'no errors'

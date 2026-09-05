@@ -239,16 +239,13 @@ export function createSameOriginCookieAuth({
 				},
 			});
 		},
-		// Denied permanently, and not because this client happens to be signed
-		// out: a same-origin cookie cannot carry the bearer subprotocol the rooms
-		// route requires, so no auth state reaches a socket from here. The
-		// dashboard is a billing surface with nothing to sync, and a caller that
-		// tried would get the denial it already handles for a signed-out client.
+		// Refused because of the credential model, not because this client
+		// happens to be signed out: a same-origin cookie cannot carry the bearer
+		// subprotocol the rooms route requires, so no auth state reaches a socket
+		// from here. The dashboard is a billing surface with nothing to sync, and
+		// `'no-credential-model'` is what a status surface renders as nothing.
 		async openWebSocket() {
-			throw OpenWebSocketDenied({
-				permanence: 'permanent',
-				code: 'auth-unavailable',
-			}).error;
+			throw OpenWebSocketDenied({ code: 'no-credential-model' }).error;
 		},
 		[Symbol.dispose]() {
 			listeners.clear();

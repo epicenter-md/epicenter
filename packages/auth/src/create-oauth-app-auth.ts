@@ -169,7 +169,6 @@ export function createOAuthAppAuth({
 			const authorization = await authority.authorize();
 			if (authorization.status === 'denied') {
 				const denial: OpenWebSocketDenial = OpenWebSocketDenied({
-					permanence: authorization.permanence,
 					code: authorization.code,
 				}).error;
 				throw denial;

@@ -26,13 +26,10 @@
 	/* svelte-ignore state_referenced_locally */
 	const honeycrisp = setHoneycrisp(createHoneycrisp({ data }));
 
-	// A denied connection renders the same as no connection at all: the store
-	// opened from local state before a socket was attempted, and the status
-	// line goes quiet rather than saying something is wrong.
-	const syncStatus = () => {
-		const status = data.sync.status();
-		return status?.denied === false ? status : undefined;
-	};
+	// Passed through whole. A refusal is data on the status now, and the sidebar
+	// is what decides which refusals a person can act on and which ones render
+	// as nothing.
+	const syncStatus = () => data.sync.status();
 	// Nothing to construct in a build with no filesystem: the seam hands out
 	// the capability rather than a flag, so a browser build has no working copy
 	// and the components that take one are never mounted (ADR-0337).

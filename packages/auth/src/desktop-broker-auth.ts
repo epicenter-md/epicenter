@@ -155,10 +155,7 @@ export function createDesktopBrokerAuth({
 			}
 		},
 		async openWebSocket() {
-			throw OpenWebSocketDenied({
-				permanence: 'permanent',
-				code: 'auth-unavailable',
-			}).error;
+			throw OpenWebSocketDenied({ code: 'no-credential-model' }).error;
 		},
 		[Symbol.dispose]() {},
 	};

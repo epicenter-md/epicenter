@@ -16,9 +16,11 @@
  *   partition everything is keyed by is different, so the page must go.
  * - A credential is acquired without an identity change (`reauth-required` to
  *   `signed-in`, e.g. the account popover's Reconnect): the identity is the
- *   same but this generation already gave up on sync, permanently, when its
- *   dials were denied. Only a fresh generation dials again. This is always a
- *   user action, so the reload lands on a click, never mid-keystroke.
+ *   same, and this reload no longer buys sync anything, because the driver
+ *   never stopped and its next dial succeeds on its own (ADR-0350). What is
+ *   left is that the rest of the composition is still built from one boot
+ *   read. This is always a user action, so the reload lands on a click, never
+ *   mid-keystroke.
  * - `signed-in` degrading to `reauth-required` does NOT reload, and the reason
  *   is structural rather than a preference about interruption. **A reload
  *   cannot repair this transition, so reloading on it is a boot loop.** The
@@ -33,7 +35,8 @@
  *   spontaneously, mid-keystroke, and the degraded app works exactly as well
  *   locally. But it is the weaker of the two, and stating it alone has already
  *   invited "why not just reload here too" more than once. Sync discovers the
- *   denial on its own next dial and stops; nothing else changes.
+ *   refusal on its own next dial, reports it as `status().refusal`, and keeps
+ *   dialling; nothing else changes.
  *
  *   Making this reload would mean persisting the pause (a `PersistedAuth`
  *   schema change that reaches the desktop keyring storage) or awaiting

@@ -10,7 +10,7 @@
  * - Window fetch passes requests through without an Authorization header
  * - Account commands post to the same-origin broker routes with cookies
  * - The profile is read from the broker projection, never the server transport
- * - openWebSocket is denied permanently
+ * - openWebSocket refuses with `'no-credential-model'`
  * - It is not a callback client: no browser OAuth callback reaches a window
  */
 
@@ -122,7 +122,7 @@ test('getProfile reads the broker projection, never the server transport', async
 	);
 });
 
-test('openWebSocket is denied permanently', async () => {
+test('openWebSocket refuses because a window holds no credential', async () => {
 	const auth = createDesktopBrokerAuth({
 		bootstrap,
 		brokerBaseURL: 'http://127.0.0.1:39130',
@@ -132,8 +132,8 @@ test('openWebSocket is denied permanently', async () => {
 	expect(
 		auth.openWebSocket('wss://api.epicenter.so/rooms'),
 	).rejects.toMatchObject({
-		permanence: 'permanent',
-		code: 'auth-unavailable',
+		name: 'OpenWebSocketDenied',
+		code: 'no-credential-model',
 	});
 });
 
