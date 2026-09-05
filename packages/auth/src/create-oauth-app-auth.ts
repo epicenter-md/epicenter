@@ -4,7 +4,11 @@ import {
 	type OpenWebSocketDenial,
 } from '@epicenter/sync/auth-subprotocol';
 import type { Logger } from 'wellcrafted/logger';
-import type { AuthClient, AuthFetch } from './auth-contract.js';
+import type {
+	AuthClient,
+	AuthFetch,
+	CallbackAuthClient,
+} from './auth-contract.js';
 import { OpenWebSocketDenied } from './auth-errors.js';
 import {
 	type AuthFetchInput,
@@ -13,7 +17,10 @@ import {
 } from './bearer-fetch.js';
 import type { BearerAuthorization } from './credential-authority.js';
 import { createOAuthCredentialAuthority } from './oauth-credential-authority.js';
-import type { OAuthLauncher } from './oauth-launchers/contract.js';
+import type {
+	CallbackOAuthLauncher,
+	OAuthLauncher,
+} from './oauth-launchers/contract.js';
 import type { PersistedAuthStorage } from './persisted-auth-storage.js';
 import { getProfileVia } from './read-api-session.js';
 
@@ -31,6 +38,10 @@ export type CreateOAuthAppAuthConfig = {
 	/**
 	 * Runtime-specific sign-in transport. It either returns a token grant or
 	 * reports that control moved to a later redirect or deep-link callback.
+	 *
+	 * A launcher that can consume that callback ({@link CallbackOAuthLauncher})
+	 * is what makes the composed client a {@link CallbackAuthClient}. The
+	 * overloads below read exactly this.
 	 */
 	launcher: OAuthLauncher;
 	/**
@@ -49,12 +60,23 @@ export type CreateOAuthAppAuthConfig = {
 	log?: Logger;
 };
 
+export function createOAuthAppAuth(
+	config: CreateOAuthAppAuthConfig & { launcher: CallbackOAuthLauncher },
+): CallbackAuthClient;
+export function createOAuthAppAuth(
+	config: CreateOAuthAppAuthConfig,
+): AuthClient;
 /**
  * Compose one hosted OAuth credential authority with local HTTP and WebSocket
  * transports. Application bytes stay in the injected browser-compatible
  * implementations; the authority supplies only transient bearer grants. The
  * cached principal remains available for offline workspace boot, while server
  * access fails closed until `/api/session` verifies the current credential.
+ *
+ * The launcher decides whether the result can finish an OAuth callback, and the
+ * overloads above say so statically. A launcher that completes inline (the
+ * extension web-auth flow) yields a plain `AuthClient` with no `completeSignIn`
+ * on it at all, rather than one that would have to refuse the call.
  */
 export function createOAuthAppAuth({
 	baseURL = EPICENTER_API_URL,
@@ -131,6 +153,13 @@ export function createOAuthAppAuth({
 		startSignIn() {
 			return authority.startSignIn();
 		},
+		// Spread rather than declared, so the member is ABSENT on a client whose
+		// launcher cannot complete a callback. `isCallbackAuthClient` is a
+		// runtime read of exactly this, which is what lets one callback route
+		// serve a browser build and a desktop build honestly.
+		...(authority.completeSignIn === undefined
+			? {}
+			: { completeSignIn: authority.completeSignIn }),
 		signOut() {
 			return authority.signOut();
 		},

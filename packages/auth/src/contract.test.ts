@@ -17,13 +17,17 @@
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 // PersistedAuth and OAuthTokenGrant are intentionally not on the public root:
 // they are the credential-shaped cell and grant, internal to auth core.
 // Import them from their source module.
 import type { OAuthTokenGrant, PersistedAuth } from './auth-types.js';
 import { createOAuthAppAuth } from './create-oauth-app-auth.js';
-import type { AuthClient, PersistedAuthStorage } from './index.js';
+import {
+	type AuthClient,
+	isCallbackAuthClient,
+	type PersistedAuthStorage,
+} from './index.js';
 import type { OAuthLaunchResult } from './oauth-launchers/contract.js';
 
 const now = 1_000_000;
@@ -189,6 +193,136 @@ test('startSignIn calls /api/session and writes both sections', async () => {
 		status: 'signed-in',
 	});
 	expect('email' in auth.state).toBe(false);
+	auth[Symbol.dispose]();
+});
+
+/**
+ * A launcher that redirects away and comes back, scripted.
+ *
+ * `startSignIn` only ever launches; `completeSignIn` is the callback arriving.
+ * That split is the whole of what these tests pin at the client level.
+ */
+function callbackLauncher(
+	onComplete: () => Promise<Result<OAuthTokenGrant, unknown>>,
+) {
+	return {
+		startSignIn: async () => launched(),
+		completeSignIn: onComplete,
+	};
+}
+
+test('a callback launcher composes a client that can complete a callback', async () => {
+	const setup = createStorage(null);
+	const fetches: string[] = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: callbackLauncher(async () =>
+			Ok(
+				grant({
+					accessToken: 'callback-access',
+					refreshToken: 'callback-refresh',
+				}),
+			),
+		),
+		fetch: async (input) => {
+			fetches.push(String(input));
+			return json(apiSessionBody('user-1'));
+		},
+	});
+
+	// The launch itself installs nothing; the callback is what does.
+	expect(await auth.startSignIn()).toEqual(Ok(undefined));
+	expect(setup.saved).toEqual([]);
+
+	expect(isCallbackAuthClient(auth)).toBe(true);
+	expect(await auth.completeSignIn()).toEqual(Ok(undefined));
+
+	expect(fetches[0]).toBe('http://localhost:8787/api/session');
+	expect(setup.saved[0]).toEqual({
+		grant: {
+			accessToken: 'callback-access',
+			refreshToken: 'callback-refresh',
+			accessTokenExpiresAt: now + 3_600_000,
+		},
+		principalId: asPrincipalId('user-1'),
+	});
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		principalId: asPrincipalId('user-1'),
+	});
+	auth[Symbol.dispose]();
+});
+
+test('a launcher that cannot complete a callback composes a client without the method', () => {
+	const setup = createStorage(null);
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => launched() },
+		fetch: async () => json(apiSessionBody('user-1')),
+	});
+
+	// Absent rather than present and refusing. A client that could only answer
+	// "this transport has no callback" would be a lie in the type repaired at
+	// runtime.
+	expect('completeSignIn' in auth).toBe(false);
+	expect(isCallbackAuthClient(auth)).toBe(false);
+	auth[Symbol.dispose]();
+});
+
+test('a failed callback exchange is CompleteSignInFailed, not StartSignInFailed', async () => {
+	const setup = createStorage(null);
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: callbackLauncher(async () =>
+			Err({ name: 'MissingCallbackTransaction' }),
+		),
+		fetch: async () => json(apiSessionBody('user-1')),
+	});
+
+	const { error } = await auth.completeSignIn();
+
+	// The two failures have different repairs, and the name is how a surface
+	// tells them apart: starting again fixes a launch and is exactly wrong for
+	// a code that was already spent.
+	expect(error?.name).toBe('CompleteSignInFailed');
+	expect(setup.saved).toEqual([]);
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	auth[Symbol.dispose]();
+});
+
+test('a callback route that mounts twice spends one authorization code', async () => {
+	const setup = createStorage(null);
+	let exchanges = 0;
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: callbackLauncher(async () => {
+			exchanges += 1;
+			await Promise.resolve();
+			return Ok(grant());
+		}),
+		fetch: async () => json(apiSessionBody('user-1')),
+	});
+
+	const [first, second] = await Promise.all([
+		auth.completeSignIn(),
+		auth.completeSignIn(),
+	]);
+
+	expect(exchanges).toBe(1);
+	expect(first).toEqual(Ok(undefined));
+	expect(second).toEqual(Ok(undefined));
 	auth[Symbol.dispose]();
 });
 

@@ -2,9 +2,11 @@ export type {
 	AuthClient,
 	AuthFetch,
 	AuthState,
+	CallbackAuthClient,
 	Connection,
 	ConnectionStatus,
 } from './auth-contract.js';
+export { isCallbackAuthClient } from './auth-contract.js';
 export * from './auth-errors.js';
 export {
 	ApiSessionResponse,

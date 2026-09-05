@@ -22,6 +22,19 @@ export const OAuthClientError = defineErrors({
 		message:
 			'OAuth sign-in could not finish because callback state was missing.',
 	}),
+	/**
+	 * The URL handed to `exchangeCallback` is not an authorization response:
+	 * neither `code` nor `error` is on it.
+	 *
+	 * Refused BEFORE the stored transaction is read, and that ordering is the
+	 * whole point. The transaction is consumed as soon as it is read, so
+	 * treating a bare visit to the callback route as a callback would destroy a
+	 * live PKCE verifier and strand a sign-in that was still in progress in
+	 * another tab.
+	 */
+	MissingCallbackParameters: () => ({
+		message: 'This URL carries no OAuth authorization response.',
+	}),
 	StateMismatch: () => ({
 		message: 'OAuth sign-in state did not match.',
 	}),
@@ -216,12 +229,21 @@ export function createOAuthClient({
 	 * Call only after a runtime signal says a real callback arrived: a redirect
 	 * to the registered redirect URI, a deep link, or the response URL from a
 	 * web-auth flow. A missing transaction here means a callback was received
-	 * without the PKCE verifier that created it.
+	 * without the PKCE verifier that created it; a URL carrying neither `code`
+	 * nor `error` is refused before the transaction is read at all, so a bare
+	 * visit to the callback route cannot spend a verifier another tab is still
+	 * using.
 	 */
 	async function exchangeCallback(
 		url: string | URL,
 	): Promise<Result<OAuthTokenGrant, OAuthClientError>> {
 		const callbackUrl = new URL(url);
+		if (
+			!callbackUrl.searchParams.has('code') &&
+			!callbackUrl.searchParams.has('error')
+		) {
+			return OAuthClientError.MissingCallbackParameters();
+		}
 		const callbackError = callbackUrl.searchParams.get('error');
 		if (callbackError) {
 			return OAuthClientError.AuthorizationFailed({

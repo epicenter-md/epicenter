@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
-import type { AuthFetch } from './auth-contract.js';
+import { type AuthFetch, isCallbackAuthClient } from './auth-contract.js';
 import { createSameOriginCookieAuth } from './same-origin-cookie-auth.js';
 
 const baseURL = 'https://api.epicenter.so';
@@ -157,4 +157,18 @@ describe('createSameOriginCookieAuth', () => {
 		expect(error?.name).toBe('ProfileUnavailable');
 		expect(auth.state.status).toBe('signed-out');
 	});
+});
+
+test('a same-origin cookie app is not a callback client', () => {
+	// Its sign-in returns to a PATH, and the credential it comes back with is a
+	// first-party session cookie the server set. There is no authorization code
+	// to exchange, so there is nothing for `completeSignIn` to do.
+	const auth = createSameOriginCookieAuth({
+		baseURL: 'https://api.epicenter.test',
+		fetch: async () => new Response(null, { status: 401 }),
+		navigate: () => undefined,
+	});
+
+	expect(isCallbackAuthClient(auth)).toBe(false);
+	auth[Symbol.dispose]();
 });

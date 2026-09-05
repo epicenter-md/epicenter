@@ -15,6 +15,19 @@ export const AuthError = defineErrors({
 		message: `Failed to start sign-in: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+	/**
+	 * A sign-in that was already launched could not be finished from the
+	 * callback the transport received.
+	 *
+	 * Separate from `StartSignInFailed` because the repairs are different and a
+	 * surface has to be able to tell them apart: starting again is what repairs
+	 * a failed launch, and it is exactly the wrong answer to a callback whose
+	 * authorization code was already spent.
+	 */
+	CompleteSignInFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to complete sign-in: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 	SignOutFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to sign out: ${extractErrorMessage(cause)}`,
 		cause,

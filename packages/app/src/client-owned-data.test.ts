@@ -232,6 +232,35 @@ test('opening twice is one open, and a second handle is refused', async () => {
 	await epicenter.close();
 });
 
+test('opening a ready session answers it and publishes nothing', async () => {
+	await resetStorage();
+	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
+	await importEmptyGeneration(account);
+
+	const epicenter = handleFor(account);
+	const first = await epicenter.open();
+	if (first.error !== null) throw first.error;
+
+	// That a repeat open answers the SAME store is asserted above. This is the
+	// other half of "acquires nothing", and it is the half a surface can see: a
+	// repeat must publish no transition at all. `fromEpicenter` mirrors every
+	// published state into a rune and runs `fromData` on each `ready`, so a
+	// republished `opening` would take an open UI back to its loading screen and
+	// a republished `ready` would build a second projection of every table over
+	// the one store.
+	const seen: string[] = [];
+	const stop = epicenter.onStateChange((state) => seen.push(state.status));
+	const again = await epicenter.open();
+	stop();
+
+	if (again.error !== null) throw again.error;
+	expect(again.data).toBe(first.data);
+	expect(seen).toEqual([]);
+	expect(epicenter.state.status).toBe('ready');
+
+	await epicenter.close();
+});
+
 test('the states a session reports are the transitions it makes', async () => {
 	await resetStorage();
 	const account = createFakeAuth({ status: 'signed-in', principalId: 'alice' });
@@ -406,6 +435,43 @@ test('a failed open leaks nothing, and opening again is the retry', async () => 
 	if (retried.error !== null) throw retried.error;
 	expect(epicenter.state.status).toBe('ready');
 	await epicenter.close();
+});
+
+test('an opener that rejects fails the session rather than wedging it', async () => {
+	await resetStorage();
+
+	// Nothing is known to reach this arm: `openReplica` resolves a `Result` and
+	// contains its own throws. It exists because a promise that breaks that
+	// contract anyway would leave the in-flight attempt recorded forever, and
+	// then every later `open` replays one rejection, `close` rethrows it, and the
+	// session has no way out of `opening`.
+	//
+	// A client carrying no connection is the cheapest way to make the opener
+	// throw instead of resolve: the address is read before anything is claimed or
+	// created, so this reaches the containment and nothing else.
+	const broken = {
+		...createFakeAuth({ status: 'signed-in', principalId: 'alice' }),
+		connection: undefined,
+	} as unknown as AuthClient;
+	const epicenter = handleFor(broken);
+
+	const threw = await epicenter.open();
+	expect(threw.error?.name).toBe('OpenerThrew');
+	const failed: { status: string; error?: unknown } = epicenter.state;
+	expect(failed.status).toBe('failed');
+	expect(failed.error).toBe(threw.error);
+
+	// The way out, and it is the same way out every other failure has: opening
+	// again runs a second attempt rather than replaying the first one's
+	// rejection, which is what a memoized in-flight attempt would have done.
+	const again = await epicenter.open();
+	expect(again.error?.name).toBe('OpenerThrew');
+	expect(again.error).not.toBe(threw.error);
+
+	// And closing returns rather than rethrowing what the attempt rejected with.
+	await epicenter.close();
+	expect(epicenter.state).toEqual({ status: 'closed' });
+	expect(await databaseNames()).toEqual([]);
 });
 
 test('a held copy opens from local storage before sync is available', async () => {

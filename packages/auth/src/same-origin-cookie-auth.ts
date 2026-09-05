@@ -70,6 +70,18 @@ const SameOriginAuthError = defineErrors({
  * construction to confirm, and that response also supplies the `principalId`
  * the public `AuthState` carries.
  *
+ * **So `state` reports `signed-out` for the first round trip after load, and a
+ * gate on this client renders its signed-out screen for that long even for
+ * somebody who is signed in.** `AuthState` has no arm for "not known yet", and
+ * it is not given one for this: three of the four clients read their identity
+ * synchronously (a persisted grant, or the desktop bootstrap element), so a
+ * fourth arm would force a branch on every gate in the repository for a state
+ * they can never be in. `apps/api/ui` is the only consumer, it opens no store,
+ * and it accepts the flash. The related consequence is why it mounts no
+ * `reloadOnAuthChange`: that confirmation is a principal change, so the gate
+ * would reload into another optimistic boot and loop
+ * (`refusal-is-not-an-identity-change.test.ts`).
+ *
  * This is the cookie-credential sibling of {@link createOAuthAppAuth}, not a
  * mode flag on it: the two are different credential models. Cross-origin and
  * native clients (web app, extension, Tauri, CLI) keep using `createOAuthAppAuth`

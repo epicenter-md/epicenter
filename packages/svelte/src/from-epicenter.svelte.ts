@@ -53,7 +53,9 @@
  * {:else if epicenter.state.status === 'ready'}
  *   <Notes data={epicenter.state.data} />
  * {:else}
- *   <BootFailure
+ *   <BootGate
+ *     {vocabulary}
+ *     {auth}
  *     error={epicenter.state.error}
  *     erase={epicenter.state.eraseReplica}
  *     retry={() => void epicenter.open()}

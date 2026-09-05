@@ -234,6 +234,24 @@ instead. The reasoning is in `auth-contract.ts`: a caller has to handle the
 denial either way, so the models that can never sync are the permanent arm of
 a channel every caller already needs, not a type to demand.
 
+There IS a `CallbackAuthClient` subtype, and the asymmetry is the point:
+
+```ts
+export type CallbackAuthClient = AuthClient & {
+	completeSignIn(): Promise<Result<undefined, AuthError>>;
+};
+```
+
+Callback completion has no pre-existing failure channel to collapse into. A
+caller holding a callback URL either exchanges it or the call is meaningless,
+so a `completeSignIn` on the desktop broker, the same-origin cookie client, or
+the instance-token client could only answer "this transport has no callback",
+which is a lie in the type repaired at runtime. The member is attached exactly
+when the LAUNCHER can consume a redirect (`CallbackOAuthLauncher`), so
+`createHostedBrowserRedirectAuth` returns `CallbackAuthClient` statically, and
+`isCallbackAuthClient(client)` is the runtime narrowing one callback route
+compiled into several platform builds needs.
+
 `AuthState` arms carry `principalId` directly. There is no nested identity
 object and no `user` field in state: profile (the email) is fetched on demand
 via `getProfile()` by the surface that displays it, never held in state.
@@ -345,26 +363,52 @@ cached `principalId` selects the right local partition. A different-`principalId
 
 ## Sign-In Flow
 
-Apps ask auth to start hosted sign-in. `startSignIn` takes NO arguments:
+Two verbs, and they are not interchangeable. `startSignIn` BEGINS a flow and
+`completeSignIn` CONSUMES a callback; neither takes arguments.
 
 ```ts
+// any UI surface
 await auth.startSignIn();
+
+// the redirect route, and only there
+if (isCallbackAuthClient(authClient)) await authClient.completeSignIn();
 ```
 
+`startSignIn` used to be both. The browser launcher inspected
+`window.location` for a `code` first, so the same call finished a sign-in on
+`/auth/callback` and began one everywhere else, chosen by a query string, and
+the callback route asked to START a sign-in in order to end one. Starting
+always starts now: calling it on a callback URL mints a fresh PKCE transaction
+and redirects, which is a loop rather than a subtlety.
+
 The launcher decides how the runtime completes OAuth and returns one of two
-shapes:
+shapes from `startSignIn`:
 
 - `'launched'`: control moved to a redirect / deep-link callback. The browser
   redirect launcher navigates to the hosted `/sign-in` and usually does not
-  resolve before the page unloads.
+  resolve before the page unloads. Completion arrives later, through
+  `completeSignIn` on the redirect route.
 - `'completed'` with `{ grant }`: the launcher exchanged a token grant in
-  process (the extension). The runtime then calls `/api/session`,
-  resolves identity, and persists `PersistedAuth`.
+  process (the extension web-auth flow, the desktop host's deep link). The
+  runtime then calls `/api/session`, resolves identity, and persists
+  `PersistedAuth`.
 
-The return value of `startSignIn` is not the "user is signed in" signal.
-Observe `auth.state.status === 'signed-in'` for completion. (On the
-instance-token client, `startSignIn` re-runs the `/api/session` verification so
-a UI can retry a connection that was offline at boot.)
+Both halves share one in-flight sign-in, so two clicks are one launch and a
+callback route that mounts twice is one exchange rather than an authorization
+code spent and then replayed.
+
+The return value of either is not the "user is signed in" signal. Observe
+`auth.state.status === 'signed-in'` for completion. (On the instance-token
+client, `startSignIn` re-runs the `/api/session` verification so a UI can retry
+a connection that was offline at boot.)
+
+`completeSignIn` resolving `Ok` means identity is installed and PUBLISHED, so a
+`reloadOnAuthChange` mounted above the route has already run. The one case it
+has not is a callback that completed for the principal already signed in: no
+state changed, so nothing reloaded, and the route's own
+`window.location.replace(...)` is what leaves the callback URL. Use a document
+replacement there rather than `goto`, or a client-side navigation opens the
+store inside a document the browser is about to unload.
 
 ## PersistedAuthStorage Port
 
@@ -580,6 +624,11 @@ mode flag on it.
   redirect is the same in a plain page and belongs in `@epicenter/auth`.
 - Do not treat `startSignIn()` resolving as signed-in. State is the source of
   truth; `startSignIn` takes no args.
+- Do not call `startSignIn()` from a callback route. It starts a flow; the
+  route wants `completeSignIn()`, behind `isCallbackAuthClient`.
+- Do not add `completeSignIn` to `AuthClient`. Three of the four credential
+  models have no OAuth callback to consume, and a method they can only refuse
+  is worse than one they do not have.
 - Do not clear local workspace data on refresh failure. Move to
   `reauth-required` (the runtime pauses network auth) and keep `principalId`
   available for local partition selection.

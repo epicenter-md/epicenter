@@ -1,5 +1,9 @@
 import { Ok } from 'wellcrafted/result';
-import type { OAuthLauncher, OAuthLaunchResult } from './contract.js';
+import type {
+	CallbackOAuthLauncher,
+	OAuthLauncher,
+	OAuthLaunchResult,
+} from './contract.js';
 import {
 	createOAuthClient,
 	type MaybePromise,
@@ -10,11 +14,20 @@ import {
 /**
  * Create the browser redirect launcher for hosted sign-in.
  *
- * Use this in web apps that can complete OAuth by returning to their own
- * redirect URI. It first tries to consume the current URL as a callback, then
- * starts a new authorization request only when no callback transaction is
- * present. That preserves the PKCE/state invariant across a full-page redirect
- * without exposing tokens to application routing code.
+ * Use this in web apps that complete OAuth by returning to their own redirect
+ * URI. The two halves of that round trip are two methods, and they used to be
+ * one: `startSignIn` inspected the current URL and exchanged an authorization
+ * code when it found one, so the same call finished a sign-in on the callback
+ * route and began one everywhere else, chosen by a query string. The callback
+ * route consequently asked to START a sign-in in order to finish one, which
+ * reads as a bug even when it works, and which really is one the moment a
+ * person lands on the callback URL with no code: the launcher mints a fresh
+ * PKCE transaction and redirects, from a route whose whole job was to consume
+ * the previous one.
+ *
+ * `redirectTo` and the current URL both come from `window` by default. Tests
+ * substitute the redirect through the option and the URL by standing up a
+ * `globalThis.window`, which is what the launcher genuinely reads.
  */
 export function createBrowserOAuthLauncher({
 	redirectTo = (url) => {
@@ -29,24 +42,15 @@ export function createBrowserOAuthLauncher({
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
-			const callbackParams = new URL(window.location.href).searchParams;
-			if (callbackParams.has('code') || callbackParams.has('error')) {
-				const callbackResult = await client.exchangeCallback(
-					window.location.href,
-				);
-				if (callbackResult.error) return callbackResult;
-				return Ok({
-					status: 'completed',
-					grant: callbackResult.data,
-				} satisfies OAuthLaunchResult);
-			}
-
 			const urlResult = await client.createAuthorizationUrl(redirectUri);
 			if (urlResult.error) return urlResult;
 			await redirectTo(urlResult.data.toString());
 			return Ok({ status: 'launched' } satisfies OAuthLaunchResult);
 		},
-	} satisfies OAuthLauncher;
+		completeSignIn() {
+			return client.exchangeCallback(window.location.href);
+		},
+	} satisfies CallbackOAuthLauncher;
 }
 
 /**

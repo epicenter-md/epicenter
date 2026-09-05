@@ -105,16 +105,38 @@ test('createAuthorizationUrl stores verifier state and returns PKCE URL', async 
 	expect([...values.values()][0]).toContain(REDIRECT_URI);
 });
 
-test('browser launcher returns launched after starting redirect', async () => {
-	const { storage } = createMemoryStorage();
-	const redirects: string[] = [];
+/**
+ * Run `body` with the browser launcher's one ambient read standing in.
+ *
+ * The launcher reads `window.location.href` to learn what callback it is
+ * sitting on, and that is the seam rather than an injected option: a second way
+ * to say "the current URL" would be a thing to keep in step with the real one.
+ */
+async function atUrl(href: string, body: () => Promise<void>): Promise<void> {
 	const hadWindow = 'window' in globalThis;
 	const originalWindow = globalThis.window;
 	Object.defineProperty(globalThis, 'window', {
 		configurable: true,
-		value: { location: { href: 'http://app.test/sign-in' } },
+		value: { location: { href } },
 	});
 	try {
+		await body();
+	} finally {
+		if (hadWindow) {
+			Object.defineProperty(globalThis, 'window', {
+				configurable: true,
+				value: originalWindow,
+			});
+		} else {
+			delete (globalThis as { window?: unknown }).window;
+		}
+	}
+}
+
+test('browser launcher returns launched after starting redirect', async () => {
+	const { storage } = createMemoryStorage();
+	const redirects: string[] = [];
+	await atUrl('http://app.test/sign-in', async () => {
 		const launcher = createBrowserOAuthLauncher({
 			issuer: 'http://auth.test/auth',
 			clientId: 'client-1',
@@ -137,16 +159,152 @@ test('browser launcher returns launched after starting redirect', async () => {
 		expect(new URL(redirect).searchParams.get('redirect_uri')).toBe(
 			REDIRECT_URI,
 		);
-	} finally {
-		if (hadWindow) {
-			Object.defineProperty(globalThis, 'window', {
-				configurable: true,
-				value: originalWindow,
+	});
+});
+
+test('startSignIn on a callback URL starts a fresh flow instead of finishing one', async () => {
+	// The behaviour this pins is the one that was removed. `startSignIn` used to
+	// inspect the current URL and exchange the code it found, so the same call
+	// meant "begin" or "finish" depending on a query string, and the callback
+	// route asked to begin in order to finish.
+	const { storage, values } = createMemoryStorage({
+		'epicenter.oauth.client-1': JSON.stringify({
+			state: 'state-1',
+			codeVerifier: 'verifier-1',
+			redirectUri: REDIRECT_URI,
+		}),
+	});
+	const redirects: string[] = [];
+	await atUrl(
+		'http://app.test/auth/callback?code=code-1&state=state-1',
+		async () => {
+			const launcher = createBrowserOAuthLauncher({
+				issuer: 'http://auth.test/auth',
+				clientId: 'client-1',
+				redirectUri: REDIRECT_URI,
+				resource: 'http://auth.test',
+				storage,
+				fetch: createFetch(),
+				redirectTo: (url) => {
+					redirects.push(url);
+				},
 			});
-		} else {
-			delete (globalThis as { window?: unknown }).window;
-		}
-	}
+
+			expect(expectOk(await launcher.startSignIn())).toEqual({
+				status: 'launched',
+			});
+		},
+	);
+	expect(redirects).toHaveLength(1);
+	// A new transaction, because a launch is a launch: the stale verifier is
+	// replaced rather than spent.
+	expect([...values.values()][0]).not.toContain('verifier-1');
+});
+
+test('completeSignIn exchanges the callback the browser is sitting on', async () => {
+	const { storage, values } = createMemoryStorage({
+		'epicenter.oauth.client-1': JSON.stringify({
+			state: 'state-1',
+			codeVerifier: 'verifier-1',
+			redirectUri: REDIRECT_URI,
+		}),
+	});
+	await atUrl(
+		'http://app.test/auth/callback?code=code-1&state=state-1',
+		async () => {
+			const launcher = createBrowserOAuthLauncher({
+				issuer: 'http://auth.test/auth',
+				clientId: 'client-1',
+				redirectUri: REDIRECT_URI,
+				resource: 'http://auth.test',
+				storage,
+				fetch: createFetch(),
+				redirectTo: () => {
+					throw new Error('Completing a callback must not redirect.');
+				},
+			});
+
+			const grant = expectOk(await launcher.completeSignIn());
+
+			expect(grant.accessToken).toBe('access-token');
+			expect(grant.refreshToken).toBe('refresh-token');
+		},
+	);
+	// The verifier is single-use, so the transaction is consumed either way.
+	expect(values.size).toBe(0);
+});
+
+test('completeSignIn refuses a URL carrying no authorization response, and keeps the transaction', async () => {
+	// The refusal is what protects a sign-in still in progress in another tab:
+	// reading the transaction consumes it, so a bare visit to the callback route
+	// must not get that far.
+	const { storage, values } = createMemoryStorage({
+		'epicenter.oauth.client-1': JSON.stringify({
+			state: 'state-1',
+			codeVerifier: 'verifier-1',
+			redirectUri: REDIRECT_URI,
+		}),
+	});
+	await atUrl('http://app.test/auth/callback', async () => {
+		const launcher = createBrowserOAuthLauncher({
+			issuer: 'http://auth.test/auth',
+			clientId: 'client-1',
+			redirectUri: REDIRECT_URI,
+			resource: 'http://auth.test',
+			storage,
+			fetch: createFetch(),
+			redirectTo: () => {
+				throw new Error('Completing a callback must not redirect.');
+			},
+		});
+
+		expect(expectErr(await launcher.completeSignIn()).name).toBe(
+			'MissingCallbackParameters',
+		);
+	});
+	expect(values.size).toBe(1);
+});
+
+test('completeSignIn surfaces an authorization error carried on the callback', async () => {
+	const { storage } = createMemoryStorage();
+	await atUrl(
+		'http://app.test/auth/callback?error=access_denied&error_description=No',
+		async () => {
+			const launcher = createBrowserOAuthLauncher({
+				issuer: 'http://auth.test/auth',
+				clientId: 'client-1',
+				redirectUri: REDIRECT_URI,
+				resource: 'http://auth.test',
+				storage,
+				fetch: createFetch(),
+				redirectTo: () => {
+					throw new Error('Completing a callback must not redirect.');
+				},
+			});
+
+			const error = expectErr(await launcher.completeSignIn());
+
+			expect(error.name).toBe('AuthorizationFailed');
+			expect(error.message).toContain('No');
+		},
+	);
+});
+
+test('the extension launcher cannot complete a callback', () => {
+	// It never returns to a redirect URI: `launchWebAuthFlow` hands the response
+	// URL straight back, so the whole exchange happens inside `startSignIn`.
+	const { storage } = createMemoryStorage();
+	const launcher = createExtensionOAuthLauncher({
+		issuer: 'http://auth.test/auth',
+		clientId: 'client-1',
+		redirectUri: REDIRECT_URI,
+		resource: 'http://auth.test',
+		storage,
+		fetch: createFetch(),
+		launchWebAuthFlow: async () => REDIRECT_URI,
+	});
+
+	expect('completeSignIn' in launcher).toBe(false);
 });
 
 test('extension launcher returns completed grant after web-auth callback', async () => {

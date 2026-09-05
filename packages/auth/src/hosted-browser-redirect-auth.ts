@@ -14,7 +14,7 @@
  * A Svelte app wraps the result: `fromAuth(createHostedBrowserRedirectAuth(…))`.
  */
 
-import type { AuthClient } from './auth-contract.js';
+import type { CallbackAuthClient } from './auth-contract.js';
 import { createOAuthAppAuth } from './create-oauth-app-auth.js';
 import { createBrowserOAuthLauncher } from './oauth-launchers/index.js';
 import { createWebStoragePersistedAuthStorage } from './persisted-auth-storage.js';
@@ -67,12 +67,16 @@ export type CreateHostedBrowserRedirectAuthOptions = {
  * Redirect-only and hosted-only by construction: it owns no Tauri deep-link or
  * extension launcher. A Tauri app keeps its own deep-link launcher and uses
  * this for its web build alone (ADR-0078).
+ *
+ * A `CallbackAuthClient`, statically, because this function chooses the browser
+ * redirect launcher itself: the app returns to `${window.location.origin}/auth/callback`
+ * and that route calls `completeSignIn`.
  */
 export function createHostedBrowserRedirectAuth({
 	appId,
 	oauthClientId,
 	baseURL,
-}: CreateHostedBrowserRedirectAuthOptions): AuthClient {
+}: CreateHostedBrowserRedirectAuthOptions): CallbackAuthClient {
 	return createOAuthAppAuth({
 		baseURL,
 		clientId: oauthClientId,

@@ -11,11 +11,12 @@
  * - Account commands post to the same-origin broker routes with cookies
  * - The profile is read from the broker projection, never the server transport
  * - openWebSocket is denied permanently
+ * - It is not a callback client: no browser OAuth callback reaches a window
  */
 
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
-import type { AuthFetch } from './auth-contract.ts';
+import { type AuthFetch, isCallbackAuthClient } from './auth-contract.ts';
 import {
 	createDesktopBrokerAuth,
 	readDesktopAuthBootstrap,
@@ -202,4 +203,25 @@ test('an unparseable boot snapshot fails instead of degrading', () => {
 	);
 	// Still removed: a snapshot nobody could read is not one to leave lying around.
 	expect(served.wasRemoved()).toBe(true);
+});
+
+test('a desktop window is not a callback client', () => {
+	// Sign-in goes to the host over the broker and the host relaunches the
+	// process; no browser OAuth callback ever lands in this window, so there is
+	// no `completeSignIn` to offer and none is offered.
+	const auth = createDesktopBrokerAuth({
+		bootstrap: {
+			state: { status: 'signed-out' },
+			connection: {
+				baseURL: 'https://api.epicenter.test',
+				status: 'connected',
+			},
+			networkEligible: false,
+		},
+		brokerBaseURL: 'http://127.0.0.1:4242',
+		fetch: async () => new Response(null, { status: 204 }),
+	});
+
+	expect(isCallbackAuthClient(auth)).toBe(false);
+	auth[Symbol.dispose]();
 });

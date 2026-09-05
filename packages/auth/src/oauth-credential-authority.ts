@@ -10,7 +10,10 @@ import type {
 	PersistedAuth,
 } from './auth-types.js';
 import type { BearerAuthorization } from './credential-authority.js';
-import type { OAuthLauncher } from './oauth-launchers/contract.js';
+import type {
+	CallbackOAuthLauncher,
+	OAuthLauncher,
+} from './oauth-launchers/contract.js';
 import {
 	refreshOAuthTokenWithEndpoint,
 	revokeOAuthRefreshTokenWithEndpoint,
@@ -288,9 +291,51 @@ export function createOAuthCredentialAuthority(
 		};
 	}
 
-	async function completeSignInWithGrant(
+	/**
+	 * Run one sign-in attempt as THE sign-in attempt.
+	 *
+	 * Both halves of sign-in share this and share the flight it holds, which is
+	 * what makes a second caller join rather than start a rival: two
+	 * `startSignIn` clicks are one launch, and a callback route that mounts twice
+	 * is one exchange rather than an authorization code spent and then replayed.
+	 *
+	 * The generation is what a superseded attempt checks itself against. Every
+	 * `await` inside an attempt is a place a sign-out or a newer attempt can
+	 * land, and an attempt that finds itself stale answers `Ok` and installs
+	 * nothing rather than writing an identity nobody asked for any more.
+	 */
+	function runSignInFlight(
+		attempt: (generation: number) => Promise<Result<undefined, AuthError>>,
+		fail: (args: { cause: unknown }) => Result<never, AuthError>,
+	): Promise<Result<undefined, AuthError>> {
+		if (signInFlight !== null) return signInFlight;
+		const generation = beginSignInGeneration();
+		const promise = (async () => {
+			try {
+				return await attempt(generation);
+			} catch (cause) {
+				if (!isCurrentSignIn(generation)) return Ok(undefined);
+				return fail({ cause });
+			}
+		})().finally(() => {
+			if (signInFlight === promise) signInFlight = null;
+		});
+		signInFlight = promise;
+		return promise;
+	}
+
+	/**
+	 * Verify a grant, install it, and publish, or answer with `fail`.
+	 *
+	 * The failure variant is a parameter because both halves of sign-in end
+	 * here and they are not the same failure: a launch that could not be
+	 * started is repaired by starting again, and a callback that could not be
+	 * finished is not.
+	 */
+	async function installGrant(
 		grant: OAuthTokenGrant,
 		generation: number,
+		fail: (args: { cause: unknown }) => Result<never, AuthError>,
 	): Promise<Result<undefined, AuthError>> {
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
 		const previous = authSession.persistedAuth;
@@ -300,7 +345,7 @@ export function createOAuthCredentialAuthority(
 			token: grant.accessToken,
 		});
 		if (error) {
-			return AuthError.StartSignInFailed({ cause: error });
+			return fail({ cause: error });
 		}
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
 		if (previous !== null && previous.principalId !== session.principalId) {
@@ -328,35 +373,61 @@ export function createOAuthCredentialAuthority(
 		onStateChange(fn: (state: AuthState) => void) {
 			return authSession.onStateChange(fn);
 		},
-		async startSignIn() {
-			if (signInFlight !== null) return signInFlight;
-			const generation = beginSignInGeneration();
-			const promise = (async () => {
-				try {
-					const result = await launcher.startSignIn();
-					if (!isCurrentSignIn(generation)) return Ok(undefined);
-					if (result.error) {
-						return AuthError.StartSignInFailed({ cause: result.error });
-					}
-					switch (result.data?.status) {
-						case 'launched':
-							return Ok(undefined);
-						case 'completed':
-							return completeSignInWithGrant(result.data.grant, generation);
-					}
-					return AuthError.StartSignInFailed({
-						cause: { message: 'OAuth launcher returned no launch result.' },
-					});
-				} catch (cause) {
-					if (!isCurrentSignIn(generation)) return Ok(undefined);
-					return AuthError.StartSignInFailed({ cause });
+		startSignIn() {
+			return runSignInFlight(async (generation) => {
+				const result = await launcher.startSignIn();
+				if (!isCurrentSignIn(generation)) return Ok(undefined);
+				if (result.error) {
+					return AuthError.StartSignInFailed({ cause: result.error });
 				}
-			})().finally(() => {
-				if (signInFlight === promise) signInFlight = null;
-			});
-			signInFlight = promise;
-			return promise;
+				switch (result.data?.status) {
+					case 'launched':
+						return Ok(undefined);
+					case 'completed':
+						return installGrant(
+							result.data.grant,
+							generation,
+							AuthError.StartSignInFailed,
+						);
+				}
+				return AuthError.StartSignInFailed({
+					cause: { message: 'OAuth launcher returned no launch result.' },
+				});
+			}, AuthError.StartSignInFailed);
 		},
+		/**
+		 * Finish the sign-in this runtime's callback carries.
+		 *
+		 * `undefined` when the launcher cannot complete a callback, which is what
+		 * `createOAuthAppAuth` reads to decide whether the client it composes is
+		 * a `CallbackAuthClient`. An extension launcher completes inside its own
+		 * `startSignIn` and never returns to a redirect URI, so there is nothing
+		 * here for it to do.
+		 *
+		 * It shares `signInFlight` with `startSignIn` on purpose. A callback route
+		 * that mounts twice joins the one exchange rather than spending the
+		 * authorization code and then failing on the replay, and a callback
+		 * landing while a launch is still in flight supersedes it, because
+		 * beginning a generation is what cancels the previous one.
+		 */
+		completeSignIn: canCompleteCallback(launcher)
+			? () =>
+					runSignInFlight(async (generation) => {
+						const result = await launcher.completeSignIn();
+						if (!isCurrentSignIn(generation)) return Ok(undefined);
+						// Narrowed on `data` rather than on `error`, because a launcher
+						// states its failures as `unknown` and an `unknown` that is not
+						// null narrows nothing.
+						if (result.data === null) {
+							return AuthError.CompleteSignInFailed({ cause: result.error });
+						}
+						return installGrant(
+							result.data,
+							generation,
+							AuthError.CompleteSignInFailed,
+						);
+					}, AuthError.CompleteSignInFailed)
+			: undefined,
 		async signOut() {
 			try {
 				const refreshTokenToRevoke =
@@ -391,6 +462,16 @@ export function createOAuthCredentialAuthority(
 export type OAuthCredentialAuthority = ReturnType<
 	typeof createOAuthCredentialAuthority
 >;
+
+/** Whether this launcher is the kind that comes back to a redirect URI. */
+function canCompleteCallback(
+	launcher: OAuthLauncher,
+): launcher is CallbackOAuthLauncher {
+	return (
+		typeof (launcher as Partial<CallbackOAuthLauncher>).completeSignIn ===
+		'function'
+	);
+}
 
 function createAuthSessionRuntime({
 	initialPersistedAuth,

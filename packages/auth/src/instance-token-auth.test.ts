@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
-import type {
-	AuthClient,
-	AuthFetch,
-	ConnectionStatus,
+import {
+	type AuthClient,
+	type AuthFetch,
+	type ConnectionStatus,
+	isCallbackAuthClient,
 } from './auth-contract.js';
 import { createInstanceTokenAuth } from './instance-token-auth.js';
 
@@ -296,4 +297,17 @@ describe('createInstanceTokenAuth', () => {
 		expect(auth.state.status).toBe('signed-in');
 		expect(connection(auth).status).toBe('rejected');
 	});
+});
+
+test('an instance-token client is not a callback client', () => {
+	// The operator brought the bearer. `startSignIn` re-verifies it and there is
+	// no interactive OAuth flow at all, so there is no callback to complete.
+	const auth = createInstanceTokenAuth({
+		baseURL: 'https://instance.epicenter.test',
+		token: 'a'.repeat(64),
+		fetch: async () => new Response(null, { status: 204 }),
+	});
+
+	expect(isCallbackAuthClient(auth)).toBe(false);
+	auth[Symbol.dispose]();
 });

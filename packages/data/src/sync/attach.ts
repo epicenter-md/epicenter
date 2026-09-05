@@ -13,12 +13,16 @@
  * "permanent" wrong spins a backoff against a refusal forever, or gives up on
  * a network blip. What an application actually varies is the data id it opens.
  *
- * The credential model arrives as a two-member port, not as an `AuthClient`.
- * That keeps this file MIT alongside the rest of the store, and an
- * `AuthClient` satisfies it structurally with no adapter.
+ * The credential model arrives as a one-member port, not as an `AuthClient`.
+ * The store says what a socket has to be able to do and nothing about how a
+ * credential is obtained, and an `AuthClient` satisfies the port structurally
+ * with no adapter.
  */
 
-import { isOpenWebSocketDenial } from '@epicenter/sync/auth-subprotocol';
+import {
+	isOpenWebSocketDenial,
+	MAIN_SUBPROTOCOL,
+} from '@epicenter/sync/auth-subprotocol';
 import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
 import {
 	type ReplicaDocument,
@@ -41,8 +45,14 @@ export type StoreSocketTransport = {
 	 * human, so a rejection means signed out rather than slow. A rejection
 	 * recognised by `isOpenWebSocketDenial` with `permanence: 'permanent'`
 	 * stops the driver for good; anything else is a transient close.
+	 *
+	 * `protocols` is what the CALLER needs the upgrade to offer. The credential
+	 * model appends its own bearer subprotocol to it rather than replacing it,
+	 * which is why this parameter has to exist: the rooms route refuses an
+	 * upgrade that offers protocols without the main one, so a transport that
+	 * could only offer a bearer would be refused with a 400 on every dial.
 	 */
-	openWebSocket(url: string | URL): Promise<WebSocket>;
+	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
 };
 
 export type AttachStoreSyncOptions = {
@@ -98,6 +108,13 @@ export function attachStoreSync({
 						generation: store.generation,
 						cursor,
 					}),
+					// The store transport's own subprotocol, offered on every dial.
+					// The credential model adds `bearer.<token>` beside it, and the
+					// route echoes only this one back on the 101. Offering the bearer
+					// alone is not a weaker dial, it is a refused one: the mount
+					// answers 400 to an upgrade that offers protocols without this
+					// name, so this line is the difference between sync and no sync.
+					[MAIN_SUBPROTOCOL],
 				)
 				.then(
 					(opening) => {

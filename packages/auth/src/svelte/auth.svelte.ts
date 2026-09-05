@@ -22,8 +22,15 @@ export { reloadOnAuthChange } from './reload-on-auth-change.js';
  * keeps asking for `AuthClient`: the brand is a subtype, so nothing that reads
  * once has to change, and handing a raw core client to a surface that tracks
  * is a type error rather than a silently frozen popover.
+ *
+ * The parameter carries the wrapped client's own type through, because a
+ * `CallbackAuthClient` that came out of here as a bare `AuthClient` would lose
+ * `completeSignIn` in the type while keeping it at runtime, and the callback
+ * route reads that member. It defaults to `AuthClient`, so every existing
+ * annotation still means what it meant.
  */
-export type ReactiveAuthClient = AuthClient & Brand<'ReactiveAuthClient'>;
+export type ReactiveAuthClient<TClient extends AuthClient = AuthClient> =
+	TClient & Brand<'ReactiveAuthClient'>;
 
 /**
  * Bridge an auth client's two external facts into Svelte's graph.
@@ -63,7 +70,9 @@ export type ReactiveAuthClient = AuthClient & Brand<'ReactiveAuthClient'>;
  * promises that reads track IF the underlying client ever changes, which is a
  * promise every client can keep.
  */
-export function fromAuth(authClient: AuthClient): ReactiveAuthClient {
+export function fromAuth<TClient extends AuthClient>(
+	authClient: TClient,
+): ReactiveAuthClient<TClient> {
 	const subscribeState = createSubscriber((update) =>
 		authClient.onStateChange(update),
 	);
@@ -84,5 +93,5 @@ export function fromAuth(authClient: AuthClient): ReactiveAuthClient {
 				return connection.status;
 			},
 		},
-	} as ReactiveAuthClient;
+	} as ReactiveAuthClient<TClient>;
 }

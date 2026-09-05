@@ -60,12 +60,18 @@ export type AuthClient = {
 	 */
 	onStateChange(fn: (state: AuthState) => void): () => void;
 	/**
-	 * Start the runtime's sign-in flow.
+	 * Start the runtime's sign-in flow, and only ever start one.
 	 *
 	 * Use this from a UI surface that can hand control to the configured
-	 * launcher. Completion means the launcher finished its work, not that a page
+	 * launcher. Resolving means the launcher finished its work, not that a page
 	 * navigation happened; callers should observe `state` for the durable signed
 	 * in signal.
+	 *
+	 * It used to mean two things. The browser launcher inspected the current
+	 * URL first and exchanged an authorization code when it found one, so
+	 * `startSignIn` on the callback route FINISHED a sign-in and `startSignIn`
+	 * anywhere else BEGAN one, chosen by a query string. Finishing is
+	 * {@link CallbackAuthClient.completeSignIn} now, and this always begins.
 	 */
 	startSignIn(): Promise<Result<undefined, AuthError>>;
 	/**
@@ -126,3 +132,63 @@ export type AuthClient = {
 	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
 	[Symbol.dispose](): void;
 };
+
+/**
+ * An auth client whose transport receives an OAuth callback it can consume.
+ *
+ * A subtype rather than a member on {@link AuthClient}, and the asymmetry with
+ * `openWebSocket` is the reason. Every client has `openWebSocket` because a
+ * caller that opens a socket must handle `OpenWebSocketDenied` for a merely
+ * signed-out client anyway, so "this model can never open one" is the permanent
+ * arm of a channel that already exists. Callback completion has no such
+ * channel: a caller holding a callback URL either exchanges it or the call is
+ * meaningless, and a `completeSignIn` on the desktop broker, the same-origin
+ * cookie client, or the instance-token client could only answer with an error
+ * saying the method does not apply. That is a lie in the type repaired at
+ * runtime, which is what this subtype exists to refuse.
+ *
+ * Which clients have it is decided by the LAUNCHER, not by the product:
+ * hosted browser redirect auth returns to `/auth/callback?code=…`, while the
+ * extension launcher completes inline through the web-auth flow and never
+ * returns to a redirect URI at all.
+ */
+export type CallbackAuthClient = AuthClient & {
+	/**
+	 * Consume the OAuth callback this runtime is currently sitting on.
+	 *
+	 * Call it from the redirect route and nowhere else. The client reads the
+	 * callback itself, so no URL, code, or state crosses this boundary: a route
+	 * that had to parse `code` and `state` would be holding the halves of a PKCE
+	 * exchange it has no business seeing.
+	 *
+	 * Resolving `Ok` means identity is installed and published, so a
+	 * `reloadOnAuthChange` mounted above the route has ALREADY run by the time
+	 * the promise settles. It resolves `Ok` for a callback that finished for the
+	 * principal already signed in, which publishes no state change and therefore
+	 * reloads nothing; the route's own navigation is what leaves the callback
+	 * URL in that case.
+	 */
+	completeSignIn(): Promise<Result<undefined, AuthError>>;
+};
+
+/**
+ * Narrow a client to the one that can finish an OAuth callback.
+ *
+ * A guard rather than a static type, because one callback route is compiled
+ * into every build of an app while `#platform/auth` resolves to a different
+ * client in each: the browser leaf redirects, and the desktop leaf brokers
+ * sign-in through the host and never sees a browser callback. The route needs
+ * an answer that holds in both builds.
+ *
+ * Truthful at runtime because the member is attached only where it works.
+ * `createOAuthAppAuth` adds it when its launcher can complete a callback and
+ * omits it otherwise, so this is a fact about the composed client rather than a
+ * guess about its shape.
+ */
+export function isCallbackAuthClient(
+	client: AuthClient,
+): client is CallbackAuthClient {
+	return (
+		typeof (client as Partial<CallbackAuthClient>).completeSignIn === 'function'
+	);
+}

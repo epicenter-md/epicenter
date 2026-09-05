@@ -161,6 +161,25 @@ test('the rest of the handle comes across, and reading it opens nothing', () => 
 	expect('eraseReplica' in epicenter).toBe(false);
 });
 
+test('`close` is dropped from the type, not only from the object', () => {
+	const held = handle();
+	const epicenter = fromEpicenter({
+		...held.epicenter,
+		close: async () => undefined,
+	});
+
+	// The runtime half is asserted above, and it is the weaker half: a route
+	// reaching for `close` would still compile and fail at the call. The type is
+	// what makes the module local that built the handle the only caller there is
+	// (ADR-0344), so a change that started forwarding it fails here rather than
+	// in an application that reopens a session its replacement module holds.
+	type CloseIsDropped = 'close' extends keyof typeof epicenter ? never : true;
+	const dropped: CloseIsDropped = true;
+
+	expect(dropped).toBe(true);
+	expect('close' in epicenter).toBe(false);
+});
+
 test('the store rides on ready, adapted once, with everything else intact', () => {
 	const held = handle({ status: 'opening' });
 	const epicenter = fromEpicenter(held.epicenter);

@@ -1,4 +1,8 @@
-export type { OAuthLauncher, OAuthLaunchResult } from './contract.js';
+export type {
+	CallbackOAuthLauncher,
+	OAuthLauncher,
+	OAuthLaunchResult,
+} from './contract.js';
 export {
 	createBrowserOAuthLauncher,
 	createExtensionOAuthLauncher,
