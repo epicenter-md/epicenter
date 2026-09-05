@@ -45,13 +45,16 @@
 	// One sign-in surface: the primary button and the retry action both call
 	// `auth.startSignIn()`. The client owns whether that means OAuth or token
 	// verification; this surface only chooses the human label.
+	//
+	// Pending until the page or the process is replaced, and cleared only on a
+	// failure. See `sign-in-screen.svelte` for why: resolving means the launcher
+	// finished its work, not that a navigation happened.
 	async function startSignIn() {
 		signInError = null;
 		signingIn = true;
-		try {
-			const { error } = await auth.startSignIn();
-			if (error) signInError = error.message;
-		} finally {
+		const { error } = await auth.startSignIn();
+		if (error) {
+			signInError = error.message;
 			signingIn = false;
 		}
 	}

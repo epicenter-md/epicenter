@@ -98,14 +98,18 @@ export const notes = fromEpicenter(
 </script>
 
 {#if auth.state.status === 'signed-out'}
-  <SignIn />
+  <SignInScreen {auth} appName="Honeycrisp" noun="notes" />
 {:else if notes.state.status === 'ready'}
   <Notes data={notes.state.data} />
 {:else if notes.state.status === 'failed'}
-  <!-- `error` is `DataOpenError`, a discriminated union, so the arms narrow
-       on `.name` and the compiler checks them. -->
-  <p>{sentenceFor(notes.state.error)}</p>
-  <button onclick={() => void notes.open()}>Try again</button>
+  <!-- `@epicenter/app-shell/boot-screens`. It takes the two words that are
+       this application's; the sentence and the repair are `openFailure`'s. -->
+  <CannotOpenScreen
+    appName="Honeycrisp"
+    noun="notes"
+    error={notes.state.error}
+    retry={() => void notes.open()}
+  />
 {:else}
   <Loading />
 {/if}

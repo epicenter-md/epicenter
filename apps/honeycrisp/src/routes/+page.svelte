@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
+	import {
+		CannotOpenScreen,
+		SignInScreen,
+	} from '@epicenter/app-shell/boot-screens';
 	import { Loading } from '@epicenter/ui/loading';
-	import { Spinner } from '@epicenter/ui/spinner';
-	import { extractErrorMessage } from 'wellcrafted/error';
 	import { authClient } from '#platform/auth';
 	import { epicenter } from '$lib/epicenter.svelte.js';
 	import StoreShell from './components/StoreShell.svelte';
@@ -20,18 +21,13 @@
 	// not shared with the callback, and Honeycrisp's protected surface is one
 	// route at `/`, so that node is the page (ADR-0345).
 	//
-	// **Every screen a person can meet before their notes is written here, in
-	// their words.** There was a shared gate taking an application's nouns as
-	// parameters; what it templated turned out to be one sentence per screen
-	// with a hole where "notes" goes, so the hole is closed and the sentences
-	// live at the node that renders them (ADR-0244). A failure earns its own
-	// screen only by changing what a person can DO, which is why there are three
-	// and not one per error name.
-	//
-	// **This is the reference copy of that reasoning.** Vocab and Whispering
-	// have the same four arms and point here rather than restating it; the
-	// explanation is one decision with one owner, even though the markup is
-	// three statements the compiler checks separately.
+	// **This node decides who is looking and what has happened; the screens are
+	// shared.** `SignInScreen` and `CannotOpenScreen`
+	// (`@epicenter/app-shell/boot-screens`) take `appName` and `noun`, which are
+	// the two words that are Honeycrisp's; the sentences around them are not
+	// (ADR-0244). A failure earns its own sentence only by changing what a
+	// person can DO, which is `openFailure`'s decision to make once rather than
+	// three times.
 	//
 	// Signed-out is read once, here, rather than tracked, and `authClient` is
 	// what makes that structural: the raw client has no Svelte subscriber on it,
@@ -52,85 +48,19 @@
 	// Not awaited: what the open reports is `epicenter.state`, which is what
 	// every branch below renders from.
 	if (!signedOut) void epicenter.open();
-
-	// **Pending until the page or the process is replaced, which is why there is
-	// no `finally` here.** Resolving means the launcher finished its work, not
-	// that a navigation happened (`auth-contract.ts`). The desktop broker
-	// answers 202 as soon as the host has started OAuth out of process, in
-	// loopback milliseconds, and then nothing on this page moves again until the
-	// process is replaced; the hosted client assigns `location.href` and returns
-	// without blocking. Clearing the flag on success re-enables the button in
-	// the gap and invites the second click this state exists to prevent.
-	let signingIn = $state(false);
-	let signInError = $state<string | undefined>(undefined);
-
-	async function signIn() {
-		signInError = undefined;
-		signingIn = true;
-		const { error } = await authClient.startSignIn();
-		if (error !== null) {
-			signInError = error.message;
-			signingIn = false;
-		}
-	}
 </script>
 
 {#if signedOut}
-	<div class="flex h-dvh items-center justify-center p-6 text-center">
-		<div class="flex max-w-sm flex-col items-center gap-4">
-			<div class="space-y-2">
-				<h1 class="text-lg font-semibold">Honeycrisp</h1>
-				<p class="text-sm text-muted-foreground">
-					Sign in to open your notes.
-				</p>
-				{#if signInError !== undefined}
-					<p class="text-xs text-destructive">{signInError}</p>
-				{/if}
-			</div>
-			<Button size="lg" disabled={signingIn} onclick={signIn}>
-				{#if signingIn}
-					<Spinner class="size-4" />
-					Signing in…
-				{:else}
-					Sign in with Epicenter
-				{/if}
-			</Button>
-		</div>
-	</div>
+	<SignInScreen auth={authClient} appName="Honeycrisp" noun="notes" />
 {:else if epicenter.state.status === 'ready'}
 	<StoreShell data={epicenter.state.data} />
 {:else if epicenter.state.status === 'failed'}
-	<div class="flex h-dvh items-center justify-center p-6 text-center">
-		<div class="flex max-w-sm flex-col items-center gap-4">
-			<div class="space-y-2">
-				<h1 class="text-lg font-semibold">Honeycrisp</h1>
-				{#if epicenter.state.error.name === 'AlreadyOpen'}
-					<p class="text-sm text-muted-foreground">
-						Another Honeycrisp window already has your notes open. Close it,
-						then try again.
-					</p>
-				{:else if epicenter.state.error.name === 'LocksUnsupported'}
-					<p class="text-sm text-muted-foreground">
-						This browser is too old to open your notes safely. Update it, or
-						use a different one.
-					</p>
-				{:else}
-					<p class="text-sm text-muted-foreground">
-						Your notes could not be opened. Check your connection and try
-						again.
-					</p>
-					<p class="text-xs text-muted-foreground/70">
-						{extractErrorMessage(epicenter.state.error)}
-					</p>
-				{/if}
-			</div>
-			{#if epicenter.state.error.name !== 'LocksUnsupported'}
-				<Button size="lg" onclick={() => void epicenter.open()}>
-					Try again
-				</Button>
-			{/if}
-		</div>
-	</div>
+	<CannotOpenScreen
+		appName="Honeycrisp"
+		noun="notes"
+		error={epicenter.state.error}
+		retry={() => void epicenter.open()}
+	/>
 {:else}
 	<!-- `closed` and `opening` are one screen, and `closed` is unreachable while
 	     a person is booting: `open` publishes `opening` synchronously, above,

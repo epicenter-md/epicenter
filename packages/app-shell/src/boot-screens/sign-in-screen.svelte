@@ -1,0 +1,74 @@
+<script lang="ts">
+	import type { AuthClient } from '@epicenter/auth';
+	import { Button } from '@epicenter/ui/button';
+	import { Spinner } from '@epicenter/ui/spinner';
+
+	/**
+	 * The screen a signed-out person meets instead of their data.
+	 *
+	 * Mounted by the boot node, which is the narrowest node not shared with
+	 * `/auth/callback` (ADR-0345). The boot node decides WHO is looking; this
+	 * renders the one thing they can do about it.
+	 */
+	type SignInScreenProps = {
+		/**
+		 * The application's auth client, whose `startSignIn` this button calls.
+		 *
+		 * Nothing here is read reactively, so the raw client is enough: the boot
+		 * node already answered signed-out, and a sign-in ends this page rather
+		 * than updating it.
+		 */
+		auth: AuthClient;
+		/** The application's name, as the heading, e.g. `'Honeycrisp'`. */
+		appName: string;
+		/** What this application calls a person's stuff, plural, e.g. `'notes'`. */
+		noun: string;
+	};
+
+	let { auth, appName, noun }: SignInScreenProps = $props();
+
+	/**
+	 * Pending until the page or the process is replaced, which is why there is no
+	 * `finally` below.
+	 *
+	 * Resolving means the launcher finished its work, not that a navigation
+	 * happened (`auth-contract.ts`). The desktop broker answers 202 as soon as
+	 * the host has started OAuth out of process, in loopback milliseconds, and
+	 * then nothing on this page moves again until the process is replaced; the
+	 * hosted client assigns `location.href` and returns without blocking.
+	 * Clearing the flag on success re-enables the button in the gap and invites
+	 * the second click this state exists to prevent.
+	 */
+	let signingIn = $state(false);
+	let signInError = $state<string | undefined>(undefined);
+
+	async function signIn() {
+		signInError = undefined;
+		signingIn = true;
+		const { error } = await auth.startSignIn();
+		if (error !== null) {
+			signInError = error.message;
+			signingIn = false;
+		}
+	}
+</script>
+
+<div class="flex h-dvh items-center justify-center p-6 text-center">
+	<div class="flex max-w-sm flex-col items-center gap-4">
+		<div class="space-y-2">
+			<h1 class="text-lg font-semibold">{appName}</h1>
+			<p class="text-sm text-muted-foreground">Sign in to open your {noun}.</p>
+			{#if signInError !== undefined}
+				<p class="text-xs text-destructive">{signInError}</p>
+			{/if}
+		</div>
+		<Button size="lg" disabled={signingIn} onclick={signIn}>
+			{#if signingIn}
+				<Spinner class="size-4" />
+				Signing in…
+			{:else}
+				Sign in with Epicenter
+			{/if}
+		</Button>
+	</div>
+</div>

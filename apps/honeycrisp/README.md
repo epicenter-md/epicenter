@@ -78,8 +78,8 @@ Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and 
 ### Auth and sync
 
 Signing in comes before the notes, because an authority mints every generation
-(ADR-0336): there is no signed-out notebook to fall back to, and the sign-in
-screen in `routes/+page.svelte` is what a signed-out person meets. Signing in
+(ADR-0336): there is no signed-out notebook to fall back to. A signed-out
+person meets the sign-in screen, which `routes/+page.svelte` mounts. Signing in
 opens the store and attaches sync, and that is the whole of the sharing model.
 Every device signed into one account dials one authority
 (`principals/<id>/data/so.epicenter.honeycrisp`) and converges; there is
@@ -92,9 +92,10 @@ notes stay where they were. Erasing this device's copy is the account popover's
 `Forget this device`, which a person invokes and confirms; nothing is deleted
 as a step in a protocol (ADR-0281).
 
-Every boot screen is written in `routes/+page.svelte` as a literal sentence.
-There are three: another window has the notes open, this browser has no Web
-Locks, and everything else.
+The boot screens come from `@epicenter/app-shell/boot-screens`, and
+`routes/+page.svelte` lends them the two words that are Honeycrisp's: its name,
+and `notes`. There are three sentences for a failed open: another window has
+the notes open, this browser has no Web Locks, and everything else.
 
 `src/lib/sync.ts` is Honeycrisp's entire share of the transport: a URL.
 Reconnecting on close, reconnecting when the client is stuck behind a gap,

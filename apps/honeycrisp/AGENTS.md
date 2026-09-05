@@ -154,20 +154,16 @@ only the default one is checked by an editor.
 - Do not hand a component `epicenter`, or a lifecycle verb off it, when it only
   needs the notes. `StoreShell` takes `data={epicenter.state.data}`.
 - Do not render a store error to a person as the message. `routes/+page.svelte`
-  writes the sentence someone reads, as a literal string. There are three
-  screens, and a failure earns its own only by changing what a person can DO:
-  `AlreadyOpen`, because they can close the other window, and
-  `LocksUnsupported`, because a retry button there would be a lie. Everything
-  else shares one sentence and one Try again. The branch is
-  `epicenter.state.error.name`, which the compiler checks against
-  `DataOpenError`, so a misspelt name is a build failure rather than a screen
-  nobody reaches.
-- Do not print a library message under a screen whose sentence is already total.
-  `extractErrorMessage` goes under the shared retry arm, where it keeps a bug
-  report useful and a wrong guess visible. It does NOT go under the two named
-  arms: both of those library messages name the storage address, which now
-  carries the principal id, and the sentences above them say everything a person
-  can act on.
+  passes `appName` and `noun` to `@epicenter/app-shell/boot-screens` and writes
+  no sentence itself; `openFailure` decides which failure earns one. A failure
+  earns its own only by changing what a person can DO: `AlreadyOpen`, because
+  they can close the other window, and `LocksUnsupported`, because a retry
+  button there would be a lie. Everything else shares one sentence and one Try
+  again.
+- Do not write a Honeycrisp-shaped screen here when the shape is every
+  application's. The two words that are this application's are its name and
+  `notes`; a new arm belongs in `open-failure.ts`, where all three applications
+  get it at once.
 - Do not put `workspace`, `replica`, `authority`, `document`, or `sync cursor`
   in anything a person reads. They are the right words in this file and in
   `packages/data`, and the wrong ones in a tooltip.
