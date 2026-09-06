@@ -33,14 +33,11 @@
 				errorMessage = error.message;
 				return;
 			}
-			// A document replacement, not `goto`. Completing publishes the new auth
-			// state before this resumes, so the root layout's `reloadOnAuthChange`
-			// has usually replaced the document already and this is a harmless
-			// supersede. What it is NOT redundant for is a callback that finished
-			// for the principal already signed in: no state changed, nothing
-			// reloaded, and this is the only thing that leaves the callback URL. A
-			// client-side navigation would have kept this document alive and opened
-			// the store inside one the browser was about to unload.
+			// A document replacement rather than `goto`, and it is unconditional
+			// because it is the only thing that leaves the callback URL. Nothing
+			// above this route navigates for it: the reload gate that used to is
+			// deleted (ADR-0350), and the boot node at `/` reads auth reactively,
+			// which is a thing this document cannot become by staying alive.
 			// `resolve`, not a literal '/': the Epicenter build serves this app
 			// under a base path, so the root of THIS app is not the origin's.
 			window.location.replace(resolve('/'));

@@ -140,10 +140,11 @@ export function createInstanceCredentialAuthority(
 				// A refused token is a CONNECTION fact and stays on the connection
 				// channel. Writing `signed-out` here was a boot loop: this authority
 				// boots optimistically `signed-in` as the instance principal, so
-				// signed-in -> signed-out is a principal change, `reloadOnAuthChange`
-				// reloads, the next boot is optimistic again, and the page spins at
-				// one `/api/session` round trip forever on any box whose token was
-				// rotated. `authorize` below already refuses on either fact, so the
+				// signed-in -> signed-out is a principal change, so a boot node's
+				// `{#if}` flips, the next boot is optimistic again, and the page
+				// spins at one `/api/session` round trip forever on any box whose
+				// token was rotated. The reload gate is gone; the loop it caused is
+				// still reachable through the keyed session, so this still matters. `authorize` below already refuses on either fact, so the
 				// refusal is unchanged.
 				update(() => {
 					connectionStatus =

@@ -1,38 +1,45 @@
 /**
  * A refused credential must never look like a different person.
  *
- * This is the one cross-client invariant that keeps a page from reload-looping,
- * and it is not obvious from any single client's code, which is why it is
- * stated once here rather than three times in three files.
+ * This is the one cross-client invariant that keeps an application from
+ * thrashing its own session, and it is not obvious from any single client's
+ * code, which is why it is stated once here rather than three times in three
+ * files.
  *
  * ## The loop it prevents
  *
- * `reloadOnAuthChange` (`@epicenter/svelte`) reloads the document when the
- * principal changes, where the principal is `null` when signed out and
- * `state.principalId` otherwise. Every client boots OPTIMISTICALLY: it reports
- * the identity it can prove from disk and verifies over the network
- * afterwards. So if a refusal writes `signed-out`, the sequence is
+ * A boot node keys one session on the principal, which is `null` when signed
+ * out and `state.principalId` otherwise (ADR-0350). Every client boots
+ * OPTIMISTICALLY: it reports the identity it can prove from disk and verifies
+ * over the network afterwards. So if a refusal writes `signed-out`, the
+ * sequence is
  *
- *   boot optimistic -> verify -> refused -> signed-out -> RELOAD -> boot optimistic
+ *   boot optimistic -> verify -> refused -> signed-out -> GATE FLIPS -> boot optimistic
  *
- * and the page spins at one verification round trip forever, on any device
- * whose stored credential has gone bad. `reloading` is a one-shot guard per
- * page generation, so the next boot gets a fresh one and nothing breaks it.
+ * and the application spins at one verification round trip forever, on any
+ * device whose stored credential has gone bad, closing and reopening a store
+ * each time round.
+ *
+ * The gate used to be `reloadOnAuthChange`, which replaced the whole document
+ * and is now deleted. The invariant outlived it, which is the point of stating
+ * it against `principalKey` rather than against whatever reads it: the same
+ * flip now remounts a `{#key}` instead, and remounting is what a refusal must
+ * never cause, because it is the transition that fires spontaneously and would
+ * interrupt someone mid-keystroke.
  *
  * This shipped. `createInstanceTokenAuth` wrote `signed-out` on a refused
  * instance token, so a self-hosted box whose `INSTANCE_TOKEN` had been rotated
  * spun on every load (fixed in `5664edbc`). The hosted client never had the bug
- * because it routes a refusal to `reauth-required`, which keeps the principal;
- * `reload-on-auth-change.ts`'s module doc explains why reloading there would
- * loop for the same reason.
+ * because it routes a refusal to `reauth-required`, which keeps the principal.
  *
  * ## What is asserted
  *
  * Not "the state is X" for each client, which is what the per-client suites
  * already do and what let the loop through: each of them was individually
- * correct about its own client. The assertion here is the relationship the gate
+ * correct about its own client. The assertion here is the relationship a gate
  * actually reads, `principalKey` before versus after a refusal, so a future
- * client that invents a fourth state still has to satisfy it.
+ * client that invents a fourth state still has to satisfy it, and so the
+ * invariant survived the gate being replaced.
  *
  * The cookie client is the interesting exemption and is asserted as one: it
  * genuinely learns its identity over the network, because an httpOnly cookie is

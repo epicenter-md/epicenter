@@ -42,8 +42,10 @@ counter to keep.
 Every build opens its own store, with no seam deciding where data lives. Two
 windows on one machine converge through the same authority every other device
 uses, because a surface is a replica of one authority per signed-in account
-(ADR-0225). Sign-in is never a door: the app works completely signed out, and
-signing in attaches sync.
+(ADR-0225). Sign-in is a door. An application renders a sign-in screen when the client is
+signed out and opens no store, because a store is an account's replica
+(ADR-0336) and an ephemeral one would lose a person's work without saying so
+(ADR-0342, rejected).
 
 The full contract for the store is in
 [`packages/data/README.md`](../packages/data/README.md).

@@ -75,10 +75,10 @@ const EpicenterDataBackgroundError = defineErrors({
  *
  * **What this acquires, it hands back a closer for.** Opening takes three
  * things: the document and its Web Lock, a socket, and a page-hide listener.
- * They all live for this page's lifetime, which is one auth generation
- * (ADR-0088), so nothing in an application calls the closer; what needs it is
- * a hot reload replacing this module, and a test. The store cannot close
- * itself, because a store is one of the three (ADR-0340).
+ * They live for one session, which is shorter than the page: the session
+ * component's cleanup closes when its `{#key}` remounts or its `{#if}` flips
+ * (ADR-0350). The store cannot close itself, because a store is one of the
+ * three (ADR-0340).
  */
 export async function openReplica<TDefinition extends DataDefinition>({
 	appId,

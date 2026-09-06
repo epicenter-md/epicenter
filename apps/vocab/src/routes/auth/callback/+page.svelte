@@ -19,10 +19,11 @@
 				errorMessage = error.message;
 				return;
 			}
-			// A document replacement rather than `goto`: a new auth generation is a
-			// new document (ADR-0088), and this is also the only thing that leaves
-			// the callback URL when the callback completed for the principal
-			// already signed in, which publishes no state change to reload on.
+			// A document replacement rather than `goto`, and it is unconditional
+			// because it is the only thing that leaves the callback URL. Nothing
+			// above this route navigates for it: the reload gate that used to is
+			// deleted (ADR-0350), and the boot node at `/` reads auth reactively,
+			// which is a thing this document cannot become by staying alive.
 			window.location.replace('/');
 		})();
 	});

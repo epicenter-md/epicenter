@@ -19,8 +19,8 @@ import {
 	putRow,
 	putType,
 	rowAt,
-	type ValuesType,
 	typeAt,
+	type ValuesType,
 } from './raw-document.js';
 
 const PRESENCE = '!presence';

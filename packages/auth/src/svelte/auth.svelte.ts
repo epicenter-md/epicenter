@@ -2,25 +2,18 @@ import { createSubscriber } from 'svelte/reactivity';
 import type { Brand } from 'wellcrafted/brand';
 import type { AuthClient } from '../index.js';
 
-// The one composition shape (ADR-0088): the app reads `auth.state` once at
-// boot, and a change of auth generation reloads the page so the next boot
-// composes from scratch.
-
 /**
  * An auth client whose `state` and `connection.status` track in Svelte.
  *
- * The brand exists because the same reads are correct two opposite ways and
- * the unbranded type cannot tell you which you are holding. A route reads
- * `auth.state` once at boot and must NOT track (ADR-0088: a page lifetime is
- * one auth generation, and `reloadOnAuthChange` replaces the document rather
- * than swapping state under it). A component that renders the reconnect
- * affordance must track, because `signed-in` degrading to `reauth-required` is
- * the one transition the gate deliberately refuses to reload.
+ * The brand marks the reads that track, and handing a raw core client to a
+ * surface that needs them is a type error rather than a silently frozen
+ * popover. Since the brand is a subtype, code that only reads once needs no
+ * change.
  *
- * So a component that tracks asks for `ReactiveAuthClient`, and a boot reader
- * keeps asking for `AuthClient`: the brand is a subtype, so nothing that reads
- * once has to change, and handing a raw core client to a surface that tracks
- * is a type error rather than a silently frozen popover.
+ * A boot node wants the tracking one (ADR-0350). Its `auth.state` read is what
+ * replaced the reload gate: a sign-out flips its `{#if}`, a different principal
+ * remounts its `{#key}`, and `signed-in` degrading to `reauth-required` moves
+ * neither, so a person keeps working while sync reports the refusal.
  *
  * The parameter carries the wrapped client's own type through, because a
  * `CallbackAuthClient` that came out of here as a bare `AuthClient` would lose

@@ -77,10 +77,11 @@ const SameOriginAuthError = defineErrors({
  * synchronously (a persisted grant, or the desktop bootstrap element), so a
  * fourth arm would force a branch on every gate in the repository for a state
  * they can never be in. `apps/api/ui` is the only consumer, it opens no store,
- * and it accepts the flash. The related consequence is why it mounts no
- * `reloadOnAuthChange`: that confirmation is a principal change, so the gate
- * would reload into another optimistic boot and loop
- * (`refusal-is-not-an-identity-change.test.ts`).
+ * and it accepts the flash. When a reload gate existed, this was also why this
+ * client could not mount one: the confirmation is a principal change, so the
+ * gate would reload into another optimistic boot and loop
+ * (`refusal-is-not-an-identity-change.test.ts`). The gate is gone and the
+ * invariant is not: a keyed session would remount on the same flip.
  *
  * This is the cookie-credential sibling of {@link createOAuthAppAuth}, not a
  * mode flag on it: the two are different credential models. Cross-origin and

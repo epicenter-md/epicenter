@@ -164,12 +164,11 @@ export type CallbackAuthClient = AuthClient & {
 	 * that had to parse `code` and `state` would be holding the halves of a PKCE
 	 * exchange it has no business seeing.
 	 *
-	 * Resolving `Ok` means identity is installed and published, so a
-	 * `reloadOnAuthChange` mounted above the route has ALREADY run by the time
-	 * the promise settles. It resolves `Ok` for a callback that finished for the
-	 * principal already signed in, which publishes no state change and therefore
-	 * reloads nothing; the route's own navigation is what leaves the callback
-	 * URL in that case.
+	 * Resolving `Ok` means identity is installed and published, so every
+	 * reactive reader has already seen it. Nothing above the route navigates on
+	 * that, though, including for a callback that finished for the principal
+	 * already signed in and published no change: leaving the callback URL is the
+	 * route's own unconditional job.
 	 */
 	completeSignIn(): Promise<Result<undefined, AuthError>>;
 };

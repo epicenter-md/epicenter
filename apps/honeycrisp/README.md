@@ -18,15 +18,15 @@ browser as a static site.
 
 ### Data layer
 
-Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/data/index.ts`) and opens it as a store the app owns:
+Honeycrisp declares one inert data definition over `so.epicenter.honeycrisp` (`src/lib/data.ts`) and opens it as a store the app owns:
 
 ```txt
-createEpicenter({ appId, definition, account, binding })  the handle, composed once, inert
-epicenter.open()                                          the one thing that acquires
-epicenter.state                                           closed | opening | ready | failed
-epicenter.state.data                                      the store, on `ready`
-epicenter.eraseReplica()                                  the one deleting verb, offered from the account popover
-data.tables.notes.rows                                    synchronous from here on
+createEpicenter({ appId, definition, account })  the handle, composed once, inert
+epicenter.open()                                 synchronous; answers a DataSession
+session.opened                                   settles once: the store, or why not
+session.close()                                  releases the lock, socket, and listener
+session.erase()                                  the one deleting verb, from the account menu
+data.tables.notes.rows                           synchronous from here on
 ```
 
 The definition names the application, and `open` resolves which exact

@@ -33,7 +33,7 @@ shapes, see `docs/adr/`.
 - **Epicenter store**: the storage backing one replica: the durable ledger a
   crash cannot reconstruct, which is the update log, with the outbox and the
   cursor read off it. One IndexedDB object store in the browser, with no worker
-  and no OPFS (ADR-0223, ADR-0241).
+  and no OPFS (ADR-0238, ADR-0241).
 - **Generation**: one whole database, created once by importing a folder and
   never mutated in place (ADR-0293). It is an exact ADDRESS: the number is in
   the local record's name, in the authority's Durable Object name, and in the
@@ -216,9 +216,10 @@ shapes, see `docs/adr/`.
 - **`dial`**: the one thing a host supplies to the transport, a function that
   makes a socket. The library owns the cursor, attach and detach, reconnect, and
   the unacknowledged-submission watchdog (ADR-0222).
-- **Blob**: content-addressed bytes logged against the server, a separate plane
-  from rows that was never CRDT-backed. Local blobs may sit queued until they are
-  uploaded.
+- **Blob**: bytes a row cites by an opaque minted `BlobId`, never a content hash
+  (ADR-0148, ADR-0154). Held per principal at the authority and locally beside
+  the replica (ADR-0349), a separate plane from rows that was never CRDT-backed.
+  Local blobs may sit queued until they are uploaded.
 - **Worker**: running behavior that observes Epicenter state and writes results
   back. Workers may be local (every node runs them) or agent-bound (one
   configured agent answers). A conversation is answered by the client agent loop
@@ -254,12 +255,13 @@ shapes, see `docs/adr/`.
 - **Data session**: what `epicenter` owns once a definition and an account are
   passed. Construction is inert; `open` acquires the document, the Web Lock,
   the persistence connection, the sync socket, and the flush-on-hide listener,
-  and `close` releases all five. `state` reports `closed | opening | ready |
-  failed`, and the typed data rides on `ready`. Nothing on `state.data` can end
-  the session.
-- **Ready-application shape**: one session opened from the application root
-  after auth is ready, rendered through the four states of `epicenter.state`,
-  with `state.data` passed down through typed context. Library modules stay
+  and `close` releases all five. `open()` is synchronous and answers a
+  `DataSession` whose `opened` settles once; nothing on the store it resolves
+  can end the session (ADR-0350).
+- **Ready-application shape**: a boot node reads auth reactively and keys one
+  session component on the principal; that component opens, renders `{#await
+  session.opened}`, and closes on unmount. The shell it mounts calls `fromData`
+  once and passes the result down through typed context. Library modules stay
   inert, which `scripts/check-boot-purity.ts` enforces.
 - **`#platform/*`**: the build-time platform DI seam for multi-platform (Tauri) apps.
 - **`session`**: the singleton holding the signed-in Epicenter lifecycle.

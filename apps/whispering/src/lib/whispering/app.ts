@@ -140,7 +140,7 @@ export function createWhisperingApp({
 	data,
 	blobs,
 }: {
-	/** The open replica, from `epicenter.state` on its `ready` variant. */
+	/** The open replica, as `session.opened` resolved it. */
 	data: WhisperingAccountData;
 	blobs: WhisperingBlobs;
 }): WhisperingApp & Disposable {
