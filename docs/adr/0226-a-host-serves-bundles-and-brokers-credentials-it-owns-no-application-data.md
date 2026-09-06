@@ -21,6 +21,13 @@
   (which this narrows: a build no longer declares that at all),
   [ADR-0177](0177-a-browser-replica-is-owned-by-a-storage-partition-and-origin-pair.md).
 
+> **2026-09-05 note:** the quotation from `packages/blobs/src/blob-store.ts` below,
+> calling a blob content-addressed, is stale: ids are minted rather than hashed
+> ([ADR-0148](0148-blobs-use-opaque-identifiers-rather-than-content-hashes.md)).
+> The reasoning it supports is untouched, because a minted id still names
+> write-once bytes that cannot diverge, and [ADR-0349](0349-blobs-are-a-namespace-on-the-handle-addressed-by-id-and-stored-under-the-replicas-principal.md)
+> keeps desktop blob bytes on the host filesystem on exactly that reasoning.
+
 ## Context
 
 The desktop host owns a Bun process, so `openBunStore` runs there, and a served

@@ -26,7 +26,9 @@ docs/          reference materials
 
 One runtime: a desktop SPA in a WebView over a client-owned store (ADR-0227). The host serves bundles and brokers credentials and owns no application data (ADR-0226).
 
-ADR-0227 was executed as a clean break, so these are broken on purpose until they are rebuilt against the store: `apps/skills`, `apps/epicenter`, `packages/chat`, `packages/skills`, and app-shell's agent chat. `apps/whispering` is rebuilt: it opens its account replica through `createEpicenter`, boots in an `(app)` route group (ADR-0345), and typechecks under both of its conditions. `apps/vocab` is rebuilt too, and boots from its one page rather than a group, which is the same rule stated for a smaller tree (ADR-0345).
+ADR-0227 was executed as a clean break. `apps/skills`, `packages/chat`, `packages/skills`, and app-shell's agent chat all typecheck, so do not treat them as scrap: what they lack is a decision about what they are for, not a compiler pass. `apps/epicenter` typechecks and serves bundles, but it dials no authority, so a desktop build cannot sync and cannot even open a replica, because listing or minting a generation is an HTTP request its window's `fetch` will not make.
+
+The three applications on the store are `apps/honeycrisp`, `apps/vocab`, and `apps/whispering`. Each gates on identity in its boot node and opens nothing while signed out (ADR-0342, rejected: sign-in is a door), and each keys one session on the principal (ADR-0350). The narrowest node not shared with `/auth/callback` owns the gate, which is the page for Honeycrisp and Vocab and the `(app)` group layout for Whispering (ADR-0345).
 
 Migration reference: `docs/the-store-and-what-it-replaced.md`.
 

@@ -74,9 +74,10 @@ so there is nothing to refuse and nothing to merge.
 shared device leaves the other person's alone. It is no longer a boot repair: a
 person invokes it from the account popover while signed in, and the handle's
 `eraseReplica` closes the session before erasing, because erasing takes the same
-Web Lock an open holds and the handle is the one thing that can release it. A
-failed erase reopens, so the close is never kept when the deletion does not
-happen.
+Web Lock an open holds and the handle is the one thing that can release it.
+Deletion can fail after removing a generation. A failed erase therefore stays
+closed and reports the incomplete removal; reopening is not rollback. An
+application-level removal operation owns recovery before any new open or sync.
 
 ## Consequences
 

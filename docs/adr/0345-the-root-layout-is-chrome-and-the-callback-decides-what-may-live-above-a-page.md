@@ -1,7 +1,9 @@
 # 0345. The root layout is chrome, and the callback decides what may live above a page
 
-- **Status:** Proposed
+- **Status:** Proposed, amended twice below.
 - **Date:** 2026-09-03
+- **Amended by:** [ADR-0350](0350-a-data-session-is-a-value-the-tree-owns-and-sync-runs-for-the-life-of-the-store.md) at the `reloadOnAuthChange` paragraph, which is withdrawn whole: there is no reload gate, so the root layout is chrome for a simpler reason than the one given here. A boot node reads auth REACTIVELY, a sign-out flips its `{#if}`, and a principal change remounts its `{#key}`. The "one-shot `auth.state` boot read" this record calls page-owned is withdrawn with it; the read tracks. Its rule stands and is what the apps do: the narrowest node not shared with the callback owns the gate, which is the page for a one-route tree and a group layout for a many-route one.
+- **Amended by:** [ADR-0342](0342-sign-in-is-the-door-to-keeping-not-to-using.md)'s rejection, at its citation of ADR-0088: sign-in IS a door, and every application renders a sign-in screen while signed out.
 - **Unbuilt:** nothing.
 - **Relates:** [ADR-0088](0088-sign-in-is-an-enhancement-never-a-door.md) (a page lifetime is one auth generation, which is the part of 0088 this depends on), [ADR-0342](0342-sign-in-is-the-door-to-keeping-not-to-using.md) (why every app gates today), [ADR-0344](0344-an-epicenter-owns-one-data-session-and-opening-it-is-a-verb.md) (opening is a verb, so someone has to own the call)
 
