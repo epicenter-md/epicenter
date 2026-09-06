@@ -2,8 +2,6 @@
  * The one thing this application reaches its recordings and recipes through.
  *
  * Two functions composed: `createEpicenter` knows nothing about Svelte,
- * `fromEpicenter` adapts it, and what comes back is the same epicenter with its
- * data session rendered as reactive state (ADR-0339, ADR-0344). It is the same
  * file Honeycrisp and Vocab have, because it is the same composition.
  *
  * It replaces `openAccountRuntime`, which built a handle inside

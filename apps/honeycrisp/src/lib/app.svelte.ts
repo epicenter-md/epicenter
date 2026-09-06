@@ -55,7 +55,7 @@ export function createHoneycrisp({
 }: {
 	data: ReactiveData<HoneycrispData>;
 }) {
-	// Already awake. `fromEpicenter` adapts the store on the way to `ready`, so
+	// Already awake. The shell adapts the store before this is built, so
 	// this used to call `fromData` a second time and get a second projection of
 	// every table, each with its own permanent subscription.
 	//

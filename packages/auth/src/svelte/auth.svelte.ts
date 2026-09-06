@@ -5,7 +5,6 @@ import type { AuthClient } from '../index.js';
 // The one composition shape (ADR-0088): the app reads `auth.state` once at
 // boot, and a change of auth generation reloads the page so the next boot
 // composes from scratch.
-export { reloadOnAuthChange } from './reload-on-auth-change.js';
 
 /**
  * An auth client whose `state` and `connection.status` track in Svelte.
@@ -36,7 +35,7 @@ export type ReactiveAuthClient<TClient extends AuthClient = AuthClient> =
  * Bridge an auth client's two external facts into Svelte's graph.
  *
  * `from*` because that is what every Svelte adapter in this repository is
- * called: `fromData` wraps a store and `fromEpicenter` wraps a handle. It was
+ * called: `fromData` wraps a store. It was
  * `reactive` while it was the only one, which read as a property of the thing
  * rather than as the verb that builds one.
  *

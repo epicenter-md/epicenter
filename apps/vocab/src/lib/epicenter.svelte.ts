@@ -3,8 +3,6 @@
  * through.
  *
  * Two functions composed: `createEpicenter` knows nothing about Svelte,
- * `fromEpicenter` adapts it, and what comes back is the same epicenter with
- * its data session rendered as reactive state (ADR-0339, ADR-0344).
  *
  * It replaces `openVocabRuntime`, which was this application's own copy of the
  * opener: resolve the generation, open the database, attach sync, hand back a

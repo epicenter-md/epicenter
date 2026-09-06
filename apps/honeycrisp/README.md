@@ -45,7 +45,7 @@ Honeycrisp's bundle and brokers its credential; it owns none of its data.
 
 **Reads are synchronous after opening.** The handle opens the store by
 replaying a durable log into one `Y.Doc`, then `data.tables.notes.rows` returns
-rows, not a promise. `fromEpicenter` is what the route renders while that
+rows, not a promise. The session's `{#await}` is what the route renders while that
 settles: `closed | opening | ready | failed`, with the store on `ready`. There
 is no `signed-out` among them; that is the route's own read of `auth.state`,
 answered before anything opens.

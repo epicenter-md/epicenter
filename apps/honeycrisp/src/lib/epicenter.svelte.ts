@@ -2,8 +2,6 @@
  * The one thing this application reaches its notes through.
  *
  * Two functions composed: `createEpicenter` knows nothing about Svelte,
- * `fromEpicenter` adapts it, and what comes back is the same epicenter with its
- * store rendered as a boot (ADR-0339, ADR-0340).
  *
  * **This file is not a platform leaf, and there is one of it.** Nothing about
  * a data session varies by runtime: the store is client-owned in every build

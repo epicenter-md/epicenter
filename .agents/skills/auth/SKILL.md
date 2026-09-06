@@ -1,6 +1,6 @@
 ---
 name: auth
-description: 'Epicenter auth packages: `@epicenter/auth` and the Svelte adapter at `@epicenter/auth/svelte`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and the reload gate that makes a page lifetime one auth generation. Use when editing Epicenter auth clients, session state, hosted sign-in, or how a route boots from auth.'
+description: 'Epicenter auth packages: `@epicenter/auth` and the Svelte adapter at `@epicenter/auth/svelte`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and how a boot node gates on identity without reloading. Use when editing Epicenter auth clients, session state, hosted sign-in, or how a route boots from auth.'
 metadata:
   author: epicenter
   version: '8.0'
@@ -122,8 +122,8 @@ The public surface lives in one package plus a Svelte subpath:
   refresh, refresh-token revocation, `/api/session` verification, the network
   gate, authenticated fetch, and WebSocket opening. There is no headless or
   terminal surface: every credential model here is driven by an app.
-- `@epicenter/auth/svelte`: one adapter, `fromAuth(authClient)`, plus a re-export of
-  `reloadOnAuthChange`. It mirrors `auth.state` and `connection.status`
+- `@epicenter/auth/svelte`: one adapter, `fromAuth(authClient)`. It mirrors
+  `auth.state` and `connection.status`
   through `createSubscriber` so templates and `$derived` reads are reactive,
   and returns `ReactiveAuthClient`, which is `AuthClient` plus a wellcrafted
   `Brand`: a component whose reads must track asks for the branded type, and a
@@ -409,11 +409,11 @@ The return value of either is not the "user is signed in" signal. Observe
 client, `startSignIn` re-runs the `/api/session` verification so a UI can retry
 a connection that was offline at boot.)
 
-`completeSignIn` resolving `Ok` means identity is installed and PUBLISHED, so a
-`reloadOnAuthChange` mounted above the route has already run. The one case it
-has not is a callback that completed for the principal already signed in: no
-state changed, so nothing reloaded, and the route's own
-`window.location.replace(...)` is what leaves the callback URL. Use a document
+`completeSignIn` resolving `Ok` means identity is installed and PUBLISHED, so
+every reactive reader above the route has already seen it. Leaving the callback
+URL is still the route's own job, and it does it unconditionally with
+`window.location.replace(...)`, which also covers the callback that completed
+for the principal already signed in: no state changed, so no reader moved. Use a document
 replacement there rather than `goto`, or a client-side navigation opens the
 store inside a document the browser is about to unload.
 
@@ -519,45 +519,46 @@ stateless JWT access token  ->  cannot revoke before exp
    Never flatten a JWKS-fetch failure into a 401, or a transient server fault
    makes clients discard and refresh a good token and pause network auth.
 
-## Boot selection: a page lifetime is one auth generation
+## Boot selection: the boot node reads auth reactively, and nothing reloads
 
-ADR-0088. An app reads `auth.state` ONCE at boot, builds everything downstream
-of it, and mounts `reloadOnAuthChange` so a change of auth generation reloads
-the document. There is no in-place swap of a store or a sync connection.
+ADR-0350. There is no reload gate. `reloadOnAuthChange` is DELETED, along with
+`fromEpicenter` and the "a page lifetime is one auth generation" rule that
+justified both. A boot node reads `auth.state` reactively and the tree does the
+rest:
 
-```ts
-// apps/<app>/src/routes/+layout.svelte
-$effect(() => reloadOnAuthChange(auth, { callbackDestination: '/' }));
+```svelte
+<!-- the boot node: routes/+page.svelte, or (app)/+layout.svelte -->
+{#if auth.state.status === 'signed-out'}
+	<SignInScreen {auth} appName="Honeycrisp" noun="notes" />
+{:else}
+	{#key auth.state.principalId}
+		<NotesSession />
+	{/key}
+{/if}
 ```
 
-```ts
-// the route, reading once. `fromEpicenter` makes that one read for you:
-// signed-out is answered before the handle's lazy `data` is ever touched,
-// so a person who cannot open anything pays no Web Lock and no round trip.
-const store = fromEpicenter(epicenter);
-```
-
-The gate reloads on exactly two conditions (`reload-on-auth-change.ts`): the
-principal identity changed, or a credential was acquired (`reauth-required` to
-`signed-in`). **`signed-in` degrading to `reauth-required` deliberately does
-NOT reload**: it is the one transition that fires spontaneously, and a reload
-would interrupt someone mid-keystroke to rebuild an app that works exactly as
-well degraded. Sync discovers the refusal on its next dial, reports it as
+Each transition is handled by structure rather than by a document replacement.
+A sign-out flips the `{#if}`, so the session component unmounts and its cleanup
+closes. A different principal remounts the `{#key}`, so a new session opens for
+a new address. **`signed-in` degrading to `reauth-required` changes neither**,
+which is the point: it is the transition that fires spontaneously, and it must
+not interrupt someone mid-keystroke to rebuild an app that works exactly as well
+degraded. Sync discovers the refusal on its next dial, reports it as
 `status().refusal`, and keeps dialling.
 
-So in a gated app, the only transition a reactive read will ever see outlive
-its paint is that one. Every other transition repaints into a dying document.
-That is why boot reads are deliberately not reactive and say so at the call
-site, and why a component that renders the reconnect affordance is.
+Do NOT reintroduce a reload on auth change. It would replace the document before
+the `{#key}` could remount, which makes the keyed session unobservable and puts
+back the third thing called a generation.
 
-**`apps/api/ui` is exempt and mounts no gate**: it has no store, sign-in is its
-product, and its dashboard layout live-flips on the full `AuthState` union.
-Reactive `auth.state` is a general adapter, not gate machinery.
+**`apps/api/ui` reads the full `AuthState` union in its dashboard layout**: it
+has no store and sign-in is its product. Reactive `auth.state` is a general
+adapter, and every app uses it that way now.
 
-Signed-out is a state of a place, not a different place. Do not gate a route
-with a `load` redirect: sign-in is an enhancement, never a door, and a deep
-link opened while signed out must stay on its URL so the post-sign-in reload
-lands where the link pointed.
+Sign-in is a door, and the boot node is where it stands (ADR-0342, rejected:
+an ephemeral session would lose a person's work silently). Gate with an `{#if}`
+that renders `SignInScreen`, not with a `load` redirect: a deep link opened
+while signed out must stay on its URL so the post-sign-in landing goes where the
+link pointed. A redirect would spend the URL to say "you are signed out".
 
 Local data must never be wiped because network auth failed. Wiping local
 storage is a separate destructive user action.
@@ -654,14 +655,16 @@ mode flag on it.
 - Do not write `workspace`, `node`, or `NodeId`. That vocabulary was retired
   with ADR-0227; the store is opened by `openLocal` / `openAccount` and the
   address facts are `baseURL`, `principalId`, and the generation.
-- Do not reach for `toConnection`, `reloadOnPrincipalChange`, `createSession`,
-  `SignedIn`, `SyncAuthClient`, `Deployment`, or `InstanceConnection`. None of
-  them exist. The current names are `reloadOnAuthChange` and `Connection`, and
-  `openWebSocket` is on every client.
-- Do not make a boot read reactive. A route that reads `auth.state` at init is
-  correct under the reload gate and says so in a comment; turning it into a
-  `$derived` builds a second answer to auth underneath the gate, dead for the
-  transitions that reload and wrong for the one that deliberately does not.
+- Do not reach for `toConnection`, `reloadOnAuthChange`, `reloadOnPrincipalChange`,
+  `createSession`, `SignedIn`, `SyncAuthClient`, `Deployment`, or
+  `InstanceConnection`. None of them exist; `reloadOnAuthChange` was deleted with
+  the reload gate (ADR-0350). `Connection` is current, and `openWebSocket` is on
+  every client.
+- Do not make a boot read one-shot. The boot node's `auth.state` read TRACKS,
+  and that is what replaced the reload gate: the `{#if}` flips on sign-out and
+  the `{#key}` remounts on a principal change. A one-shot read at init would
+  freeze the gate at whatever was true when the document loaded, which is the
+  bug the gate used to paper over by replacing the document.
 - Do not replace `createSubscriber` with a `$state.raw` shadow plus an
   `$effect`. `createSubscriber` is lazy: it subscribes only while something is
   actively reading and tears down when the last reader is destroyed. A shadow

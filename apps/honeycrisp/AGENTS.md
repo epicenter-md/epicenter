@@ -21,12 +21,12 @@ seam. What varies by build is auth, and whether there is a folder.
 
 `definition` and `account` arrive together in that one file, which IS the store: an authority
 mints every generation (ADR-0336), so there is no accountless notebook.
-**Nothing opens at construction, and opening is a verb.** `routes/+page.svelte`
-calls `epicenter.open()` once, after reading auth, so a signed-out person
-meeting the sign-in screen pays no Web Lock, no IndexedDB, and no round trip,
-and `/auth/callback` renders under the same layout without opening anything.
-Calling `open` again while it is opening joins the one attempt; calling it
-after a failure retries, which is what the Try again button is.
+**Nothing opens at construction, and opening is a verb.**
+`components/NotesSession.svelte` calls `epicenter.open()` in its script body,
+under the boot node's gate, so a signed-out person meeting the sign-in screen
+pays no Web Lock, no IndexedDB, and no round trip, and `/auth/callback` renders
+under the same layout without opening anything. A retry is a NEW session, which
+is what the Try again button assigns.
 
 ```text
 epicenter/v5/so.epicenter.honeycrisp/<principal-id>/so.epicenter.honeycrisp/<n>
@@ -52,19 +52,30 @@ Opening is cache-first and never waits on a socket. A device holding a copy is
 usable offline; one that holds none fetches the generation whole before
 returning, so a fresh account never renders empty while its state is arriving.
 
-That file exports ONE name, `epicenter`, which is `fromEpicenter` composed over
-the handle. Its lifecycle member is `state`: `closed | opening | ready |
-failed`, with the store on `ready` and the error and the erase on `failed`.
-Signed-out is NOT one of them and is not this package's to answer: the route
-reads `auth.state` once and renders its sign-in screen, which is why the
-session's
-`closed` means one thing. Constructing the wrapper reads one state and
-subscribes and acquires nothing, so importing the leaf opens nothing.
+That file exports ONE name, `epicenter`, and it is the handle itself: there is
+no adapter over it any more. `open()` is SYNCHRONOUS and answers a
+`DataSession`, which is a value the tree owns (ADR-0350):
 
-`state.data` is the whole of what `StoreShell` receives. It carries no `open`,
-`close`, `erase`, or disposal: those belong to the session that took the lock,
-the socket, and the listener together (ADR-0340), and the close stays private
-to `$lib/epicenter.svelte.ts` where the hot reload can reach it.
+```ts
+const session = epicenter.open();   // { opened, close, erase }
+```
+
+`opened` settles once and never rejects, so pending is `{#await}`, refused is
+its `error`, and ready is its `data`. There is no `closed` state, because a
+caller holding the session is holding the thing that has it. Signed-out is not
+a session state at all: `routes/+page.svelte` reads `auth.state` REACTIVELY and
+renders the sign-in screen, and `components/NotesSession.svelte` is what opens,
+keyed on the principal.
+
+The handle serializes sessions on one queue, and that is load-bearing. Svelte
+creates the branch for a new key before it destroys the one it replaces, so a
+keyed child opens before its predecessor's cleanup closes. The tree cannot put
+those in order; the handle can.
+
+What `session.opened` resolves is the raw store, and `StoreShell` calls
+`fromData` on it once. It carries no `open`, `close`, `erase`, or disposal:
+those belong to the session that took the lock, the socket, and the listener
+together (ADR-0340).
 
 `createHoneycrisp` turns that one opened store into the reactive application
 object the UI consumes. It adapts the document into Svelte-reactive named
@@ -142,13 +153,18 @@ shared `epicenter.sqlite3`, and ADR-0226 refused it.
 
 What remains behind `#platform/*` is auth and the folder only: how a build gets a
 bearer, not where its data lives. `src/lib/platform-selection.test.ts` reads the
-declarations and names a broken seam. `typecheck` runs all three conditions;
+declarations and names a broken seam. `typecheck` runs both conditions;
 only the default one is checked by an editor.
 
 ## Don'ts
 
 - Do not hand a component `epicenter`, or a lifecycle verb off it, when it only
-  needs the notes. `StoreShell` takes `data={epicenter.state.data}`.
+  needs the notes. `NotesSession` owns the session; `StoreShell` takes the store
+  it resolved.
+- Do not reload the document on an auth change. The boot node's read tracks, so
+  a sign-out flips its `{#if}` and a principal change remounts its `{#key}`.
+  `reloadOnAuthChange` is deleted, and reintroducing it would make the keyed
+  session unobservable by replacing the document before it could remount.
 - Do not render a store error to a person as the message. `routes/+page.svelte`
   passes `appName` and `noun` to `@epicenter/app-shell/boot-screens` and writes
   no sentence itself; `openFailure` decides which failure earns one. A failure

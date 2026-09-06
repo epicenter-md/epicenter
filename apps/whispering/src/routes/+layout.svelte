@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { reloadOnAuthChange } from '@epicenter/auth/svelte';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { FlushEditsOnHide } from '@epicenter/svelte';
-	import { authClient } from '#platform/auth';
 	import '@epicenter/ui/app.css';
 	// Whispering's brand overrides, layered after the shared theme so they win.
 	// Keep this import last among the stylesheets.
@@ -19,23 +17,6 @@
 	// providers only; the (app) layout owns the app boot, so the other
 	// surfaces never open SQLite (ADR-0345).
 
-	// Auth changes start a fresh document generation. The route that initiated
-	// the change does not swap its store in place, so every surface boots with
-	// one principal and one data capability.
-	//
-	// `authClient`, not `auth`: this reads `state` once to seed itself and then
-	// subscribes by hand, so tracking it would make the effect re-run and
-	// rebuild the subscription on the transitions it exists to reload on.
-	//
-	// Both paths are resolved rather than literal. The Epicenter build serves
-	// this app under a base path, so the callback route it has to recognise is
-	// `<base>/auth/callback` and a bare '/auth/callback' would never match.
-	$effect(() =>
-		reloadOnAuthChange(authClient, {
-			callbackPath: resolve('/auth/callback'),
-			callbackDestination: resolve('/'),
-		}),
-	);
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;

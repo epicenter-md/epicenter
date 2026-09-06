@@ -128,6 +128,8 @@ of the import graph stays ordinary.
 - Dropping `...defaultClientConditions` from the Tauri `conditions` array.
 - Adding a condition leaf with no `tsconfig.<condition>.json`, which means it is
   never typechecked.
-- Gating a route or the app shell on identity: no `(signed-in)` route groups, no
-  signed-out screen, no redirect-to-sign-in. Sign-in is an enhancement
-  (ADR-0088), and signed-in-only features get small inline affordances.
+- A `#platform/*` seam over identity. Whether a person is signed in is runtime
+  state, not a build condition, so the gate is an `{#if}` in the boot node and
+  never a leaf. Every app renders a sign-in screen when signed out (ADR-0342,
+  rejected: sign-in IS a door), and that is one branch in one file rather than a
+  seam.
