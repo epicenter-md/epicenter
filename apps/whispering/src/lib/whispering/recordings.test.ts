@@ -6,6 +6,7 @@ import {
 	BlobStoreError,
 	generateBlobId,
 } from '@epicenter/blobs';
+import { createBrowserBlobSources } from '@epicenter/blobs/browser';
 import { InstantString } from '@epicenter/data/field';
 import { openMemory } from '@epicenter/data/memory';
 import type { Result } from 'wellcrafted/result';
@@ -101,7 +102,7 @@ async function setup({
 	for (const row of seed) expectOk(table.create(storedRow(row)));
 	const domain = createWhisperingRecordings({
 		table,
-		blobs: { local, remote },
+		blobs: { local, remote, sources: createBrowserBlobSources(local) },
 	});
 	return {
 		table,

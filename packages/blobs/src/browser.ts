@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 
+import type { PrincipalId } from '@epicenter/principal';
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
 import type { BlobId } from './blob-id.js';
 import {
@@ -12,7 +13,80 @@ import { type BlobStat, type BlobStore, BlobStoreError } from './blob-store.js';
 const DATABASE_VERSION = 1;
 const DATA_STORE = 'blob-data';
 const METADATA_STORE = 'blob-metadata';
-const DEFAULT_DATABASE_NAME = 'epicenter-blobs';
+
+/**
+ * Whose bytes a browser blob store holds: one application's, for one account.
+ *
+ * The same two segments the replica address carries (ADR-0348), because the
+ * bytes are the account's: a second person signing in on a shared browser
+ * must not reach the first one's recordings, and removing one account's local
+ * data has to be able to take its audio and leave everybody else's.
+ */
+export type BrowserBlobScope = {
+	/** The opening application, which is one segment of the name. */
+	appId: string;
+	/** The account whose bytes these are, as the authority asserted it. */
+	principalId: PrincipalId;
+};
+
+/**
+ * Where one account's blobs live in this browser (ADR-0349).
+ *
+ * ```txt
+ * epicenter/v5/<app-id>/<principal-id>/blobs
+ * ```
+ *
+ * One IndexedDB database per application per principal, named as the sibling
+ * of that account's replicas, `epicenter/v5/<app-id>/<principal-id>/<data-id>/<n>`.
+ * The two spellings live in two packages and are pinned to each other by test
+ * rather than by a shared constant: `@epicenter/data` does not know blobs
+ * exist, and this package does not open replicas.
+ *
+ * Per principal rather than per data id, because the authority keeps one copy
+ * per principal (`principals/<id>/blobs/<blobId>`) and rows in two of one
+ * app's data ids may cite one `BlobId`. Not per generation, because a restore
+ * mints a new generation citing the same ids, and a per-generation store would
+ * copy or orphan every blob.
+ *
+ * `blobs` cannot collide with a data id: a data id is reverse-domain and must
+ * contain a dot. It cannot be mistaken for a generation either: generation
+ * enumeration matches `<data-id>/` with the trailing slash and requires the
+ * remainder to be a number, so this name is invisible to it.
+ *
+ * Each segment is refused rather than canonicalized, under the rule the replica
+ * address and a desktop partition already use: not empty, no path separator,
+ * and not `.` or `..`. A principal id is whatever the authority minted, and
+ * normalizing one here would invent an equivalence the authority never stated.
+ * The app id's fuller grammar is enforced where a handle is composed
+ * (`createEpicenter`); here it only has to be one segment so a name can never
+ * be read as somebody else's.
+ *
+ * A bad segment THROWS. This runs at a composition root with values a program
+ * supplied, the way `createBrowserDevice` refuses a bad app id, and a durable
+ * name is not a place to be lenient.
+ */
+export function browserBlobStoreName({
+	appId,
+	principalId,
+}: BrowserBlobScope): string {
+	assertOneSegment(appId, 'app id');
+	assertOneSegment(principalId, 'principal id');
+	return `epicenter/v5/${appId}/${principalId}/blobs`;
+}
+
+function assertOneSegment(segment: string, label: string): void {
+	if (
+		segment.length === 0 ||
+		segment === '.' ||
+		segment === '..' ||
+		segment.includes('/') ||
+		segment.includes('\\')
+	) {
+		throw new Error(
+			`The ${label} ${JSON.stringify(segment)} cannot name a blob store.`,
+		);
+	}
+}
 
 type StoredBlob = {
 	id: BlobId;
@@ -99,7 +173,13 @@ function isConstraintError(cause: unknown): boolean {
 }
 
 /**
- * Create a browser-local blob store backed by IndexedDB.
+ * Create one account's browser-local blob store, backed by IndexedDB at
+ * {@link browserBlobStoreName}.
+ *
+ * The scope is required, and there is no way to name the database directly:
+ * a store this constructor hands back is always one application's and one
+ * account's, so an unscoped store cannot be built by omission. Construction is
+ * inert; the database is created by the first verb that opens it.
  *
  * Blob bytes and metadata live in separate object stores within one database.
  * Browser persistence uses `ArrayBuffer`, not `Blob`: WebKit rejects Blob/File
@@ -108,12 +188,17 @@ function isConstraintError(cause: unknown): boolean {
  * and deletes update both stores atomically, while `stat` reads only metadata.
  */
 export function createBrowserBlobStore({
-	databaseName = DEFAULT_DATABASE_NAME,
+	appId,
+	principalId,
 	indexedDb = indexedDB,
-}: {
-	databaseName?: string;
+}: BrowserBlobScope & {
 	indexedDb?: IDBFactory;
-} = {}): BlobStore {
+}): BlobStore {
+	return createStoreAt(browserBlobStoreName({ appId, principalId }), indexedDb);
+}
+
+/** The store over one database, whatever it is named. */
+function createStoreAt(databaseName: string, indexedDb: IDBFactory): BlobStore {
 	return {
 		async put(id, blob) {
 			return tryAsync({

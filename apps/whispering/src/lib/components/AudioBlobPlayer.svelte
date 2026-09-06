@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { BlobId, BlobSource } from '@epicenter/blobs';
-	import { services } from '$lib/services';
+	import { getWhisperingApp } from '$lib/whispering/context';
 
 	let {
 		id,
@@ -14,6 +14,7 @@
 		viewTransitionName?: string;
 	} = $props();
 
+	const app = getWhisperingApp();
 	let handle = $state.raw<BlobSource | null>(null);
 
 	// The source outlives any lexical scope (`using` cannot span a component
@@ -27,7 +28,7 @@
 
 		let cancelled = false;
 		let owned: BlobSource | null = null;
-		void services.blobSources.open(requestedId).then(({ data }) => {
+		void app.blobs.sources.open(requestedId).then(({ data }) => {
 			if (data === null) return;
 			if (cancelled) {
 				data[Symbol.dispose]();

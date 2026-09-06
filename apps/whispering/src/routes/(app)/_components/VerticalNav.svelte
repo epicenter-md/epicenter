@@ -74,24 +74,28 @@
 			<!-- Account / sync (route-independent: visible on the bare home page) -->
 			<Sidebar.MenuItem>
 				<!-- No `onForgetDevice`. The button promises that forgetting this device
-				     removes this account's local data, and Whispering keeps recording
-				     audio outside the store: `epicenter-blobs`, one IndexedDB per origin,
-				     in the browser build, and the host's own filesystem behind
-				     `/api/local-blobs` in the desktop build. Neither is keyed by
-				     principal. Erasing the replica here would delete the recordings and
-				     leave their audio behind, for everybody who has ever signed in on
-				     this machine.
+			     removes this account's local data, and Whispering keeps recording
+			     audio outside the store. In the browser build that audio is now
+			     the account's own IndexedDB database,
+			     `epicenter/v5/<app-id>/<principal-id>/blobs` (ADR-0349), which an
+			     erase could delete beside the generations. The desktop build is
+			     not there yet: the host keeps one flat `<root>/blobs` behind
+			     `/api/local-blobs` for everybody who has ever signed in on this
+			     machine, keyed by nothing. Erasing the replica here would delete
+			     the recordings and leave their audio behind on desktop, and a
+			     button cannot ship for one build.
 
-				     The browser half is nearly free, but a button cannot ship for one
-				     build: making this honest needs a `deleteAll` on `BlobStore` with
-				     both implementations, a principal segment in the Bun store's root, an
-				     authenticated route to reach it, and the WebView adapter for that
-				     route. And `<ConfirmationDialog />` has to move too: Whispering
-				     mounts it in `GlobalDialogs` under the shell, which the erase
-				     unmounts when it closes the session, so it belongs in the root
-				     layout beside the toaster the way Honeycrisp's and Vocab's do.
-				     Until then the abstention is the honest answer, and the
-				     recordings themselves are still safe at the account. -->
+			     What the browser half still needs is the erase verb for its
+			     database and a claim of the bytes an earlier build wrote to the
+			     unscoped `epicenter-blobs`. What the desktop half needs is a
+			     principal segment in the Bun store's root, an authenticated route
+			     to reach it, and the WebView adapter for that route. And
+			     `<ConfirmationDialog />` has to move too: Whispering mounts it in
+			     `GlobalDialogs` under the shell, which the erase unmounts when it
+			     closes the session, so it belongs in the root layout beside the
+			     toaster the way Honeycrisp's and Vocab's do. Until then the
+			     abstention is the honest answer, and the recordings themselves
+			     are still safe at the account. -->
 				<AccountPopover
 					{auth}
 					syncNoun="recordings"

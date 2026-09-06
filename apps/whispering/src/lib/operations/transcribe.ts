@@ -22,7 +22,6 @@ import {
 	type TranscriptionSuccess,
 } from '$lib/operations/transcription-history';
 import { report } from '$lib/report';
-import { services } from '$lib/services';
 import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
 import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
@@ -232,7 +231,7 @@ async function loadForUpload(
 		});
 	}
 
-	return services.blobs.local.get(audioBlobId);
+	return app.blobs.local.get(audioBlobId);
 }
 
 /**

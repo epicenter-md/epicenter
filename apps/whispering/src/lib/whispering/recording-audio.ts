@@ -2,6 +2,7 @@ import type {
 	BlobNotFound,
 	BlobRemote,
 	BlobRemoteFailed,
+	BlobSources,
 	BlobStore,
 	BlobStoreFailed,
 	RemoteBlobNotFound,
@@ -16,13 +17,18 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { Recording } from './recording.js';
 
 /**
- * The composed blob capability an environment supplies to the app.
+ * The composed blob capability an environment supplies to the app, built once
+ * per session for one account: the local bytes are that account's and nobody
+ * else's (ADR-0349), so nothing here exists before a replica is open.
+ *
  * `remote` is read at call time so its one owner (the platform blobs module)
- * keeps folding auth into availability.
+ * keeps folding auth into availability. `sources` hands out playback URLs over
+ * the same local bytes.
  */
 export type WhisperingBlobs = {
 	local: BlobStore;
 	readonly remote: BlobRemote | null;
+	sources: BlobSources;
 };
 
 export type RecordingAudioAvailability =

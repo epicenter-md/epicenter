@@ -11,18 +11,28 @@
  */
 
 import { expect, test } from 'bun:test';
+import { asPrincipalId } from '@epicenter/principal';
 import { indexedDB } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { generateBlobId } from './blob-id.js';
-import { createBrowserBlobSources, createBrowserBlobStore } from './browser.js';
+import {
+	browserBlobStoreName,
+	createBrowserBlobSources,
+	createBrowserBlobStore,
+} from './browser.js';
 
-let databaseSequence = 0;
+const APP_ID = 'so.epicenter.test';
 
+let principalSequence = 0;
+
+/** One fresh account per test, so no test reads another's database. */
 function setup() {
-	const databaseName = `epicenter-browser-blobs-test-${databaseSequence++}`;
+	const principalId = asPrincipalId(`principal-${principalSequence++}`);
+	const scope = { appId: APP_ID, principalId };
 	return {
-		databaseName,
-		blobs: createBrowserBlobStore({ databaseName, indexedDb: indexedDB }),
+		scope,
+		databaseName: browserBlobStoreName(scope),
+		blobs: createBrowserBlobStore({ ...scope, indexedDb: indexedDB }),
 	};
 }
 
@@ -43,14 +53,65 @@ function requestResult<TResult>(
 	});
 }
 
+test('the name is the account prefix of the replica address, ending in blobs', () => {
+	// The one grammar, pinned as a literal (ADR-0349). `@epicenter/data` spells
+	// the replica half, `epicenter/v5/<app-id>/<principal-id>/<data-id>/<n>`,
+	// and generation enumeration matches `<data-id>/` and a number after it, so
+	// a sibling named `blobs` is invisible to it. A data id must contain a dot,
+	// so no data id can be named `blobs` either.
+	expect(
+		browserBlobStoreName({
+			appId: 'so.epicenter.whispering',
+			principalId: asPrincipalId('principal-1'),
+		}),
+	).toBe('epicenter/v5/so.epicenter.whispering/principal-1/blobs');
+});
+
+test('a segment that could be read as a path is refused at construction', () => {
+	for (const bad of ['', '.', '..', 'a/b', 'a\\b']) {
+		expect(() =>
+			browserBlobStoreName({ appId: APP_ID, principalId: asPrincipalId(bad) }),
+		).toThrow();
+		expect(() =>
+			browserBlobStoreName({
+				appId: bad,
+				principalId: asPrincipalId('principal-1'),
+			}),
+		).toThrow();
+	}
+	// Refused, never canonicalized: whitespace and case are the authority's.
+	expect(
+		browserBlobStoreName({ appId: APP_ID, principalId: asPrincipalId(' P ') }),
+	).toBe(`epicenter/v5/${APP_ID}/ P /blobs`);
+});
+
+test('two accounts on one browser hold two stores and neither reads the other', async () => {
+	const first = setup();
+	const second = setup();
+	const id = generateBlobId();
+	expectOk(
+		await first.blobs.put(id, new Blob(['mine'], { type: 'audio/wav' })),
+	);
+
+	expect(expectErr(await second.blobs.stat(id))).toMatchObject({
+		name: 'BlobNotFound',
+		id,
+	});
+	// The same id is free in the other account's store: the stores share
+	// nothing, not even the immutable-id refusal.
+	expectOk(await second.blobs.put(id, new Blob(['theirs'])));
+	expect(await expectOk(await first.blobs.get(id)).text()).toBe('mine');
+	expect(await expectOk(await second.blobs.get(id)).text()).toBe('theirs');
+});
+
 test('put persists bytes and metadata across store instances', async () => {
-	const { databaseName, blobs } = setup();
+	const { scope, blobs } = setup();
 	const id = generateBlobId();
 	const input = new Blob(['browser audio'], { type: 'audio/webm' });
 
 	expectOk(await blobs.put(id, input));
 	const reopened = createBrowserBlobStore({
-		databaseName,
+		...scope,
 		indexedDb: indexedDB,
 	});
 	const stored = expectOk(await reopened.get(id));
@@ -162,7 +223,10 @@ test('IndexedDB failures return BlobStoreFailed with the original cause', async 
 			throw cause;
 		},
 	} as unknown as IDBFactory;
-	const blobs = createBrowserBlobStore({ indexedDb: failingIndexedDb });
+	const blobs = createBrowserBlobStore({
+		...setup().scope,
+		indexedDb: failingIndexedDb,
+	});
 	const id = generateBlobId();
 
 	const error = expectErr(await blobs.get(id));
@@ -252,7 +316,10 @@ test('blocked database opens reject and close a later connection', async () => {
 		},
 	} as unknown as IDBFactory;
 	const id = generateBlobId();
-	const blobs = createBrowserBlobStore({ indexedDb: blockedIndexedDb });
+	const blobs = createBrowserBlobStore({
+		...setup().scope,
+		indexedDb: blockedIndexedDb,
+	});
 
 	const error = expectErr(await blobs.get(id));
 	expect(error).toMatchObject({ name: 'BlobStoreFailed', id });

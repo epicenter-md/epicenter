@@ -17,6 +17,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/principal": "workspace:*",
 		"arktype": "catalog:",
 		"nanoid": "catalog:",
 		"wellcrafted": "catalog:"

@@ -69,6 +69,7 @@
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/blobs": "workspace:*",
+		"@epicenter/principal": "workspace:*",
 		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/data": "workspace:*",

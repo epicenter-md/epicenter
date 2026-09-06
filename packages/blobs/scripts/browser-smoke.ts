@@ -30,9 +30,11 @@ try {
 	await page.goto(`http://127.0.0.1:${server.port}`);
 	const result = await page.evaluate(async () => {
 		const moduleUrl = '/blobs.js';
-		const { createBrowserBlobStore, createBrowserBlobSources } = await import(
-			moduleUrl
-		);
+		const {
+			browserBlobStoreName,
+			createBrowserBlobStore,
+			createBrowserBlobSources,
+		} = await import(moduleUrl);
 		const fail = (error: unknown): never => {
 			throw new Error(
 				typeof error === 'object' && error !== null
@@ -41,9 +43,13 @@ try {
 			);
 		};
 		const id = 'blob_abcdefghijklmnopqrstu';
-		const databaseName = `epicenter-webkit-smoke-${crypto.randomUUID()}`;
+		// A fresh account per run, so a rerun never meets its own bytes.
+		const scope = {
+			appId: 'so.epicenter.smoke',
+			principalId: `webkit-${crypto.randomUUID()}`,
+		};
 		const input = new Blob(['webkit bytes'], { type: 'audio/wav' });
-		const first = createBrowserBlobStore({ databaseName });
+		const first = createBrowserBlobStore(scope);
 		const put = await first.put(id, input);
 		if (put.error) fail(put.error);
 
@@ -53,7 +59,7 @@ try {
 		}
 
 		// Open a new store instance to prove persistence crosses application reload.
-		const reopened = createBrowserBlobStore({ databaseName });
+		const reopened = createBrowserBlobStore(scope);
 		const stat = await reopened.stat(id);
 		if (stat.error) fail(stat.error);
 		if (stat.data.size !== input.size || stat.data.contentType !== input.type) {
@@ -89,7 +95,7 @@ try {
 		if (missing.error?.name !== 'BlobNotFound') {
 			throw new Error('Deleted bytes remained readable.');
 		}
-		indexedDB.deleteDatabase(databaseName);
+		indexedDB.deleteDatabase(browserBlobStoreName(scope));
 		return { size: stat.data.size, contentType: stat.data.contentType };
 	});
 	process.stdout.write(

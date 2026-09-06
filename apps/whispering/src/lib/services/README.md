@@ -120,13 +120,18 @@ platform imports resolve:
 export const services = {
 	analytics: AnalyticsServiceLive,
 	text: TextServiceLive,
-	blobs: BlobsLive,
-	blobSources: BlobSourcesLive,
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,
 	sound: PlaySoundServiceLive,
 } as const;
 ```
+
+Blobs are not in the barrel. `#platform/blobs` exports
+`createWhisperingBlobs({ appId, principalId })`, because the local store is one
+account's (ADR-0349): the browser leaf opens
+`epicenter/v5/<app-id>/<principal-id>/blobs`, so nothing can be built before
+the shell knows which account opened. `WhisperingShell` builds it once per
+session from the replica's own stamp and it is reached as `app.blobs`.
 
 Runtime-selected provider services do not need to live in this barrel. The
 operation that owns dispatch may import them directly.

@@ -474,6 +474,7 @@
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@epicenter/principal": "workspace:*",
         "@epicenter/recorder": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@mistralai/mistralai": "^1.9.18",
@@ -647,6 +648,7 @@
       "name": "@epicenter/blobs",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/principal": "workspace:*",
         "arktype": "catalog:",
         "nanoid": "catalog:",
         "wellcrafted": "catalog:",

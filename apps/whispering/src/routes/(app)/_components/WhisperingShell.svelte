@@ -30,7 +30,7 @@
 	import { onDestroy, type Snippet } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { createLogger } from 'wellcrafted/logger';
-	import { BlobsLive } from '#platform/blobs';
+	import { createWhisperingBlobs } from '#platform/blobs';
 	import DictationIndicator from '#platform/dictation-indicator';
 	import type { WhisperingAccountData } from '$lib/whispering/app';
 	import { setWhisperingContext } from '$lib/whispering/context';
@@ -65,8 +65,18 @@
 	// this branch was entered with; a different store means a different document.
 	/* svelte-ignore state_referenced_locally */
 	const data = fromData(opened);
+	// The blob store is this account's, so it is built here and not at module
+	// evaluation, and its scope is read off the replica rather than off auth:
+	// the opener stamped the app and principal it opened for (ADR-0348), and
+	// that pair is what the bytes belong to (ADR-0349). Auth can move underneath
+	// a live shell; the replica cannot.
 	/* svelte-ignore state_referenced_locally */
-	const session = createWhisperingUiSession({ data, blobs: BlobsLive });
+	const blobs = createWhisperingBlobs({
+		appId: opened.appId,
+		principalId: opened.principalId,
+	});
+	/* svelte-ignore state_referenced_locally */
+	const session = createWhisperingUiSession({ data, blobs });
 
 	setWhisperingContext({ app: session.app, queries: session.queries });
 

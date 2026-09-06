@@ -97,6 +97,16 @@ export type WhisperingApp = {
 	readonly recordings: WhisperingRecordings;
 	readonly recipes: WhisperingRecipes;
 	/**
+	 * This account's audio bytes, reached by the id a row cites.
+	 *
+	 * On the app rather than on a module-level service, because the store is
+	 * one account's (ADR-0349) and so cannot exist before the session that
+	 * knows which account. This is Whispering's own object; which platform
+	 * object carries the blob verbs is reopened by ADR-0352 and not decided
+	 * here.
+	 */
+	readonly blobs: WhisperingBlobs;
+	/**
 	 * What sync is doing, or undefined when no connection is attached.
 	 *
 	 * A refused dial is part of what it is doing: `status().refusal` names the
@@ -148,6 +158,7 @@ export function createWhisperingApp({
 		settings: settingsDomain.settings,
 		recordings: recordingsDomain.recordings,
 		recipes: recipesDomain,
+		blobs,
 		// Read off the store's own connection (ADR-0340) rather than off a
 		// `SyncConnection` this file held, and passed through whole: a refusal is
 		// data on that status, and the surface decides what to say about it.

@@ -4,7 +4,11 @@ Opaque blob identity and the shared blob contracts: one `BlobId` names an object
 
 This package is the AGPL blob boundary. The root export owns the portable
 contracts; platform subpaths own the implementations that satisfy them. The
-browser subpath provides IndexedDB storage and object-URL sources. The Bun
+browser subpath provides IndexedDB storage and object-URL sources, one
+database per application per account at
+`epicenter/v5/<app-id>/<principal-id>/blobs` (`browserBlobStoreName`), the
+sibling of that account's replica address; `createBrowserBlobStore` takes the
+scope and never a raw name, so an unscoped store cannot be built. The Bun
 subpath provides filesystem storage for desktop hosts and scripts. The WebView
 subpath adapts the authenticated desktop origin back to the same portable
 contracts, including sources that hand out its stable relative media URL.

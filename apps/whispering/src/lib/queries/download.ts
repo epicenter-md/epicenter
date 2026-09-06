@@ -5,14 +5,16 @@ import type { DownloadError } from '#platform/download';
 import type { WhisperingQueryRuntime } from '$lib/queries/client';
 import { services } from '$lib/services';
 import type { Recording } from '$lib/state/recordings.svelte';
+import type { WhisperingApp } from '$lib/whispering/app';
 
 export const downloadKeys = defineKeys({
 	downloadRecording: ['download', 'downloadRecording'],
 });
 
-export function createDownloadQueries({
-	defineMutation,
-}: Pick<WhisperingQueryRuntime, 'defineMutation'>) {
+export function createDownloadQueries(
+	app: WhisperingApp,
+	{ defineMutation }: Pick<WhisperingQueryRuntime, 'defineMutation'>,
+) {
 	return {
 		downloadRecording: defineMutation({
 			mutationKey: downloadKeys.downloadRecording,
@@ -22,7 +24,7 @@ export function createDownloadQueries({
 				Result<void, BlobNotFound | BlobStoreFailed | DownloadError>
 			> => {
 				const { data: audioBlob, error: getAudioBlobError } =
-					await services.blobs.local.get(recording.audioBlobId);
+					await app.blobs.local.get(recording.audioBlobId);
 
 				if (getAudioBlobError) return Err(getAudioBlobError);
 
