@@ -47,7 +47,7 @@
  * state, which is what makes "doubt never discards" structural rather than
  * careful.
  */
-import type { SyncRefusal } from '@epicenter/sync/auth-subprotocol';
+import type { SyncRefusal } from '@epicenter/sync/transport';
 import { Ok, type Result } from 'wellcrafted/result';
 
 import { type DataDocument, syncEngineOf } from '../store/store.js';

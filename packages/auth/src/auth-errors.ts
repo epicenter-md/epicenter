@@ -1,4 +1,4 @@
-import type { SyncRefusal } from '@epicenter/sync/auth-subprotocol';
+import type { SyncRefusal } from '@epicenter/sync/transport';
 import {
 	defineErrors,
 	extractErrorMessage,

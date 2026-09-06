@@ -1,4 +1,4 @@
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync/auth-subprotocol';
+import { bearerSubprotocol } from '@epicenter/sync/auth-subprotocol';
 import type { Logger } from 'wellcrafted/logger';
 import type { AuthClient, AuthFetch } from './auth-contract.js';
 import { OpenWebSocketDenied } from './auth-errors.js';
@@ -109,14 +109,14 @@ export function createInstanceTokenAuth({
 		},
 		fetch: authedFetch,
 		getProfile: () => getProfileVia(authedFetch, baseURL),
-		async openWebSocket(url, protocols = []) {
+		async openWebSocket(address) {
 			const authorization = await authority.authorize();
 			if (authorization.status === 'denied') {
 				throw OpenWebSocketDenied({ code: authorization.code }).error;
 			}
-			return new WebSocketImpl(String(url), [
-				...protocols,
-				`${BEARER_SUBPROTOCOL_PREFIX}${authorization.accessToken}`,
+			return new WebSocketImpl(address.url, [
+				...address.protocols,
+				bearerSubprotocol(authorization.accessToken),
 			]);
 		},
 		[Symbol.dispose]() {

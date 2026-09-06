@@ -130,7 +130,7 @@ test('openWebSocket refuses because a window holds no credential', async () => {
 	});
 
 	expect(
-		auth.openWebSocket('wss://api.epicenter.so/rooms'),
+		auth.openWebSocket({ url: 'wss://api.epicenter.so/rooms', protocols: [] }),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
 		code: 'no-credential-model',

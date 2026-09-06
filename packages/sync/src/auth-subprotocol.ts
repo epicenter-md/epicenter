@@ -36,57 +36,17 @@ export function parseSubprotocols(header: string | null): string[] {
 	return header.split(',').map((s) => s.trim());
 }
 
-/**
- * Why a credential model refused to open a socket.
- *
- * A closed union so a status surface can map every arm exhaustively.
- */
-export type SyncRefusal =
-	/** No credential is held on this device. */
-	| 'signed-out'
-	/** The server refused the credential; only a sign-in produces a new one. */
-	| 'reauth-required'
-	/** The credential could not be verified right now; the next try may succeed. */
-	| 'auth-unavailable'
-	/** This client can never open a socket: a same-origin cookie, a desktop window. */
-	| 'no-credential-model';
+/** The subprotocol entry carrying one bearer credential. */
+export function bearerSubprotocol(token: string): string {
+	return `${BEARER_SUBPROTOCOL_PREFIX}${token}`;
+}
 
 /**
- * Rejection an auth-owned `openWebSocket` throws when it refuses to open a
- * socket because no usable bearer can be attached right now.
+ * Render a subprotocol list as a `Sec-WebSocket-Protocol` header value.
  *
- * `code` says which refusal it is, and that is the whole of it. A refusal is
- * not a stop signal: the sync driver reports it as data on its status and
- * dials again on its ordinary backoff. Every arm but `'auth-unavailable'` is
- * decided locally with no request on the wire, so a dial capped at thirty
- * seconds costs a status read and nothing else.
- *
- * Declared here, beside the subprotocol carrier, because it is the other half
- * of the same client-side transport contract: `@epicenter/auth` constructs it
- * and the sync supervisor classifies it, and both already depend on this
- * package.
+ * The inverse of {@link parseSubprotocols}, for the callers that write the
+ * header themselves rather than hand the list to a `WebSocket` constructor.
  */
-export type OpenWebSocketDenial = {
-	name: 'OpenWebSocketDenied';
-	message: string;
-	code: SyncRefusal;
-};
-
-const SYNC_REFUSALS: readonly SyncRefusal[] = [
-	'signed-out',
-	'reauth-required',
-	'auth-unavailable',
-	'no-credential-model',
-];
-
-/** Classify an unknown rejection as an {@link OpenWebSocketDenial}. */
-export function isOpenWebSocketDenial(
-	value: unknown,
-): value is OpenWebSocketDenial {
-	if (typeof value !== 'object' || value === null) return false;
-	const candidate = value as Partial<OpenWebSocketDenial>;
-	return (
-		candidate.name === 'OpenWebSocketDenied' &&
-		SYNC_REFUSALS.includes(candidate.code as SyncRefusal)
-	);
+export function formatSubprotocols(protocols: readonly string[]): string {
+	return protocols.join(', ');
 }

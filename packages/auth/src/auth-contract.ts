@@ -1,3 +1,4 @@
+import type { SocketTransport } from '@epicenter/sync/transport';
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';
 import type { AuthState } from './auth-state.js';
@@ -107,9 +108,11 @@ export type AuthClient = {
 	/**
 	 * Open a WebSocket using the same credential boundary as `fetch`.
 	 *
-	 * Browsers cannot set `Authorization` on WebSocket upgrades, so a bearer is
-	 * carried as an Epicenter bearer subprotocol; the rooms route extracts it at
-	 * the upgrade and the server echoes only the main subprotocol back.
+	 * The address is one value (`WebSocketAddress`) because a browser cannot set
+	 * `Authorization` on an upgrade: the route it came from already put the main
+	 * subprotocol beside the URL, and this method appends `bearer.<token>` to
+	 * that list. The route extracts the bearer at the upgrade and echoes only
+	 * the main subprotocol back.
 	 *
 	 * Every client has this method, and not every client can honor it. It
 	 * resolves only with a credentialed socket; otherwise it rejects with an
@@ -129,7 +132,7 @@ export type AuthClient = {
 	 * Waits for in-flight machine work (token refresh, `/api/session`
 	 * verification), never for a human.
 	 */
-	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
+	openWebSocket: SocketTransport['openWebSocket'];
 	[Symbol.dispose](): void;
 };
 

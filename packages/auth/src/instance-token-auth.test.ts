@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { asPrincipalId, INSTANCE_PRINCIPAL_ID } from '@epicenter/principal';
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
+import { bearerSubprotocol, MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import {
 	type AuthClient,
 	type AuthFetch,
@@ -102,7 +102,10 @@ describe('createInstanceTokenAuth', () => {
 		// what `'reauth-required'` names. It is not `'signed-out'`: this client
 		// holds a token, and the box would not take it.
 		await expect(
-			auth.openWebSocket('ws://localhost:8788/api/rooms/r'),
+			auth.openWebSocket({
+				url: 'ws://localhost:8788/api/rooms/r',
+				protocols: [MAIN_SUBPROTOCOL],
+			}),
 		).rejects.toMatchObject({
 			name: 'OpenWebSocketDenied',
 			code: 'reauth-required',
@@ -176,12 +179,13 @@ describe('createInstanceTokenAuth', () => {
 		});
 		await flush();
 
-		await auth.openWebSocket('ws://localhost:8788/api/rooms/r', [
-			'existing-protocol',
-		]);
+		await auth.openWebSocket({
+			url: 'ws://localhost:8788/api/rooms/r',
+			protocols: ['existing-protocol'],
+		});
 		expect(wsCalls.at(-1)).toEqual({
 			url: 'ws://localhost:8788/api/rooms/r',
-			protocols: ['existing-protocol', `${BEARER_SUBPROTOCOL_PREFIX}${token}`],
+			protocols: ['existing-protocol', bearerSubprotocol(token)],
 		});
 	});
 

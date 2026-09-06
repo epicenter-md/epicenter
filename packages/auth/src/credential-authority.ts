@@ -1,4 +1,4 @@
-import type { SyncRefusal } from '@epicenter/sync/auth-subprotocol';
+import type { SyncRefusal } from '@epicenter/sync/transport';
 
 /** A transient bearer grant or the typed reason a transport cannot receive one. */
 export type BearerAuthorization =

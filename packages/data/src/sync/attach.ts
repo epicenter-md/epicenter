@@ -3,7 +3,7 @@
  *
  * ADR-0222 left a host exactly one thing to write: how to make a socket. This
  * is that one thing, written once, because it turned out to be the same
- * everywhere: build the store route's URL, hand the socket's events to the
+ * everywhere: build the store route's address, hand the socket's events to the
  * driver, and say whether a rejection was a credential refusal or a transport
  * failure. Reconnecting, backoff, cursor placement, and the
  * unacknowledged-submission watchdog all stay in `createSyncConnection`, where
@@ -14,17 +14,17 @@
  * status line naming what auth needs, and anything else is a background error
  * for the log. What an application actually varies is the data id it opens.
  *
- * The credential model arrives as a one-member port, not as an `AuthClient`.
- * The store says what a socket has to be able to do and nothing about how a
- * credential is obtained, and an `AuthClient` satisfies the port structurally
- * with no adapter.
+ * The credential model arrives as a `SocketTransport`, the contract
+ * `@epicenter/sync` declares beside the address it is dialled with. An
+ * `AuthClient` implements it, so nothing here knows what a credential is: the
+ * route builds the address, and auth appends the bearer to it.
  */
 
+import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
 import {
 	isOpenWebSocketDenial,
-	MAIN_SUBPROTOCOL,
-} from '@epicenter/sync/auth-subprotocol';
-import { STORE_SYNC_ROUTE } from '@epicenter/sync/store-route';
+	type SocketTransport,
+} from '@epicenter/sync/transport';
 import {
 	type ReplicaDocument,
 	registerSyncConnection,
@@ -32,30 +32,11 @@ import {
 import { createSyncConnection, type SyncConnection } from './connection.js';
 
 /**
- * How this host reaches its authority over a socket.
- *
- * Structurally satisfied by `AuthClient`, whose `openWebSocket` carries the
- * bearer as a subprotocol because a browser upgrade cannot set
- * `Authorization`, and which resolves only with a credentialed socket.
+ * `WebSocket.OPEN`, as the number the standard fixes it to, because this file
+ * only ever holds a socket a transport made and never touches the global
+ * constructor.
  */
-export type StoreSocketTransport = {
-	/**
-	 * Open a credentialed socket, or reject.
-	 *
-	 * Waits for in-flight machine work such as a token refresh, never for a
-	 * human, so a rejection means signed out rather than slow. A rejection
-	 * recognised by `isOpenWebSocketDenial` is reported as that refusal's code
-	 * and dialled again on the ordinary backoff; anything else is a transport
-	 * error and a close.
-	 *
-	 * `protocols` is what the CALLER needs the upgrade to offer. The credential
-	 * model appends its own bearer subprotocol to it rather than replacing it,
-	 * which is why this parameter has to exist: the rooms route refuses an
-	 * upgrade that offers protocols without the main one, so a transport that
-	 * could only offer a bearer would be refused with a 400 on every dial.
-	 */
-	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
-};
+const SOCKET_OPEN = 1;
 
 export type AttachStoreSyncOptions = {
 	/**
@@ -71,7 +52,12 @@ export type AttachStoreSyncOptions = {
 	 * announce, nothing to compare, and no supersession to conclude.
 	 */
 	store: ReplicaDocument;
-	transport: StoreSocketTransport;
+	/**
+	 * How this replica opens its socket. `AuthClient` implements it: it takes
+	 * the address the route built and appends the bearer subprotocol, because a
+	 * browser upgrade cannot set `Authorization`.
+	 */
+	transport: SocketTransport;
 	/**
 	 * A dial failed for a reason time might repair: verification unreachable,
 	 * plain network trouble. Reported rather than raised, because the driver's
@@ -105,18 +91,11 @@ export function attachStoreSync({
 			let abandoned = false;
 			void transport
 				.openWebSocket(
-					STORE_SYNC_ROUTE.url(store.baseURL, {
+					STORE_SYNC_ROUTE.address(store.baseURL, {
 						dataId: store.dataId,
 						generation: store.generation,
 						cursor,
 					}),
-					// The store transport's own subprotocol, offered on every dial.
-					// The credential model adds `bearer.<token>` beside it, and the
-					// route echoes only this one back on the 101. Offering the bearer
-					// alone is not a weaker dial, it is a refused one: the mount
-					// answers 400 to an upgrade that offers protocols without this
-					// name, so this line is the difference between sync and no sync.
-					[MAIN_SUBPROTOCOL],
 				)
 				.then(
 					(opening) => {
@@ -126,15 +105,25 @@ export function attachStoreSync({
 						}
 						socket = opening;
 						opening.binaryType = 'arraybuffer';
-						opening.addEventListener('open', () =>
-							opened({ send: (bytes) => opening.send(bytes) }),
-						);
 						opening.addEventListener('message', (event) => {
 							if (typeof event.data === 'string') return;
 							received(new Uint8Array(event.data as ArrayBuffer));
 						});
 						opening.addEventListener('close', () => closed());
 						opening.addEventListener('error', () => opening.close());
+						// A transport may hand back a socket that is already open, and an
+						// open socket never fires `open`: waiting for one would leave the
+						// driver with a live socket it never sends on, and nothing would
+						// time out, because the connection is perfectly healthy. A
+						// browser's `new WebSocket` is always CONNECTING here, so this
+						// reads `false` for every dial a page makes.
+						if (opening.readyState === SOCKET_OPEN) {
+							opened({ send: (bytes) => opening.send(bytes) });
+							return;
+						}
+						opening.addEventListener('open', () =>
+							opened({ send: (bytes) => opening.send(bytes) }),
+						);
 					},
 					(cause) => {
 						if (abandoned) return;
