@@ -172,13 +172,13 @@ Mail WebView                    Epicenter host          person's browser        
      |<-------------------------------| and forgets it         |                  |
      |                                |                        |                  |
  redeem the code with the verifier held here, and put the refresh token
- in `appStorage.secrets`
+ in `device.secrets`
 ```
 
 **The host is a letterbox, not a party to the exchange.** It holds one opaque
 URL for one collection and reads nothing out of it. The verifier never leaves
 the Mail window, so the window is the only thing that can redeem the code, and
-the refresh token goes straight to `appStorage.secrets` from there (ADR-0310).
+the refresh token goes straight to `device.secrets` from there (ADR-0310).
 
 One grant makes it work, and it is narrow. The Mail window holds
 `opener:allow-open-url` scoped to `https://accounts.google.com/*`, and nothing

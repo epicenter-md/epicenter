@@ -9,11 +9,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import type {
-	AppSqliteDatabase,
-	AppStorage,
-	SecretStore,
-} from '@epicenter/app-storage';
+import type { AppSqliteDatabase, Device, SecretStore } from '@epicenter/device';
 import { Ok } from 'wellcrafted/result';
 import {
 	createMailApp,
@@ -102,13 +98,13 @@ async function openApp(options: { refuse?: 'put' | 'delete' } = {}) {
 	}
 
 	const { secrets, held } = secretStore(options);
-	const appStorage = {
+	const device = {
 		appId: LOCAL_MAIL_APP_ID,
 		secrets,
-	} as unknown as AppStorage;
+	} as unknown as Device;
 
 	const app = createMailApp({
-		appStorage,
+		device,
 		storage: {
 			local,
 			mail,
@@ -350,7 +346,7 @@ test('two accounts are two mail files, and neither reads the other', async () =>
 
 		// Each account's rows went to its own database, so a statement in one
 		// cannot name a row in the other. What makes that true in production is
-		// the owner's one-file-per-name mapping, which `app-storage.test.ts`
+		// the owner's one-file-per-name mapping, which `device.test.ts`
 		// pins; what this checks is that the application asks for two names.
 		expect(await one.mailbox.hasMessage('m1')).toBe(true);
 		expect(await one.mailbox.hasMessage('m2')).toBe(false);

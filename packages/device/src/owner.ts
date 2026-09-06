@@ -3,7 +3,7 @@
  * over one.
  *
  * Three transports reach an owner and there are only ever two owners. The
- * desktop page sends `AppStorageRequest` over same-origin HTTP to a Bun
+ * desktop page sends `DeviceRequest` over same-origin HTTP to a Bun
  * process that owns files below the Epicenter data root; the browser page
  * sends the same request over `postMessage` to a worker that owns an OPFS
  * pool; the Bun host answers itself. What differs between those is a socket
@@ -11,15 +11,15 @@
  * dispatch, and the meaning of every message are here, once.
  *
  * This is the shape the codebase already had in three places without naming
- * it. `BunAppStorage` and the browser leaf's SQLite owner were the same two
+ * it. `BunDevice` and the browser leaf's SQLite owner were the same two
  * methods declared twice, and `apps/epicenter`'s route carried the only
  * request-to-owner dispatcher, where no other transport could reach it.
  */
 
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
-import { AppError, type AppSqliteDatabase } from './index.js';
-import type { AppStorageRequest, AppStorageResponse } from './protocol.js';
+import { type AppSqliteDatabase, DeviceError } from './index.js';
+import type { DeviceRequest, DeviceResponse } from './protocol.js';
 
 /**
  * Whoever actually holds the files, for every application on this machine.
@@ -34,14 +34,14 @@ import type { AppStorageRequest, AppStorageResponse } from './protocol.js';
  * connection and a caller that opens after a delete gets a new empty file.
  * That is why nothing on this type closes: closing is a step inside `delete`.
  */
-export type AppSqliteOwner = {
+export type DeviceSqliteOwner = {
 	open(appId: string, name: string): Promise<AppSqliteDatabase>;
 	delete(appId: string, name: string): Promise<void>;
 };
 
 /** The requests an owner answers. Secrets are a different owner entirely. */
 export type AppSqliteRequest = Extract<
-	AppStorageRequest,
+	DeviceRequest,
 	{ kind: `sqlite-${string}` }
 >;
 
@@ -57,10 +57,10 @@ export type AppSqliteRequest = Extract<
  * `postMessage` has a message, and the Bun host has a 500. Handing all three a
  * `Result` would mean two of them unwrapping it to build their own.
  */
-export async function answerAppStorage(
-	owner: AppSqliteOwner,
+export async function answerDevice(
+	owner: DeviceSqliteOwner,
 	request: AppSqliteRequest,
-): Promise<AppStorageResponse> {
+): Promise<DeviceResponse> {
 	if (request.kind === 'sqlite-delete') {
 		await owner.delete(request.appId, request.name);
 		return { kind: request.kind };
@@ -94,7 +94,7 @@ export async function answerAppStorage(
 /** How a page reaches its owner, whatever is carrying the message. */
 export type AppSqliteTransport = (
 	message: AppSqliteRequest,
-) => Promise<Result<AppStorageResponse, AppError>>;
+) => Promise<Result<DeviceResponse, DeviceError>>;
 
 /**
  * One database's handle, over a transport.
@@ -147,16 +147,14 @@ export function createOwnedSqlite(
 }
 
 /** Unwrap one response, refusing an owner that answered about something else. */
-export function unwrap<TKind extends AppStorageResponse['kind'], TValue>(
-	pending: Promise<Result<AppStorageResponse, AppError>>,
+export function unwrap<TKind extends DeviceResponse['kind'], TValue>(
+	pending: Promise<Result<DeviceResponse, DeviceError>>,
 	kind: TKind,
-	read: (response: Extract<AppStorageResponse, { kind: TKind }>) => TValue,
-): Promise<Result<TValue, AppError>> {
+	read: (response: Extract<DeviceResponse, { kind: TKind }>) => TValue,
+): Promise<Result<TValue, DeviceError>> {
 	return pending.then((outcome) => {
 		if (outcome.error !== null) return outcome;
-		if (outcome.data.kind !== kind) return AppError.InvalidResponse();
-		return Ok(
-			read(outcome.data as Extract<AppStorageResponse, { kind: TKind }>),
-		);
+		if (outcome.data.kind !== kind) return DeviceError.InvalidResponse();
+		return Ok(read(outcome.data as Extract<DeviceResponse, { kind: TKind }>));
 	});
 }

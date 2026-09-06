@@ -13,9 +13,9 @@
 import { expect, test } from 'bun:test';
 import {
 	type AppSqliteDatabase,
-	type AppStorage,
+	type Device,
 	databaseName,
-} from '@epicenter/app-storage';
+} from '@epicenter/device';
 import { Ok } from 'wellcrafted/result';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
 import {
@@ -32,7 +32,7 @@ import {
 function testOwner() {
 	const files = new Map<string, ReturnType<typeof createTestAppSqlite>>();
 	const deleted: string[] = [];
-	const appStorage = {
+	const device = {
 		appId: 'so.epicenter.local-mail',
 		sqlite: {
 			open: async (name: string) => {
@@ -49,8 +49,8 @@ function testOwner() {
 				return Ok(undefined);
 			},
 		},
-	} as unknown as AppStorage;
-	return { appStorage, files, deleted };
+	} as unknown as Device;
+	return { device, files, deleted };
 }
 
 const version = async (database: AppSqliteDatabase): Promise<number> => {
@@ -68,7 +68,7 @@ const stamp = async (database: AppSqliteDatabase, at: number) => {
 
 test('a first open creates the durable file and stamps its version', async () => {
 	const owner = testOwner();
-	const storage = await openLocalMailStorage(owner.appStorage);
+	const storage = await openLocalMailStorage(owner.device);
 
 	expect(await version(storage.local)).toBe(LOCAL_SCHEMA_VERSION);
 	const tables = await storage.local.all<{ name: string }>(
@@ -86,25 +86,23 @@ test('a first open creates the durable file and stamps its version', async () =>
 
 test('the durable file refuses a shape written by a newer build', async () => {
 	const owner = testOwner();
-	const opened = await owner.appStorage.sqlite.open(databaseName('local'));
+	const opened = await owner.device.sqlite.open(databaseName('local'));
 	if (opened.error !== null) throw opened.error;
 	await stamp(opened.data, LOCAL_SCHEMA_VERSION + 1);
 
 	// Writing through it would lose the columns this build does not know about,
 	// and these bytes cannot be fetched again.
-	expect(openLocalMailStorage(owner.appStorage)).rejects.toThrow(
-		/newer version/,
-	);
+	expect(openLocalMailStorage(owner.device)).rejects.toThrow(/newer version/);
 	expect(owner.deleted).toEqual([]);
 });
 
 test('a mail file at the wrong shape is demolished, in either direction', async () => {
 	for (const wrong of [MAIL_SCHEMA_VERSION - 1, MAIL_SCHEMA_VERSION + 1]) {
 		const owner = testOwner();
-		const storage = await openLocalMailStorage(owner.appStorage);
+		const storage = await openLocalMailStorage(owner.device);
 		const name = requireAccountFiling('sub-one').database;
 
-		const stale = await owner.appStorage.sqlite.open(name);
+		const stale = await owner.device.sqlite.open(name);
 		if (stale.error !== null) throw stale.error;
 		await stale.data.run('CREATE TABLE gone (id TEXT)');
 		await stale.data.run(`INSERT INTO gone VALUES ('row')`);
@@ -126,7 +124,7 @@ test('a mail file at the wrong shape is demolished, in either direction', async 
 
 test('the first open of an account creates its file without deleting one', async () => {
 	const owner = testOwner();
-	const storage = await openLocalMailStorage(owner.appStorage);
+	const storage = await openLocalMailStorage(owner.device);
 
 	const mail = await storage.mail('sub-one');
 	expect(await version(mail)).toBe(MAIL_SCHEMA_VERSION);
@@ -137,7 +135,7 @@ test('the first open of an account creates its file without deleting one', async
 
 test('a mail file already at this shape is opened, not demolished', async () => {
 	const owner = testOwner();
-	const storage = await openLocalMailStorage(owner.appStorage);
+	const storage = await openLocalMailStorage(owner.device);
 
 	const first = await storage.mail('sub-one');
 	await first.run(
@@ -148,7 +146,7 @@ test('a mail file already at this shape is opened, not demolished', async () => 
 	// A second call joins the open it already performed, and a second storage
 	// over the same owner finds the file at the right version and leaves it.
 	expect(await storage.mail('sub-one')).toBe(first);
-	const reopened = await openLocalMailStorage(owner.appStorage);
+	const reopened = await openLocalMailStorage(owner.device);
 	const again = await reopened.mail('sub-one');
 	const rows = await again.all<{ value: string }>(
 		`SELECT value FROM cache_meta WHERE key = 'history_id'`,
@@ -159,7 +157,7 @@ test('a mail file already at this shape is opened, not demolished', async () => 
 
 test('two accounts are two files, and forgetting one leaves the other', async () => {
 	const owner = testOwner();
-	const storage = await openLocalMailStorage(owner.appStorage);
+	const storage = await openLocalMailStorage(owner.device);
 	const one = await storage.mail('sub-one');
 	const two = await storage.mail('sub-two');
 	await one.run(

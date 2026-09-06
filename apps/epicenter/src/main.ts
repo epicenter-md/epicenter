@@ -19,13 +19,13 @@ import {
 import { epicenterDataRoot } from '@epicenter/constants/app-data';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { createNativeAppSecrets } from './app-secrets.ts';
-import { createBunAppStorage } from './app-storage.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	createDesktopAuthAuthority,
 	type DesktopAuthAuthority,
 } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
+import { createBunDevice } from './device.ts';
 import { createHomeHost, type HomeHost } from './host.ts';
 import { createHomeServer } from './server.ts';
 import {
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
 		const blobs = createBunBlobStore({
 			directory: join(dataRoot, 'blobs'),
 		});
-		const appStorage = createBunAppStorage(dataRoot);
+		const device = createBunDevice(dataRoot);
 		// The credential store is Rust's, reached over the private sidecar pipe.
 		// Bun sends two labels and never a keyring address (ADR-0310).
 		const appSecrets = createNativeAppSecrets(nativeAuthPort);
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
 			blobs,
 			desktopAuth: auth,
 			blobRemote,
-			appStorage,
+			device,
 			appSecrets,
 		});
 

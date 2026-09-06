@@ -1,12 +1,12 @@
 import {
 	type AppSqliteDatabase,
-	type AppStorage,
 	type DatabaseName,
+	type Device,
 	databaseName,
 	isDatabaseName,
 	isSecretLabel,
 	type SecretLabel,
-} from '@epicenter/app-storage';
+} from '@epicenter/device';
 import { type SqliteHandle, sqliteHandle } from './handle.ts';
 
 /**
@@ -19,7 +19,7 @@ import { type SqliteHandle, sqliteHandle } from './handle.ts';
  * | what happened last time it was delivered | this device's own record | `local`, durable |
  * | the mail itself | borrowed data | `mail-<sub>`, one per account |
  *
- * **Nothing here is AppStorage Data.** Run ADR-0318's test on each artifact and
+ * **Nothing here is Device Data.** Run ADR-0318's test on each artifact and
  * it answers no four times: Gmail is the authority for the copy, undelivered
  * triage is a command addressed to Gmail, the credential is Google's and lives
  * in the keychain, and which accounts are connected is a fact about this device
@@ -35,11 +35,11 @@ import { type SqliteHandle, sqliteHandle } from './handle.ts';
  * mail, and would buy no atomicity, because the write path never crosses them:
  * the effective-label overlay is applied at read time.
  *
- * **Nothing is mirrored to `~/AppStorage`.** That folder is how a person opens
+ * **Nothing is mirrored to `~/Device`.** That folder is how a person opens
  * their own data as files, and none of this is theirs to export: the mail copy
  * is Gmail's, and ADR-0306 refuses backup and export for a provider copy. The
  * two folder names this module used to claim were also keyed by a data id that
- * no longer exists, since Local Mail holds no AppStorage Data.
+ * no longer exists, since Local Mail holds no Device Data.
  *
  * **The partition key is the Google subject.** Reconnecting an account lands on
  * its own rows by arithmetic rather than by lookup, so no id is allocated and
@@ -107,16 +107,16 @@ export type LocalMailStorage = {
  * two callers asking at once join one open instead of racing it.
  */
 export async function openLocalMailStorage(
-	appStorage: AppStorage,
+	device: Device,
 ): Promise<LocalMailStorage> {
-	const local = await open(appStorage, LOCAL_DATABASE);
+	const local = await open(device, LOCAL_DATABASE);
 	await migrateDurable(sqliteHandle(local));
 
 	const mailboxes = new Map<string, Promise<AppSqliteDatabase>>();
 	function opening(sub: string): Promise<AppSqliteDatabase> {
 		const existing = mailboxes.get(sub);
 		if (existing !== undefined) return existing;
-		const opened = openBorrowed(appStorage, requireAccountFiling(sub).database);
+		const opened = openBorrowed(device, requireAccountFiling(sub).database);
 		// This open, not whatever is under the key when it fails.
 		opened.catch(() => {
 			if (mailboxes.get(sub) === opened) mailboxes.delete(sub);
@@ -135,7 +135,7 @@ export async function openLocalMailStorage(
 			const inflight = mailboxes.get(sub);
 			mailboxes.delete(sub);
 			await inflight?.catch(() => undefined);
-			const gone = await appStorage.sqlite.delete(
+			const gone = await device.sqlite.delete(
 				requireAccountFiling(sub).database,
 			);
 			if (gone.error !== null) throw gone.error;
@@ -144,10 +144,10 @@ export async function openLocalMailStorage(
 }
 
 async function open(
-	appStorage: AppStorage,
+	device: Device,
 	name: DatabaseName,
 ): Promise<AppSqliteDatabase> {
-	const opened = await appStorage.sqlite.open(name);
+	const opened = await device.sqlite.open(name);
 	if (opened.error !== null) throw opened.error;
 	return opened.data;
 }
@@ -267,10 +267,10 @@ export const MAIL_CACHE_SCHEMA = [
  * can read and neither costs anything but a backfill.
  */
 async function openBorrowed(
-	appStorage: AppStorage,
+	device: Device,
 	name: DatabaseName,
 ): Promise<AppSqliteDatabase> {
-	const opened = await open(appStorage, name);
+	const opened = await open(device, name);
 	const handle = sqliteHandle(opened);
 	if ((await userVersion(handle)) === MAIL_SCHEMA_VERSION) return opened;
 
@@ -283,9 +283,9 @@ async function openBorrowed(
 		return opened;
 	}
 
-	const gone = await appStorage.sqlite.delete(name);
+	const gone = await device.sqlite.delete(name);
 	if (gone.error !== null) throw gone.error;
-	const fresh = await open(appStorage, name);
+	const fresh = await open(device, name);
 	await applyMailSchema(sqliteHandle(fresh));
 	return fresh;
 }

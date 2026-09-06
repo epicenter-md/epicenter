@@ -28,7 +28,7 @@
 	},
 	"dependencies": {
 		"@epicenter/agent": "workspace:*",
-		"@epicenter/app-storage": "workspace:*",
+		"@epicenter/device": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/blobs": "workspace:*",
 		"@epicenter/client": "workspace:*",

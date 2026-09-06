@@ -59,11 +59,11 @@ describe('platform seams', () => {
 		// desktop bundle and the host transport into the web one, which is the
 		// bundle cost the two packages exist to keep apart.
 		for (const condition of ['default', 'epicenter-host']) {
-			const source = await leafSource('#platform/app-storage', condition);
+			const source = await leafSource('#platform/device', condition);
 			expect({
 				condition,
-				browser: source.includes('@epicenter/app-storage/browser'),
-				desktop: source.includes('@epicenter/app-storage/desktop'),
+				browser: source.includes('@epicenter/device/browser'),
+				desktop: source.includes('@epicenter/device/desktop'),
 			}).toEqual({
 				condition,
 				browser: condition === 'default',
@@ -77,12 +77,12 @@ describe('the runtime is the import path', () => {
 	test('each build binds its files and its secrets to its own owner', async () => {
 		// The package name never carries the runtime, so what a build gets is
 		// decided by which subpath its leaf imports.
-		expect(await leafSource('#platform/app-storage', 'default')).toContain(
-			"from '@epicenter/app-storage/browser'",
+		expect(await leafSource('#platform/device', 'default')).toContain(
+			"from '@epicenter/device/browser'",
 		);
-		expect(
-			await leafSource('#platform/app-storage', 'epicenter-host'),
-		).toContain("from '@epicenter/app-storage/desktop'");
+		expect(await leafSource('#platform/device', 'epicenter-host')).toContain(
+			"from '@epicenter/device/desktop'",
+		);
 	});
 
 	test('each leaf reaches one runtime, not both', async () => {
@@ -90,11 +90,11 @@ describe('the runtime is the import path', () => {
 		// desktop bundle and the host transport into the web one, which is the
 		// bundle cost the two packages exist to keep apart.
 		for (const condition of ['default', 'epicenter-host']) {
-			const source = await leafSource('#platform/app-storage', condition);
+			const source = await leafSource('#platform/device', condition);
 			expect({
 				condition,
-				browser: source.includes('@epicenter/app-storage/browser'),
-				desktop: source.includes('@epicenter/app-storage/desktop'),
+				browser: source.includes('@epicenter/device/browser'),
+				desktop: source.includes('@epicenter/device/desktop'),
 			}).toEqual({
 				condition,
 				browser: condition === 'default',

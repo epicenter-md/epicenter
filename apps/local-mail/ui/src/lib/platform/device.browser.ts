@@ -7,7 +7,7 @@
  * application already handles it (ADR-0310).
  */
 
-import { createBrowserAppStorage } from '@epicenter/app-storage/browser';
+import { createBrowserDevice } from '@epicenter/device/browser';
 import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 
-export const appStorage = createBrowserAppStorage({ appId: LOCAL_MAIL_APP_ID });
+export const device = createBrowserDevice({ appId: LOCAL_MAIL_APP_ID });

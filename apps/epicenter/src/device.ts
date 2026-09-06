@@ -3,9 +3,9 @@
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { AppError, type AppSqliteDatabase } from '@epicenter/app-storage';
-import type { AppSqliteOwner } from '@epicenter/app-storage/owner';
 import { appDataDir, isAppId } from '@epicenter/constants/app-data';
+import { type AppSqliteDatabase, DeviceError } from '@epicenter/device';
+import type { DeviceSqliteOwner } from '@epicenter/device/owner';
 import type { SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -17,7 +17,7 @@ import { Ok, type Result } from 'wellcrafted/result';
  * data root, and the whole point of the shared type is that a caller cannot
  * tell which it is holding.
  */
-export type BunAppStorage = AppSqliteOwner;
+export type BunDevice = DeviceSqliteOwner;
 
 /** One live connection per scoped database, and the file it is connected to. */
 type OpenedDatabase = {
@@ -26,7 +26,7 @@ type OpenedDatabase = {
 };
 
 /** Open, retain, and delete one owner-local handle per scoped database. */
-export function createBunAppStorage(root: string): BunAppStorage {
+export function createBunDevice(root: string): BunDevice {
 	const opened = new Map<string, Promise<OpenedDatabase>>();
 
 	function openDatabase(appId: string, name: string): Promise<OpenedDatabase> {
@@ -149,9 +149,9 @@ function toBindings(
 	return [...(parameters ?? [])] as SQLQueryBindings[];
 }
 
-function resultOf<T>(promise: Promise<T>): Promise<Result<T, AppError>> {
+function resultOf<T>(promise: Promise<T>): Promise<Result<T, DeviceError>> {
 	return promise.then(
 		(data) => Ok(data),
-		(cause) => AppError.StorageFailed({ cause }),
+		(cause) => DeviceError.StorageFailed({ cause }),
 	);
 }

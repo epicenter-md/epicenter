@@ -8,7 +8,7 @@
  * for real (ADR-0319).
  */
 
-import type { AppSqliteDatabase } from '@epicenter/app-storage';
+import type { AppSqliteDatabase } from '@epicenter/device';
 import { createTestAppSqlite } from './app-sqlite.test-support.ts';
 import { type IntentStore, openIntentStore } from './intent-store.ts';
 import { type Mailbox, openMailbox } from './mailbox.ts';

@@ -2,11 +2,11 @@ import { expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createBunAppStorage } from './app-storage.ts';
+import { createBunDevice } from './device.ts';
 
 test('application SQLite is scoped, async, and batch is atomic', async () => {
-	const root = await mkdtemp(join(tmpdir(), 'epicenter-app-storage-'));
-	const storage = createBunAppStorage(root);
+	const root = await mkdtemp(join(tmpdir(), 'epicenter-device-'));
+	const storage = createBunDevice(root);
 	const first = await storage.open('so.epicenter.mail', 'mail');
 	const second = await storage.open('so.epicenter.other', 'mail');
 
@@ -53,8 +53,8 @@ test('application SQLite is scoped, async, and batch is atomic', async () => {
 });
 
 test('an open that failed is not remembered', async () => {
-	const root = await mkdtemp(join(tmpdir(), 'epicenter-app-storage-'));
-	const storage = createBunAppStorage(root);
+	const root = await mkdtemp(join(tmpdir(), 'epicenter-device-'));
+	const storage = createBunDevice(root);
 
 	// A file where the application's directory belongs, so `mkdir` fails the
 	// way a locked or full disk would, and clears the same way.
@@ -71,8 +71,8 @@ test('an open that failed is not remembered', async () => {
 });
 
 test('deleting a database closes it, removes the file, and forgets the name', async () => {
-	const root = await mkdtemp(join(tmpdir(), 'epicenter-app-storage-'));
-	const storage = createBunAppStorage(root);
+	const root = await mkdtemp(join(tmpdir(), 'epicenter-device-'));
+	const storage = createBunDevice(root);
 	const path = join(root, 'apps', 'so.epicenter.mail', 'sqlite', 'mail.sqlite');
 
 	const before = await storage.open('so.epicenter.mail', 'mail');
@@ -93,7 +93,7 @@ test('deleting a database closes it, removes the file, and forgets the name', as
 });
 
 test('deleting a database that was never created succeeds', async () => {
-	const root = await mkdtemp(join(tmpdir(), 'epicenter-app-storage-'));
-	const storage = createBunAppStorage(root);
+	const root = await mkdtemp(join(tmpdir(), 'epicenter-device-'));
+	const storage = createBunDevice(root);
 	await storage.delete('so.epicenter.mail', 'never');
 });

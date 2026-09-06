@@ -1,8 +1,8 @@
 {
-	"name": "@epicenter/app-storage",
+	"name": "@epicenter/device",
 	"version": "0.0.1",
 	"private": true,
-	"description": "One application's device-owned SQLite files and secrets, per runtime.",
+	"description": "This device's files and secrets, scoped to one application, per runtime.",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",

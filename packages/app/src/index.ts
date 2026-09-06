@@ -7,7 +7,7 @@
  * those names appear on this surface.
  *
  * **This handle is the session and nothing else.** Device-owned SQLite files
- * and secrets are `@epicenter/app-storage`, a separate package because they are
+ * and secrets are `@epicenter/device`, a separate package because they are
  * a separate kind of thing: a file is a device cache opened before anyone signs
  * in and a keychain entry is how an account is reached at all, so neither has a
  * principal to be scoped by. Keeping them here made this package vary by
@@ -88,7 +88,7 @@ export type CreateEpicenterOptions = {
 	 * application is an independent part of a store address (ADR-0324), and
 	 * making it explicit keeps the constructor honest about the scope it is
 	 * opening. It scopes the replica and nothing else; device-owned files and
-	 * secrets are `@epicenter/app-storage`, which knows no person.
+	 * secrets are `@epicenter/device`, which knows no person.
 	 */
 	appId: string;
 };
@@ -195,7 +195,7 @@ export type Epicenter<TDefinition extends DataDefinition> = {
 	 * opens again.
 	 *
 	 * It resolves a `Result`, and the error is the store's own rather than
-	 * `AppError.StorageFailed` wrapping it. An application's boot node
+	 * `DeviceError.StorageFailed` wrapping it. An application's boot node
 	 * switches on the failure's `name` to choose between a retry and an
 	 * erase; wrapping hid that name under `cause`, so every arm became the
 	 * fallback and both repairs disappeared.

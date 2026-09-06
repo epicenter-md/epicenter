@@ -5,10 +5,10 @@
  * them from outside the page and the page holds no assertions of its own.
  */
 
-import { createBrowserAppStorage } from '../../../src/browser.js';
+import { createBrowserDevice } from '../../../src/browser.js';
 
 const APP_ID = 'so.epicenter.evidence';
-const storage = createBrowserAppStorage({ appId: APP_ID });
+const storage = createBrowserDevice({ appId: APP_ID });
 
 type Answer = { ok: true; value?: unknown } | { ok: false; error: string };
 

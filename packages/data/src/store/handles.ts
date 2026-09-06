@@ -658,11 +658,22 @@ export type SyncCapability = {
 /**
  * The account half of an address, and how this device reaches its authority.
  *
- * A two-member port rather than an `AuthClient`, for the same reason
- * `attach.ts` takes one: it keeps this file free of the auth package, and an
- * `AuthClient` satisfies it structurally with no adapter. `fetch` is here and
- * not in `attach` because opening a generation this device does not hold is an
- * HTTP request, not a socket (ADR-0292).
+ * A value rather than an `AuthClient`, and the difference is the point. An
+ * `AuthClient` is live: its `state` moves when a person signs in or out. This
+ * is three facts read at one instant, which is what lets a session answer for
+ * the principal that opened it even if the client moves underneath.
+ *
+ * So it does NOT satisfy `AuthClient` structurally and no adapter-free claim
+ * belongs here: a client keeps its principal under `state`, and the one
+ * function that reads it out is the caller's. `StoreSocketTransport` in
+ * `sync/attach.ts` IS satisfied structurally, which is the neighbouring
+ * rationale this comment used to borrow by mistake.
+ *
+ * Keeping it a value also keeps this file free of the auth package, which is
+ * load-bearing rather than tidy: `createAccountStore` opens a store with no
+ * account at all, and a Durable Object is one of its callers. `fetch` is here
+ * and not in `attach` because opening a generation this device does not hold is
+ * an HTTP request, not a socket (ADR-0292).
  */
 export type DatabaseAccount = {
 	readonly baseURL: string;

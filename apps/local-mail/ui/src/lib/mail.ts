@@ -48,7 +48,7 @@ import {
 	readOutbox,
 } from '@epicenter/local-mail/outbox';
 import { openLocalMailStorage } from '@epicenter/local-mail/storage';
-import { appStorage } from '#platform/app-storage';
+import { device } from '#platform/device';
 import { gmailIdentity } from './identity';
 
 let opening: Promise<MailApp> | null = null;
@@ -56,9 +56,9 @@ let opening: Promise<MailApp> | null = null;
 /** Open the application once per page, and hand the same handle to every call. */
 function app(): Promise<MailApp> {
 	opening ??= (async () => {
-		const storage = await openLocalMailStorage(appStorage);
+		const storage = await openLocalMailStorage(device);
 		return createMailApp({
-			appStorage,
+			device,
 			storage,
 			identity: gmailIdentity(),
 		});

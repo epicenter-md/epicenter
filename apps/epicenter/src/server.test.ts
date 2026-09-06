@@ -35,7 +35,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentEngine, EngineChunk } from '@epicenter/agent';
-import { APP_STORAGE_PATH } from '@epicenter/app-storage/protocol';
 import {
 	type BlobRemote,
 	BlobRemoteError,
@@ -44,14 +43,15 @@ import {
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import { CHECKOUT_PATH } from '@epicenter/data/artifact/checkout';
+import { DEVICE_PATH } from '@epicenter/device/protocol';
 import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 import { Ok } from 'wellcrafted/result';
 import {
 	type AppSecretOwner,
 	createProcessMemoryAppSecrets,
 } from './app-secrets.ts';
-import type { BunAppStorage } from './app-storage.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
+import type { BunDevice } from './device.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
 import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
@@ -167,7 +167,7 @@ async function serveHost(
 	page: string = PAGE,
 	blobRemote: BlobRemote | null = null,
 	owners: {
-		appStorage?: BunAppStorage;
+		device?: BunDevice;
 		appSecrets?: AppSecretOwner;
 	} = {},
 ) {
@@ -2024,7 +2024,7 @@ describe('checkout routes (ADR-0337)', () => {
 describe('the application storage owner', () => {
 	async function post(server: TestServer, body: unknown) {
 		const { cookie, origin } = authenticationFor(server);
-		return fetch(`${server.url.origin}${APP_STORAGE_PATH}`, {
+		return fetch(`${server.url.origin}${DEVICE_PATH}`, {
 			method: 'POST',
 			headers: { cookie, origin, 'content-type': 'application/json' },
 			body: JSON.stringify(body),

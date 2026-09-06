@@ -88,12 +88,12 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/agent": "workspace:*",
-        "@epicenter/app-storage": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",
         "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@epicenter/device": "workspace:*",
         "@epicenter/local-mail": "workspace:*",
         "@epicenter/matter-core": "workspace:*",
         "@epicenter/server": "workspace:*",
@@ -248,8 +248,8 @@
       "name": "@epicenter/local-mail",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/app-storage": "workspace:*",
         "@epicenter/data": "workspace:*",
+        "@epicenter/device": "workspace:*",
         "oauth4webapi": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
@@ -263,7 +263,7 @@
       "name": "@epicenter/local-mail-ui",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/app-storage": "workspace:*",
+        "@epicenter/device": "workspace:*",
         "@epicenter/local-mail": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
         "@tauri-apps/plugin-opener": "catalog:",
@@ -477,7 +477,6 @@
         "@epicenter/recorder": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@mistralai/mistralai": "^1.9.18",
-        "@sqlite.org/sqlite-wasm": "catalog:",
         "@standard-schema/spec": "catalog:",
         "@tanstack/svelte-query": "catalog:",
         "@tanstack/svelte-table": "catalog:",
@@ -593,7 +592,6 @@
         "@types/bun": "catalog:",
         "fake-indexeddb": "^6.2.5",
         "typescript": "catalog:",
-        "vite": "catalog:",
       },
     },
     "packages/app-shell": {
@@ -619,22 +617,6 @@
         "svelte": "catalog:",
         "svelte-check": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "packages/app-storage": {
-      "name": "@epicenter/app-storage",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/constants": "workspace:*",
-        "@epicenter/sqlite": "workspace:*",
-        "@sqlite.org/sqlite-wasm": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "playwright": "^1.61.1",
-        "typescript": "catalog:",
-        "vite": "catalog:",
       },
     },
     "packages/auth": {
@@ -738,6 +720,22 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "fake-indexeddb": "^6.2.5",
+        "playwright": "^1.61.1",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+      },
+    },
+    "packages/device": {
+      "name": "@epicenter/device",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/constants": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
+        "@sqlite.org/sqlite-wasm": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "playwright": "^1.61.1",
         "typescript": "catalog:",
         "vite": "catalog:",
@@ -1224,8 +1222,6 @@
 
     "@epicenter/app-shell": ["@epicenter/app-shell@workspace:packages/app-shell"],
 
-    "@epicenter/app-storage": ["@epicenter/app-storage@workspace:packages/app-storage"],
-
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
 
     "@epicenter/blobs": ["@epicenter/blobs@workspace:packages/blobs"],
@@ -1237,6 +1233,8 @@
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 
     "@epicenter/data": ["@epicenter/data@workspace:packages/data"],
+
+    "@epicenter/device": ["@epicenter/device@workspace:packages/device"],
 
     "@epicenter/epicenter": ["@epicenter/epicenter@workspace:apps/epicenter"],
 

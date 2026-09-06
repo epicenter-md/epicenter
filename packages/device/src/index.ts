@@ -1,22 +1,22 @@
 /**
- * What one application owns ON THIS DEVICE: its SQLite files and its secrets
- * (ADR-0321, ADR-0310).
+ * This device's files and secrets, scoped to one application (ADR-0321,
+ * ADR-0310).
  *
- * Neither is account data. A SQLite file is a device cache an application
- * opens before anyone signs in, and a keychain entry is how an account is
- * reached at all, so neither has a principal to be scoped by and neither
- * belongs to the replica. That is why this is its own package rather than a
- * namespace on the data session: `@epicenter/app` opens one person's replica
- * and does not vary by runtime, while this varies by runtime and knows no
- * person.
+ * The package name is the axis. `@epicenter/data` is an ACCOUNT's data: it is
+ * principal-scoped, it is the same on every runtime, and it travels with the
+ * person. This is a DEVICE's: it has no principal, it varies by runtime, and it
+ * stays on the machine. That difference is invariant 4 of the account model,
+ * which is why the two are separate packages rather than two namespaces on one
+ * handle: a person removing their local data removes a replica, and never a
+ * file or a secret.
  *
  * An application never selects OPFS, Bun SQLite, a native path, a keychain, or
  * a host IPC mechanism, because none of those names appear on this surface. It
- * selects a runtime through its own `#platform/*` seam and calls one of the two
- * constructors. There is no `typeof window` test and there must not be one: the
- * desktop build runs in a WebView, so a runtime sniff cannot tell it apart from
- * a browser tab. A build that forgot to declare its condition fails to resolve
- * rather than silently running the wrong owner.
+ * selects a runtime through its own `#platform/device` seam and calls one of
+ * the two constructors. There is no `typeof window` test and there must not be
+ * one: the desktop build runs in a WebView, so a runtime sniff cannot tell it
+ * apart from a browser tab. A build that forgot to declare its condition fails
+ * to resolve rather than silently running the wrong owner.
  *
  * Runtime differences are typed failures, never branches (ADR-0181). A browser
  * build has no keychain, so its secret leaf answers from tab memory and forgets
@@ -35,7 +35,7 @@ import {
 	type SecretLabel,
 } from './protocol.js';
 
-export const AppError = defineErrors({
+export const DeviceError = defineErrors({
 	InvalidAppId: ({ appId }: { appId: string }) => ({
 		message: `The application id '${appId}' is not valid.`,
 		appId,
@@ -45,18 +45,18 @@ export const AppError = defineErrors({
 		databaseName,
 	}),
 	StorageFailed: ({ cause }: { cause: unknown }) => ({
-		message: 'The application storage owner failed.',
+		message: 'The device storage owner failed.',
 		cause,
 	}),
 	ProtocolFailed: ({ status }: { status: number }) => ({
-		message: `The application storage owner rejected the request (${status}).`,
+		message: `The device storage owner rejected the request (${status}).`,
 		status,
 	}),
 	InvalidResponse: () => ({
-		message: 'The application storage owner returned an invalid response.',
+		message: 'The device storage owner returned an invalid response.',
 	}),
 });
-export type AppError = InferErrors<typeof AppError>;
+export type DeviceError = InferErrors<typeof DeviceError>;
 
 export const SecretError = defineErrors({
 	InvalidSecretLabel: ({ label }: { label: string }) => ({
@@ -97,7 +97,7 @@ export {
 export function databaseName(value: string): DatabaseName {
 	if (!isDatabaseName(value)) {
 		throw new Error(
-			AppError.InvalidDatabaseName({ databaseName: value }).error.message,
+			DeviceError.InvalidDatabaseName({ databaseName: value }).error.message,
 		);
 	}
 	return value;
@@ -112,7 +112,7 @@ export function databaseName(value: string): DatabaseName {
  */
 export function appIdOrThrow(value: string): string {
 	if (!isAppId(value)) {
-		throw new Error(AppError.InvalidAppId({ appId: value }).error.message);
+		throw new Error(DeviceError.InvalidAppId({ appId: value }).error.message);
 	}
 	return value;
 }
@@ -137,17 +137,17 @@ export type AppSqliteDatabase = {
 	run(
 		sql: string,
 		parameters?: readonly SqliteValue[],
-	): Promise<Result<{ changes: number }, AppError>>;
+	): Promise<Result<{ changes: number }, DeviceError>>;
 	all<TRow extends SqliteRow = SqliteRow>(
 		sql: string,
 		parameters?: readonly SqliteValue[],
-	): Promise<Result<TRow[], AppError>>;
+	): Promise<Result<TRow[], DeviceError>>;
 	batch(
 		statements: readonly {
 			sql: string;
 			parameters?: readonly SqliteValue[];
 		}[],
-	): Promise<Result<{ changes: number[] }, AppError>>;
+	): Promise<Result<{ changes: number[] }, DeviceError>>;
 };
 
 /**
@@ -166,7 +166,7 @@ export type SecretStore = {
 };
 
 /**
- * One application's device-owned storage: named SQLite files, and secrets.
+ * What one application owns on this device: named SQLite files, and secrets.
  *
  * Both runtime constructors answer this, so an application annotates against
  * it once and its two platform leaves cannot drift. The application id is an
@@ -179,11 +179,11 @@ export type SecretStore = {
  * created deletes successfully, because the caller asked for it to be gone and
  * it is.
  */
-export type AppStorage = {
+export type Device = {
 	readonly sqlite: {
-		open(name: DatabaseName): Promise<Result<AppSqliteDatabase, AppError>>;
+		open(name: DatabaseName): Promise<Result<AppSqliteDatabase, DeviceError>>;
 		/** Delete one file this application named, closing the owner's handle (ADR-0321). */
-		delete(name: DatabaseName): Promise<Result<void, AppError>>;
+		delete(name: DatabaseName): Promise<Result<void, DeviceError>>;
 	};
 	readonly secrets: SecretStore;
 };

@@ -1,15 +1,15 @@
 import { expect, test } from 'bun:test';
-import { createDesktopAppStorage } from './desktop.js';
+import { createDesktopDevice } from './desktop.js';
 import { databaseName, secretLabel } from './index.js';
-import type { AppStorageRequest } from './protocol.js';
+import type { DeviceRequest } from './protocol.js';
 
-function ownerFor(answer: (request: AppStorageRequest) => Response): {
-	calls: AppStorageRequest[];
+function ownerFor(answer: (request: DeviceRequest) => Response): {
+	calls: DeviceRequest[];
 	fetch: typeof globalThis.fetch;
 } {
-	const calls: AppStorageRequest[] = [];
+	const calls: DeviceRequest[] = [];
 	const fetchImplementation = (async (_url: string, init?: RequestInit) => {
-		const request = JSON.parse(String(init?.body)) as AppStorageRequest;
+		const request = JSON.parse(String(init?.body)) as DeviceRequest;
 		calls.push(request);
 		return answer(request);
 	}) as unknown as typeof globalThis.fetch;
@@ -26,7 +26,7 @@ test('statements and secrets reach the owner scoped by application', async () =>
 		}
 		return Response.json({ kind: request.kind });
 	});
-	const storage = createDesktopAppStorage({
+	const storage = createDesktopDevice({
 		appId: 'so.epicenter.test',
 		baseURL: 'http://127.0.0.1:1',
 		fetch: owner.fetch,

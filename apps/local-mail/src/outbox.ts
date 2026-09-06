@@ -31,7 +31,7 @@
  * replaces it, and nothing accumulates.
  */
 
-import type { AppSqliteDatabase } from '@epicenter/app-storage';
+import type { AppSqliteDatabase } from '@epicenter/device';
 import { sqliteHandle } from './handle.ts';
 import {
 	type IntentStore,

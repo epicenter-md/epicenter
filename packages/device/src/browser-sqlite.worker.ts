@@ -29,11 +29,11 @@
 import { createBrowserSqliteAdapter } from '@epicenter/sqlite/browser';
 import { Ok } from 'wellcrafted/result';
 import type { AppSqliteDatabase } from './index.js';
-import { AppError } from './index.js';
+import { DeviceError } from './index.js';
 import {
-	type AppSqliteOwner,
 	type AppSqliteRequest,
-	answerAppStorage,
+	answerDevice,
+	type DeviceSqliteOwner,
 } from './owner.js';
 
 /** sqlite.org's OO1 `DB`, plus the one method the adapter does not carry. */
@@ -131,7 +131,7 @@ function databaseFilename(appId: string, name: string): string {
 	return `/${encodeURIComponent(appId)}-${encodeURIComponent(name)}.sqlite`;
 }
 
-const owner: AppSqliteOwner = {
+const owner: DeviceSqliteOwner = {
 	open: async (appId, name) =>
 		sqliteOver(await opening(databaseFilename(appId, name))),
 	delete: async (appId, name) => {
@@ -164,7 +164,7 @@ function sqliteOver(database: PoolDatabase): AppSqliteDatabase {
 		try {
 			return Ok(run());
 		} catch (cause) {
-			return AppError.StorageFailed({ cause });
+			return DeviceError.StorageFailed({ cause });
 		}
 	};
 	return {
@@ -199,7 +199,7 @@ type Envelope = { id: number; request: AppSqliteRequest };
 self.onmessage = async (event: MessageEvent<Envelope>) => {
 	const { id, request } = event.data;
 	try {
-		self.postMessage({ id, response: await answerAppStorage(owner, request) });
+		self.postMessage({ id, response: await answerDevice(owner, request) });
 	} catch (cause) {
 		// Only the words cross. An `Error` structured-clones without its subclass
 		// and a `DOMException` does not survive at all, so the page rebuilds a

@@ -18,7 +18,7 @@ import { isAppId } from '@epicenter/constants/app-id';
 import type { SqliteValue } from '@epicenter/sqlite';
 import type { Brand } from 'wellcrafted/brand';
 
-export const APP_STORAGE_PATH = '/api/app-storage';
+export const DEVICE_PATH = '/api/device';
 
 /**
  * The names this protocol admits, owned here because both ends read them.
@@ -83,7 +83,7 @@ export type SqliteStatement = {
 	parameters?: readonly SqliteValue[];
 };
 
-export type AppStorageRequest =
+export type DeviceRequest =
 	| {
 			kind: 'sqlite-run';
 			appId: string;
@@ -124,7 +124,7 @@ export type AppStorageRequest =
 			label: string;
 	  };
 
-export type AppStorageResponse =
+export type DeviceResponse =
 	| { kind: 'sqlite-run'; changes: number }
 	| { kind: 'sqlite-all'; rows: readonly Record<string, unknown>[] }
 	| { kind: 'sqlite-batch'; changes: readonly number[] }
@@ -133,7 +133,7 @@ export type AppStorageResponse =
 	| { kind: 'secret-get'; value: string | null }
 	| { kind: 'secret-delete' };
 
-const RESPONSE_KINDS: readonly AppStorageResponse['kind'][] = [
+const RESPONSE_KINDS: readonly DeviceResponse['kind'][] = [
 	'sqlite-run',
 	'sqlite-all',
 	'sqlite-batch',
@@ -143,11 +143,9 @@ const RESPONSE_KINDS: readonly AppStorageResponse['kind'][] = [
 	'secret-delete',
 ];
 
-export function isAppStorageResponse(
-	value: unknown,
-): value is AppStorageResponse {
+export function isDeviceResponse(value: unknown): value is DeviceResponse {
 	if (typeof value !== 'object' || value === null || !('kind' in value)) {
 		return false;
 	}
-	return RESPONSE_KINDS.includes(value.kind as AppStorageResponse['kind']);
+	return RESPONSE_KINDS.includes(value.kind as DeviceResponse['kind']);
 }

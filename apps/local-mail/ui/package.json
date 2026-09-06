@@ -5,9 +5,9 @@
 	"version": "0.0.1",
 	"type": "module",
 	"imports": {
-		"#platform/app-storage": {
-			"epicenter-host": "./src/lib/platform/app-storage.epicenter-host.ts",
-			"default": "./src/lib/platform/app-storage.browser.ts"
+		"#platform/device": {
+			"epicenter-host": "./src/lib/platform/device.epicenter-host.ts",
+			"default": "./src/lib/platform/device.browser.ts"
 		},
 		"#platform/gmail-authorization": {
 			"epicenter-host": "./src/lib/platform/gmail-authorization.epicenter-host.ts",
@@ -41,7 +41,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
-		"@epicenter/app-storage": "workspace:*",
+		"@epicenter/device": "workspace:*",
 		"@epicenter/local-mail": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"@tauri-apps/plugin-opener": "catalog:",

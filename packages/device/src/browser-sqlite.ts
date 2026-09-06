@@ -8,19 +8,19 @@
  * synchronous access handles exist only in a dedicated worker
  * (`browser-sqlite.worker.ts` says what that costs). So this file is what the
  * desktop leaf is with `fetch` swapped for `postMessage`, and both of them
- * hand the same `createOwnedSqlite` the same `AppStorageRequest`.
+ * hand the same `createOwnedSqlite` the same `DeviceRequest`.
  *
  * It holds no map of open databases. The worker owns those, because it owns
  * the connections; a page-side map would be a second answer to "is this file
  * open" that nothing keeps true.
  */
 
-import { AppError } from './index.js';
+import { DeviceError } from './index.js';
 import type { AppSqliteRequest, AppSqliteTransport } from './owner.js';
-import type { AppStorageResponse } from './protocol.js';
+import type { DeviceResponse } from './protocol.js';
 
 type Answer =
-	| { id: number; response: AppStorageResponse }
+	| { id: number; response: DeviceResponse }
 	| { id: number; failure: string };
 
 /**
@@ -70,9 +70,11 @@ export function createBrowserSqliteTransport(): AppSqliteTransport {
 			const id = nextId++;
 			pending.set(id, (answer) => {
 				if ('failed' in answer) {
-					resolve(AppError.StorageFailed({ cause: answer.failed }));
+					resolve(DeviceError.StorageFailed({ cause: answer.failed }));
 				} else if ('failure' in answer) {
-					resolve(AppError.StorageFailed({ cause: new Error(answer.failure) }));
+					resolve(
+						DeviceError.StorageFailed({ cause: new Error(answer.failure) }),
+					);
 				} else {
 					resolve({ data: answer.response, error: null });
 				}
@@ -81,7 +83,7 @@ export function createBrowserSqliteTransport(): AppSqliteTransport {
 				ready().postMessage({ id, request: message });
 			} catch (cause) {
 				pending.delete(id);
-				resolve(AppError.StorageFailed({ cause }));
+				resolve(DeviceError.StorageFailed({ cause }));
 			}
 		});
 }

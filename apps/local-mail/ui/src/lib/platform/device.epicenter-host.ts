@@ -6,7 +6,7 @@
  * the host's same-origin storage route (ADR-0321, ADR-0310).
  */
 
-import { createDesktopAppStorage } from '@epicenter/app-storage/desktop';
+import { createDesktopDevice } from '@epicenter/device/desktop';
 import { LOCAL_MAIL_APP_ID } from '@epicenter/local-mail/storage';
 
-export const appStorage = createDesktopAppStorage({ appId: LOCAL_MAIL_APP_ID });
+export const device = createDesktopDevice({ appId: LOCAL_MAIL_APP_ID });

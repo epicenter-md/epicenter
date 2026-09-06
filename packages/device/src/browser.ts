@@ -22,7 +22,7 @@
 
 import { Ok } from 'wellcrafted/result';
 import { createBrowserSqliteTransport } from './browser-sqlite.js';
-import { type AppStorage, appIdOrThrow, type SecretStore } from './index.js';
+import { appIdOrThrow, type Device, type SecretStore } from './index.js';
 import { createOwnedSqlite, unwrap } from './owner.js';
 
 /**
@@ -37,11 +37,7 @@ import { createOwnedSqlite, unwrap } from './owner.js';
  * can be opened at all is answered by the first statement through it. Handing
  * back a `Result` anyway keeps one contract across runtimes.
  */
-export function createBrowserAppStorage({
-	appId,
-}: {
-	appId: string;
-}): AppStorage {
+export function createBrowserDevice({ appId }: { appId: string }): Device {
 	const request = createBrowserSqliteTransport();
 	appIdOrThrow(appId);
 	return {

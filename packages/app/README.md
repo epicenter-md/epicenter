@@ -19,7 +19,7 @@ export const epicenter = createEpicenter({
 
 ## What this package is not
 
-Device-owned SQLite files and secrets are `@epicenter/app-storage`. They were
+Device-owned SQLite files and secrets are `@epicenter/device`. They were
 on this handle until they were not called: three of the four applications that
 composed one never opened a file or kept a secret, and each still declared a
 platform seam and pulled an OPFS SQLite worker into its bundle to satisfy the
@@ -32,7 +32,7 @@ keychain entry is how an account is reached at all. Neither has a principal to
 be scoped by, so neither is removed when a person removes their local data.
 
 `apps/local-mail` is the one application that opens files and keeps secrets, and
-it is the one application with a `#platform/app-storage` seam.
+it is the one application with a `#platform/device` seam.
 
 ## The session does not vary by runtime
 

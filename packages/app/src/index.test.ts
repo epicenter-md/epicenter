@@ -7,7 +7,7 @@
  * drives a real IndexedDB.
  *
  * The binding tests that used to live here left with the binding: SQLite files
- * and secrets are `@epicenter/app-storage`, and its own tests own them.
+ * and secrets are `@epicenter/device`, and its own tests own them.
  */
 
 import { expect, test } from 'bun:test';

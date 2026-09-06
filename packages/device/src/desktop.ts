@@ -30,21 +30,21 @@
 
 import { Ok, type Result } from 'wellcrafted/result';
 import {
-	AppError,
-	type AppStorage,
 	appIdOrThrow,
+	type Device,
+	DeviceError,
 	SecretError,
 	type SecretStore,
 } from './index.js';
 import { createOwnedSqlite, unwrap } from './owner.js';
 import {
-	APP_STORAGE_PATH,
-	type AppStorageRequest,
-	type AppStorageResponse,
-	isAppStorageResponse,
+	DEVICE_PATH,
+	type DeviceRequest,
+	type DeviceResponse,
+	isDeviceResponse,
 } from './protocol.js';
 
-export type CreateDesktopAppStorageOptions = {
+export type CreateDesktopDeviceOptions = {
 	/** The trusted origin that owns the files and the keychain entries. */
 	baseURL?: string;
 	fetch?: typeof globalThis.fetch;
@@ -56,10 +56,10 @@ export type CreateDesktopAppStorageOptions = {
  * The origin and the fetch are read here rather than at module scope, so a
  * seam leaf does not refuse a build before anything asked it for storage.
  */
-export function createDesktopAppStorage({
+export function createDesktopDevice({
 	appId,
 	...options
-}: CreateDesktopAppStorageOptions & { appId: string }): AppStorage {
+}: CreateDesktopDeviceOptions & { appId: string }): Device {
 	const request = createOwnerRequest(options);
 	appIdOrThrow(appId);
 	return {
@@ -77,34 +77,31 @@ export function createDesktopAppStorage({
 }
 
 type OwnerRequest = (
-	message: AppStorageRequest,
-) => Promise<Result<AppStorageResponse, AppError>>;
+	message: DeviceRequest,
+) => Promise<Result<DeviceResponse, DeviceError>>;
 
 function createOwnerRequest({
 	baseURL = globalThis.location?.origin,
 	fetch: fetchImplementation = globalThis.fetch,
-}: CreateDesktopAppStorageOptions): OwnerRequest {
+}: CreateDesktopDeviceOptions): OwnerRequest {
 	if (!baseURL || !fetchImplementation) {
 		throw new Error('Desktop app storage needs an origin and fetch.');
 	}
 	return async (message) => {
 		try {
-			const response = await fetchImplementation(
-				`${baseURL}${APP_STORAGE_PATH}`,
-				{
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(message),
-				},
-			);
+			const response = await fetchImplementation(`${baseURL}${DEVICE_PATH}`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(message),
+			});
 			if (!response.ok) {
-				return AppError.ProtocolFailed({ status: response.status });
+				return DeviceError.ProtocolFailed({ status: response.status });
 			}
 			const body: unknown = await response.json();
-			if (!isAppStorageResponse(body)) return AppError.InvalidResponse();
+			if (!isDeviceResponse(body)) return DeviceError.InvalidResponse();
 			return Ok(body);
 		} catch (cause) {
-			return AppError.StorageFailed({ cause });
+			return DeviceError.StorageFailed({ cause });
 		}
 	};
 }
@@ -133,7 +130,7 @@ function createKeychainSecrets(
 			return result.data.kind === 'secret-get'
 				? Ok(result.data.value)
 				: SecretError.StorageFailed({
-						cause: AppError.InvalidResponse().error,
+						cause: DeviceError.InvalidResponse().error,
 					});
 		},
 		delete: async (label) => {

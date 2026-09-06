@@ -1,5 +1,5 @@
 /**
- * The Bun-owned AppStorage origin: trusted SPA documents, Home APIs, and the
+ * The Bun-owned Device origin: trusted SPA documents, Home APIs, and the
  * Home session WebSocket. The launch credential can only mint short-lived
  * browser sessions at the bootstrap route; it never appears in a URL or
  * durable browser storage.
@@ -7,26 +7,25 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { AgentToolDefinition } from '@epicenter/agent';
-import { answerAppStorage } from '@epicenter/app-storage/owner';
-import {
-	APP_STORAGE_PATH,
-	type AppStorageRequest,
-	type AppStorageResponse,
-	isDatabaseName,
-	isSecretLabel,
-	type SqliteStatement,
-} from '@epicenter/app-storage/protocol';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
 import { epicenterFolderRoot, isAppId } from '@epicenter/constants/app-data';
 import { CHECKOUT_PATH } from '@epicenter/data/artifact/checkout';
+import { answerDevice } from '@epicenter/device/owner';
+import {
+	DEVICE_PATH,
+	type DeviceRequest,
+	type DeviceResponse,
+	isDatabaseName,
+	isSecretLabel,
+	type SqliteStatement,
+} from '@epicenter/device/protocol';
 import type { PendingCallback } from '@epicenter/local-mail/authorization-return';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
 import type { AppSecretOwner } from './app-secrets.ts';
-import type { BunAppStorage } from './app-storage.ts';
 import { type Application, listApplications } from './applications.ts';
 import {
 	CheckoutPreconditionFailedError,
@@ -36,6 +35,7 @@ import {
 } from './checkout.ts';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
+import type { BunDevice } from './device.ts';
 import {
 	type HomeHost,
 	type HomeSessionSnapshot,
@@ -93,7 +93,7 @@ export type HomeServerOptions = {
 	 */
 	blobRemote: BlobRemote | null;
 	/** Bun owner for app-scoped SQLite files. */
-	appStorage?: BunAppStorage;
+	device?: BunDevice;
 	/** Credential-store owner for one labeled secret per application account. */
 	appSecrets?: AppSecretOwner;
 };
@@ -106,8 +106,8 @@ const MAX_BROWSER_SESSIONS = 32;
  * happened: whether the account connected is decided in the Mail window, which
  * is where the person is about to look.
  */
-const MAIL_CALLBACK_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Local Mail</title></head><body><p>Google has answered. You can close this tab and return to AppStorage.</p></body></html>`;
-const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>AppStorage</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
+const MAIL_CALLBACK_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Local Mail</title></head><body><p>Google has answered. You can close this tab and return to Device.</p></body></html>`;
+const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Device</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
 export function createHomeServer({
 	host,
@@ -117,11 +117,11 @@ export function createHomeServer({
 	blobs,
 	desktopAuth,
 	blobRemote,
-	appStorage,
+	device,
 	appSecrets,
 }: HomeServerOptions) {
 	if (launchToken === '') {
-		throw new Error('AppStorage refuses to serve without a launch token.');
+		throw new Error('Device refuses to serve without a launch token.');
 	}
 	// Resolved once, here, rather than per request. `epicenterFolderRoot` reads
 	// the environment and refuses a relative override by throwing, and a
@@ -321,15 +321,15 @@ export function createHomeServer({
 	});
 	app.use('/api/home/*', requireBrowserSession);
 	app.use('/api/local-blobs/*', requireBrowserSession);
-	app.use(`${APP_STORAGE_PATH}/*`, requirePrivateBroker);
-	app.post(APP_STORAGE_PATH, async (c) => {
-		const request = parseAppStorageRequest(await readJsonObject(c.req.raw));
+	app.use(`${DEVICE_PATH}/*`, requirePrivateBroker);
+	app.post(DEVICE_PATH, async (c) => {
+		const request = parseDeviceRequest(await readJsonObject(c.req.raw));
 		if (request === undefined) return c.text('Bad Request', 400);
 		try {
 			if (request.kind === 'secret-put') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
 				await appSecrets.put(request.appId, request.label, request.value);
-				return c.json({ kind: request.kind } satisfies AppStorageResponse);
+				return c.json({ kind: request.kind } satisfies DeviceResponse);
 			}
 			if (request.kind === 'secret-get') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
@@ -337,17 +337,17 @@ export function createHomeServer({
 				return c.json({
 					kind: request.kind,
 					value,
-				} satisfies AppStorageResponse);
+				} satisfies DeviceResponse);
 			}
 			if (request.kind === 'secret-delete') {
 				if (appSecrets === undefined) return c.text('Unavailable', 503);
 				await appSecrets.delete(request.appId, request.label);
-				return c.json({ kind: request.kind } satisfies AppStorageResponse);
+				return c.json({ kind: request.kind } satisfies DeviceResponse);
 			}
-			if (appStorage === undefined) return c.text('Unavailable', 503);
+			if (device === undefined) return c.text('Unavailable', 503);
 			// Every transport answers a request the same way, so the host does not
 			// own a second reading of what one means (`@epicenter/app`'s `owner.ts`).
-			return c.json(await answerAppStorage(appStorage, request));
+			return c.json(await answerDevice(device, request));
 		} catch {
 			return c.text('Application storage failed', 500);
 		}
@@ -378,7 +378,7 @@ export function createHomeServer({
 	);
 
 	/**
-	 * One database's working copy in `~/AppStorage` (ADR-0337).
+	 * One database's working copy in `~/Device` (ADR-0337).
 	 *
 	 * `PUT` is `pull`'s half: the application says what its store holds and the
 	 * host replaces the folder with it. `GET` is `push`'s, and what `pull` reads
@@ -701,7 +701,7 @@ function validateOrigin(origin: string): URL {
 	try {
 		url = new URL(origin);
 	} catch {
-		throw new Error(`Invalid AppStorage origin: ${origin}`);
+		throw new Error(`Invalid Device origin: ${origin}`);
 	}
 	if (
 		url.origin !== origin ||
@@ -712,7 +712,7 @@ function validateOrigin(origin: string): URL {
 		url.password !== ''
 	) {
 		throw new Error(
-			'AppStorage origin must be exact http://127.0.0.1:<port> without credentials or a path.',
+			'Device origin must be exact http://127.0.0.1:<port> without credentials or a path.',
 		);
 	}
 	return url;
@@ -722,9 +722,9 @@ function tokenHash(token: string): string {
 	return createHash('sha256').update(token).digest('base64url');
 }
 
-function parseAppStorageRequest(
+function parseDeviceRequest(
 	input: Record<string, unknown> | null,
-): AppStorageRequest | undefined {
+): DeviceRequest | undefined {
 	if (
 		input === null ||
 		typeof input.kind !== 'string' ||
@@ -859,7 +859,7 @@ function contentSecurityPolicy(
 		// `'wasm-unsafe-eval'` permits WebAssembly compilation and nothing else:
 		// it does not restore `eval` or `new Function`, which is why it exists
 		// separately from `'unsafe-eval'`. Voice activity detection runs
-		// onnxruntime in this WebView over assets AppStorage itself ships, so
+		// onnxruntime in this WebView over assets Device itself ships, so
 		// WebAssembly is a first-party capability of the app window rather than
 		// something a policy is being bent to tolerate. Without it the browser
 		// refuses the compile and the recording trigger dies mid-boot.

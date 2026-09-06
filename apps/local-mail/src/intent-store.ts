@@ -20,7 +20,7 @@
  * earlier act, it can only supersede it (ADR-0199).
  */
 
-import type { AppSqliteDatabase } from '@epicenter/app-storage';
+import type { AppSqliteDatabase } from '@epicenter/device';
 import { sqliteHandle } from './handle.ts';
 
 /**

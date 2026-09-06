@@ -596,6 +596,11 @@ Two habits make the link hard to forget:
 | [0335](0335-a-person-is-an-origin-and-an-app-is-a-path-under-it.md) | A person is an origin, and an app is a path under it | Accepted (unbuilt; amends 0326 at its web deployment line) |
 | [0336](0336-an-authority-mints-every-generation-so-every-store-has-an-account.md) | An authority mints every generation, so every store has an account | Accepted (supersedes 0233 and 0279; amends 0324, 0293, and 0262) |
 | [0337](0337-the-folder-is-a-working-copy-and-pull-and-push-are-the-whole-cycle.md) | The folder is a working copy, and pull and push are the whole cycle | Accepted (unbuilt; amends 0271, 0289, and 0329: the continuous render and the watcher go, pull and push replace them) |
+| [0347](0347-whisperings-seams-select-an-owner-and-the-tauri-condition-selects-nothing.md) | Whispering's seams select an owner, and the `tauri` condition selects nothing | Accepted |
+| [0348](0348-the-local-address-carries-the-principal-and-a-database-needs-no-binding-to-know-whose-it-is.md) | The local address carries the principal, and a database needs no binding to know whose it is | Proposed |
+| [0349](0349-blobs-are-a-namespace-on-the-handle-addressed-by-id-and-stored-under-the-replicas-principal.md) | Blobs are a namespace on the handle, addressed by id, and stored under the replica's principal | Proposed (supersedes 0173 at its public operations; amends 0205, 0314, 0201) |
 | [0350](0350-a-data-session-is-a-value-the-tree-owns-and-sync-runs-for-the-life-of-the-store.md) | A data session is a value the tree owns, and sync runs for the life of the store | Proposed (supersedes 0232; amends 0230 at its mechanism: a refusal is data on the driver's status, so there is no stop, no reload, and no auth generation) |
+| [0351](0351-local-data-removal-is-an-explicit-sign-out-choice.md) | Local data removal is an explicit sign-out choice | Proposed |
+| [0352](0352-an-account-s-data-and-a-device-s-files-are-two-packages-because-only-one-of-them-is-removed.md) | An account's data and a device's files are two packages, because only one of them is removed | Accepted (amends 0339 at its mechanism: the binding, the factory, and the `Epicenter<never>` overload are withdrawn) |
 
 When you add an ADR, add its row here.
