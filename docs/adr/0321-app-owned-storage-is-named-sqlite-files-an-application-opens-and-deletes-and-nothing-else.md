@@ -88,7 +88,7 @@ no meaning to enforce.
 
 - An application can delete a database it created, and only one it created,
   because the host resolves the path from the application id it already holds.
-- The handle registry in `apps/epicenter/src/app-storage.ts` gains its only
+- The handle registry in `apps/epicenter/src/device.ts` gains its only
   removal path for a live handle, and it is deletion, so the registry is still
   not a cache. It already forgets an open that failed, which holds no handle.
 - A borrowed copy's shape change is answered with this verb rather than with a

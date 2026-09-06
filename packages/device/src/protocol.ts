@@ -14,7 +14,6 @@
  * no message that would carry it.
  */
 
-import { isAppId } from '@epicenter/constants/app-id';
 import type { SqliteValue } from '@epicenter/sqlite';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -35,7 +34,6 @@ export const DEVICE_PATH = '/api/device';
  * that module resolves an OS path and would drag `node:os` into every page that
  * bundles this one.
  */
-export const isProtocolAppId = isAppId;
 
 /**
  * One SQLite file name this platform admits, checked wherever one is minted.

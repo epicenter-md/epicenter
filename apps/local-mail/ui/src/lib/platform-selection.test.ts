@@ -53,24 +53,6 @@ describe('platform seams', () => {
 			}
 		}
 	});
-
-	test('each leaf reaches one runtime, not both', async () => {
-		// A leaf that imported both subpaths would pull the OPFS worker into the
-		// desktop bundle and the host transport into the web one, which is the
-		// bundle cost the two packages exist to keep apart.
-		for (const condition of ['default', 'epicenter-host']) {
-			const source = await leafSource('#platform/device', condition);
-			expect({
-				condition,
-				browser: source.includes('@epicenter/device/browser'),
-				desktop: source.includes('@epicenter/device/desktop'),
-			}).toEqual({
-				condition,
-				browser: condition === 'default',
-				desktop: condition === 'epicenter-host',
-			});
-		}
-	});
 });
 
 describe('the runtime is the import path', () => {

@@ -17,7 +17,7 @@ import { searchForWorkspaceRoot, type UserConfig } from 'vite';
  * `new URL('./x.worker.ts', import.meta.url)` resolves to a `/@fs/` URL under
  * the monorepo root, which SvelteKit's list answers 403 to.
  *
- * **The last three are what `@epicenter/app-storage`'s browser leaf costs.**
+ * **The last three are what `@epicenter/device`'s browser leaf costs.**
  * Only `apps/local-mail/ui` composes it, so they belong in that app's config
  * rather than here; they stay until that move is made. Its SQLite owner is a
  * dedicated worker over `@sqlite.org/sqlite-wasm`, because OPFS synchronous

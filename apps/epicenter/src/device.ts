@@ -10,7 +10,7 @@ import type { SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';
 
 /**
- * This host's owner, which is the one `@epicenter/app` names.
+ * This host's owner, which is the one `@epicenter/device` names.
  *
  * An alias rather than a second declaration of the same two methods: the
  * browser's worker owns an OPFS pool and this owns files below the Epicenter

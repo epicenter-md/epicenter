@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-06
-- **Amends:** [ADR-0339](0339-an-application-creates-one-epicenter-and-an-account-is-what-adds-a-store.md) at its mechanism. "An application creates one epicenter" stands and is what this record extends; `EpicenterBinding`, `EpicenterBindingFactory`, the `binding` option on `createEpicenter`, and the sentence calling the factory "the contract every seam leaf annotates against" are withdrawn. Its `Epicenter<never>` overload, kept so Local Mail could hold files and secrets without a store, is withdrawn with them: that type is now `Device`.
+- **Amends:** [ADR-0339](0339-an-application-creates-one-epicenter-and-an-account-is-what-adds-a-store.md) at its mechanism. "An application creates one epicenter" stands and is what this record extends; `EpicenterBinding`, `EpicenterBindingFactory`, the `binding` option on `createEpicenter`, and the sentence calling the factory "the contract every seam leaf annotates against" are withdrawn. The `Epicenter<never>` overload this mechanism produced, which let Local Mail hold files and secrets without a store, is withdrawn with them: that type is now `Device`.
 - **Relates:** [ADR-0321](0321-app-owned-storage-is-named-sqlite-files-an-application-opens-and-deletes-and-nothing-else.md) (what an app-owned file is), [ADR-0310](0310-an-applications-provider-credential-is-a-labeled-secret-and-the-browser-keeps-none.md) (a secret is a labelled credential), [ADR-0348](0348-the-local-address-carries-the-principal-and-a-database-needs-no-binding-to-know-whose-it-is.md) (the replica address carries the principal), [ADR-0351](0351-local-data-removal-is-an-explicit-sign-out-choice.md) (what removal takes), [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md)
 
 ## Context
@@ -13,10 +13,12 @@ runtime owns. One constructor took both, and the second half arrived through a
 `#platform/binding` seam that every application declared.
 
 Three of the four applications that composed a handle never called the second
-half. Honeycrisp, Vocab, and Whispering each declared the seam, shipped two leaf
-files, listed the condition in `package.json`, ran a test asserting which leaf
-each condition picks, and pulled an OPFS SQLite worker and
-`@sqlite.org/sqlite-wasm` into the bundle graph, to satisfy a constructor
+half. Honeycrisp and Whispering each declared the seam, shipped two leaf files,
+listed the condition in `package.json`, and ran a test asserting which leaf each
+condition picks. Vocab did not even have a decision to make and still paid: it
+shipped one unconditioned binding file whose own comment said "It uses neither
+capability today". All three pulled an OPFS SQLite worker and
+`@sqlite.org/sqlite-wasm` into the bundle graph to satisfy a constructor
 argument none of them read. `apps/local-mail` is the only application that opens
 a file or keeps a secret.
 
@@ -66,11 +68,13 @@ application they scoped. With one object there is nothing to disagree with.
   principal; a file belongs to an app and a device. The packages say which is
   which, so the exit work in ADR-0351 cannot reach the wrong one by accident.
 - **Three applications stop shipping a SQLite worker they never called**, along
-  with two platform leaves and a seam declaration each.
-- **The structural test that guarded the silent fallback moved rather than
-  died.** A dropped `epicenter-host` leaf sends the host-served build to OPFS
-  and tab memory while still building and starting; that test now lives in
-  `apps/local-mail/ui`, where the seam is.
+  with the seam declaration and two leaves Honeycrisp and Whispering each
+  carried, and the one leaf Vocab carried.
+- **The device-seam assertion is written where the seam now is.** A dropped
+  `epicenter-host` leaf sends the host-served build to OPFS and tab memory while
+  still building and starting. Honeycrisp's and Whispering's selection tests
+  survive without their binding arms, and `apps/local-mail/ui` gains the one
+  that covers this seam.
 - **`Device` varies by runtime and `@epicenter/app` no longer does.** The
   session package has no platform seam under it and must not grow one: the store
   is client-owned in every runtime (ADR-0226, ADR-0227).
@@ -81,8 +85,8 @@ application they scoped. With one object there is nothing to disagree with.
   the reason it wanted one does not survive. Blob bytes are principal-scoped,
   which makes them `@epicenter/data`'s kind of thing and the exit coordinator's
   business, while their storage varies by runtime, which is the app's own
-  `#platform/blobs` seam. That paragraph of ADR-0349 needs amending before
-  anything builds it.
+  `#platform/blobs` seam. ADR-0349 is amended at that paragraph, and which
+  object carries the blob verbs is reopened rather than answered.
 
 ## Considered alternatives
 

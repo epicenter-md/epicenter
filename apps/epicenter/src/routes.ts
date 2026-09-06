@@ -81,7 +81,6 @@ export const LOCAL_BLOB_ROUTE = {
  * who is asking and the id leaves the URL entirely.
  */
 export const CHECKOUT_ROUTE = route(`${CHECKOUT_PATH}/:dataId`);
-export const APP_STORAGE_ROUTE = route(DEVICE_PATH);
 /**
  * Where Google returns a person after Local Mail's consent screen.
  *
