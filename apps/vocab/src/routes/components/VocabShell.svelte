@@ -3,7 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { VOCAB_MODEL, VOCAB_SYSTEM_PROMPT } from '$lib/data';
-	import type { ReactiveData } from '@epicenter/svelte';
+	import { fromData } from '@epicenter/svelte';
 	import type { vocabDefinition } from '$lib/data';
 	import type { ReplicaData } from '@epicenter/data';
 	import { onDestroy } from 'svelte';
@@ -25,8 +25,17 @@
 	// One document, because an account is required. Everything below reads
 	// `data` and never asks which one it is.
 	let {
-		data,
-	}: { data: ReactiveData<ReplicaData<typeof vocabDefinition>> } = $props();
+		data: opened,
+		forgetDevice,
+	}: {
+		data: ReplicaData<typeof vocabDefinition>;
+		forgetDevice: () => Promise<void>;
+	} = $props();
+
+	// `fromData` runs here rather than above, because this mounts exactly once
+	// per opened store and the adaptation is per store.
+	/* svelte-ignore state_referenced_locally */
+	const data = fromData(opened);
 
 	// Read once, not `$derived`: the route mounts this exactly once per opened
 	// store, so `data` never changes while this component lives.
@@ -76,6 +85,7 @@
 
 <Sidebar.Provider>
 	<VocabSidebar
+		{forgetDevice}
 		conversations={chat.conversations}
 		activeConversationId={chat.activeConversationId}
 		onCreate={() =>

@@ -23,7 +23,7 @@
 	`VocabShell`, which both do this inline. Now there is one.
 -->
 <script lang="ts">
-	import type { ReactiveData } from '@epicenter/svelte';
+	import { fromData } from '@epicenter/svelte';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
@@ -47,22 +47,24 @@
 	const log = createLogger('whispering/ui-session');
 
 	let {
-		data,
+		data: opened,
 		children,
 	}: {
 		/**
-		 * The open replica, adapted. `ReactiveData` rather than the raw store,
-		 * because this only ever receives `epicenter.state.data` from the `ready`
-		 * branch and that value went through `fromData` on its way here. Taking
-		 * the raw type accepted an unadapted store, whose reads do not track, and
-		 * every domain built below would have gone quiet with nothing to say why.
+		 * The open replica, raw. The session component hands over what `open()`
+		 * resolved, and the adaptation happens here rather than above, because
+		 * this component mounts exactly once per opened store and `fromData` is
+		 * per store. Reads on an unadapted store do not track, and every domain
+		 * built below would have gone quiet with nothing to say why.
 		 */
-		data: ReactiveData<WhisperingAccountData>;
+		data: WhisperingAccountData;
 		children: Snippet;
 	} = $props();
 
 	// One mount creates one immutable session/provider pair. `data` is the store
 	// this branch was entered with; a different store means a different document.
+	/* svelte-ignore state_referenced_locally */
+	const data = fromData(opened);
 	/* svelte-ignore state_referenced_locally */
 	const session = createWhisperingUiSession({ data, blobs: BlobsLive });
 

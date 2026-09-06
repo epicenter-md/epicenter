@@ -33,9 +33,9 @@ describe('Epicenter-hosted Whispering identity', () => {
 		expect(vite).not.toContain('TAURI_DEV_HOST');
 		// Base path is not a seam (ADR-0347): SvelteKit's `base` carries the prefix
 		// into every `resolve` call, so no leaf states it a second time.
-		expect(existsSync(join(ROOT, 'src/lib/platform/base-path.browser.ts'))).toBe(
-			false,
-		);
+		expect(
+			existsSync(join(ROOT, 'src/lib/platform/base-path.browser.ts')),
+		).toBe(false);
 		expect(existsSync(join(ROOT, 'src/lib/constants/urls.ts'))).toBe(false);
 	});
 

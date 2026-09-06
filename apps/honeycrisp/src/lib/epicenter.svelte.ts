@@ -26,7 +26,6 @@
 
 import { createEpicenter } from '@epicenter/app';
 import { APPS } from '@epicenter/constants/apps';
-import { fromEpicenter } from '@epicenter/svelte';
 import { authClient } from '#platform/auth';
 import { honeycrispDefinition } from '$lib/data';
 
@@ -38,13 +37,11 @@ import { honeycrispDefinition } from '$lib/data';
  * handle here is what makes that the only reachable caller: what the
  * application imports is the session, which has no close on it at all.
  */
-const handle = createEpicenter({
+export const epicenter = createEpicenter({
 	appId: APPS.HONEYCRISP.id,
 	definition: honeycrispDefinition,
 	account: authClient,
 });
-
-export const epicenter = fromEpicenter(handle);
 
 // A hot swap of this module builds a second handle while the first still holds
 // the Web Lock its store claimed, so the replacement opens into `AlreadyOpen`
@@ -54,7 +51,7 @@ export const epicenter = fromEpicenter(handle);
 // **The disposer RETURNS the close.** Vite awaits a disposer's result
 // (`hmrClient.fetchUpdate`), so returning the promise is what makes "release
 // the claim" happen before the replacement module runs. It used to be
-// `void handle.close()`, which handed Vite `undefined` to await and left the
+// `void epicenter.close()`, which handed Vite `undefined` to await and left the
 // release racing the reload: the new module could ask for the lock while the
 // old document was still letting go of it, and the answer was a false
 // `AlreadyOpen`. Construction being inert closes the rest of that gap, because
@@ -68,6 +65,6 @@ export const epicenter = fromEpicenter(handle);
 // the swap, so the update goes on up to the page exactly as it did before, with
 // the old handle now closed.
 if (import.meta.hot) {
-	import.meta.hot.dispose(() => handle.close());
+	import.meta.hot.dispose(() => epicenter.close());
 	import.meta.hot.accept(() => import.meta.hot?.invalidate());
 }

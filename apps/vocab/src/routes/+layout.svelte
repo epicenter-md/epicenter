@@ -5,7 +5,7 @@
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
-	import { authClient } from '$lib/platform/auth';
+	import { authClient } from '$lib/auth';
 	import '../app.css';
 
 	let { children } = $props();

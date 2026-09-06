@@ -25,8 +25,7 @@
 	import { auth } from '#platform/auth';
 	import type { WorkingCopy } from '@epicenter/data/artifact/checkout';
 	import { getHoneycrisp } from '$lib/app.svelte.js';
-	import { epicenter } from '$lib/epicenter.svelte.js';
-	import { navigation } from '$lib/navigation.svelte.js';
+		import { navigation } from '$lib/navigation.svelte.js';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 	import PullToFolder from './PullToFolder.svelte';
 	import SendFolderEdits from './SendFolderEdits.svelte';
@@ -34,10 +33,13 @@
 	let {
 		syncStatus,
 		folder,
+		forgetDevice,
 	}: {
 		syncStatus: () => SyncConnectionStatus | undefined;
 		/** The `~/Epicenter` folder, or nothing in a build with no filesystem. */
 		folder: WorkingCopy | undefined;
+		/** Erase this account's copy and reopen, which only the session can do. */
+		forgetDevice: () => Promise<void>;
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -96,9 +98,9 @@
 						// app-owned SQLite. The working copy is the person's own folder of
 						// notes, deliberately outside the store (ADR-0337), and is left
 						// alone: deleting somebody's own directory is not what this button
-						// says it does. Erasing the replica is the rest of it.
-						const { error } = await epicenter.eraseReplica();
-						if (error !== null) throw error;
+						// says it does. Erasing the replica is the rest of it, and the
+						// session owns it, because erasing swaps the session.
+						await forgetDevice();
 					}}
 				/>
 				<Sidebar.Trigger />

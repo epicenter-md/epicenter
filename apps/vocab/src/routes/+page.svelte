@@ -1,40 +1,22 @@
 <script lang="ts">
-	import {
-		CannotOpenScreen,
-		SignInScreen,
-	} from '@epicenter/app-shell/boot-screens';
-	import { Loading } from '@epicenter/ui/loading';
-	import { authClient } from '$lib/platform/auth';
-	import { epicenter } from '$lib/epicenter.svelte.js';
-	import VocabShell from './components/VocabShell.svelte';
+	import { SignInScreen } from '@epicenter/app-shell/boot-screens';
+	import { auth } from '$lib/auth';
+	import ConversationsSession from './components/ConversationsSession.svelte';
 
-	// The boot node: it opens the store and renders the four states of that
-	// session. Vocab's protected surface is one route at `/`, so the page is the
+	// The boot node: it decides who is looking and keys one session on the
+	// answer. Vocab's protected surface is one route at `/`, so the page is the
 	// narrowest node not shared with `/auth/callback` (ADR-0345).
 	//
-	// The screens are `@epicenter/app-shell/boot-screens`, which take the two
-	// words that are Vocab's: its name, and `conversations`. See
-	// `apps/honeycrisp/src/routes/+page.svelte` for why `authClient` rather than
-	// `auth`.
-	const signedOut = authClient.state.status === 'signed-out';
-
-	if (!signedOut) void epicenter.open();
+	// The read tracks. A sign-out flips this `{#if}`, a different principal
+	// remounts the `{#key}`, and a credential degrading to `reauth-required`
+	// changes neither, so editing continues while sync reports it (ADR-0350).
+	// Signing in is a door (ADR-0342, rejected): nothing opens while signed out.
 </script>
 
-{#if signedOut}
-	<SignInScreen auth={authClient} appName="Vocab" noun="conversations" />
-{:else if epicenter.state.status === 'ready'}
-	<VocabShell data={epicenter.state.data} />
-{:else if epicenter.state.status === 'failed'}
-	<CannotOpenScreen
-		appName="Vocab"
-		noun="conversations"
-		error={epicenter.state.error}
-		retry={() => void epicenter.open()}
-	/>
+{#if auth.state.status === 'signed-out'}
+	<SignInScreen {auth} appName="Vocab" noun="conversations" />
 {:else}
-	<!-- `closed` and `opening` are one screen; `closed` is unreachable during a
-	     boot, and the one caller that returns a session to it reopens on
-	     failure. -->
-	<Loading class="h-dvh" label="Opening your conversations…" />
+	{#key auth.state.principalId}
+		<ConversationsSession />
+	{/key}
 {/if}

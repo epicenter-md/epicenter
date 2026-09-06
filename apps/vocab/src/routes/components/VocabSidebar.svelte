@@ -7,8 +7,7 @@
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import MessageSquareTextIcon from '@lucide/svelte/icons/message-square-text';
 	import TrashIcon from '@lucide/svelte/icons/trash';
-	import { auth } from '$lib/platform/auth';
-	import { epicenter } from '$lib/epicenter.svelte';
+	import { auth } from '$lib/auth';
 	import { dictation } from '$lib/state/dictation.svelte';
 	import EntriesPanel from './EntriesPanel.svelte';
 
@@ -18,12 +17,15 @@
 		onCreate,
 		onSwitch,
 		onPractice,
+		forgetDevice,
 	}: {
 		conversations: ConversationHandle[];
 		activeConversationId: ConversationId | null;
 		onCreate: () => void;
 		onSwitch: (conversationId: ConversationId) => void;
 		onPractice: (entryTexts: string[]) => void;
+		/** Erase this account's copy and reopen, which only the session can do. */
+		forgetDevice: () => Promise<void>;
 	} = $props();
 </script>
 
@@ -44,8 +46,7 @@
 					onForgetDevice={async () => {
 						// Vocab keeps no account data outside the store, so erasing the
 						// replica is the whole of what forgetting this device means.
-						const { error } = await epicenter.eraseReplica();
-						if (error !== null) throw error;
+						await forgetDevice();
 					}}
 				/>
 			</div>

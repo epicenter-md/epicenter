@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { isCallbackAuthClient } from '@epicenter/auth';
 	import { Loading } from '@epicenter/ui/loading';
-	import { authClient } from '$lib/platform/auth';
+	import { authClient } from '$lib/auth';
 
 	// Completion only, and it opens nothing: the store is opened by
 	// `+page.svelte`, which is a sibling under the same chrome-only root layout

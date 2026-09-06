@@ -11,7 +11,7 @@
 		buildEntryCandidatePrompt,
 		parseEntryCandidates,
 	} from '$lib/entry-candidates';
-	import { auth } from '$lib/platform/auth';
+	import { auth } from '$lib/auth';
 	import { inferenceConnections } from '$lib/state/inference-connections.svelte';
 	import { getVocabSurface } from '$lib/surface';
 	import DictationButton from './DictationButton.svelte';

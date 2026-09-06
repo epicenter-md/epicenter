@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import type { ReactiveData } from '@epicenter/svelte';
+	import { fromData } from '@epicenter/svelte';
 	import { createHoneycrisp, setHoneycrisp } from '$lib/app.svelte.js';
 	import type { HoneycrispData } from '$lib/data';
 	import { openWorkingCopy } from '#platform/folder';
@@ -11,11 +11,18 @@
 	import NoteList from './NoteList.svelte';
 	import HoneycrispSidebar from './Sidebar.svelte';
 
-	// The opened store, awake, and everything a sidebar shows about it is read
-	// off it. The route used to hand four props down, assembled by the opener it
+	// The opened store, raw, and everything a sidebar shows about it is read off
+	// it. The route used to hand four props down, assembled by the opener it
 	// owned; the store states its own address and its own connection now
-	// (ADR-0340), and `fromEpicenter` adapted its reads before handing it over.
-	let { data }: { data: ReactiveData<HoneycrispData> } = $props();
+	// (ADR-0340). `fromData` runs here rather than above, because this component
+	// mounts exactly once per opened store and the adaptation is per store.
+	let {
+		data: opened,
+		forgetDevice,
+	}: { data: HoneycrispData; forgetDevice: () => Promise<void> } = $props();
+
+	/* svelte-ignore state_referenced_locally */
+	const data = fromData(opened);
 
 	// The application object is provided here rather than by a component whose
 	// whole body was this line. `setContext` must run during initialisation, and
@@ -53,7 +60,7 @@
 />
 
 <SidebarProvider>
-	<HoneycrispSidebar {syncStatus} {folder} />
+	<HoneycrispSidebar {syncStatus} {folder} {forgetDevice} />
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">

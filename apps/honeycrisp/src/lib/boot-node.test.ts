@@ -34,7 +34,18 @@ const callback = join(routes, 'auth/callback/+page.svelte');
 
 /** The application's one session module, as a route would import it. */
 const SESSION_MODULE = '$lib/epicenter';
-/** The one node that is allowed to open, and is not an ancestor of the callback. */
+/**
+ * The one component that opens, which the boot node mounts under its gate.
+ *
+ * The open moved off the boot node when a session became a value the tree owns
+ * (ADR-0350), so a boot that drifted upward would now import a component rather
+ * than call `epicenter.open` itself. That is why the assertions below forbid an
+ * ancestor from naming EITHER: greping one string would pass over the drift.
+ */
+const SESSION_COMPONENT = 'src/routes/components/NotesSession.svelte';
+/** The one node that is allowed to gate, and is not an ancestor of the callback. */
+/** What the session mounts once the store is open, which must not open it. */
+const SHELL = 'src/routes/components/StoreShell.svelte';
 const BOOT_NODE = 'src/routes/+page.svelte';
 
 /**
@@ -72,10 +83,12 @@ describe('the callback opens nothing', () => {
 				layout: relative(appRoot, layout),
 				imports: source.includes(SESSION_MODULE),
 				opens: source.includes('epicenter.open'),
+				mounts: source.includes(SESSION_COMPONENT.split('/').pop() ?? ''),
 			}).toEqual({
 				layout: relative(appRoot, layout),
 				imports: false,
 				opens: false,
+				mounts: false,
 			});
 		}
 	});
@@ -94,7 +107,24 @@ describe('the callback opens nothing', () => {
 		// which is the pair that says where the boundary is rather than that one
 		// file happens to be quiet.
 		const bootNode = join(appRoot, BOOT_NODE);
-		expect(await Bun.file(bootNode).text()).toContain('epicenter.open');
+		expect(await Bun.file(bootNode).text()).toContain(
+			SESSION_COMPONENT.split('/').pop(),
+		);
 		expect(ancestorLayouts(callback)).not.toContain(bootNode);
+
+		// The positive half is on the component that actually opens.
+		expect(await Bun.file(join(appRoot, SESSION_COMPONENT)).text()).toContain(
+			'epicenter.open',
+		);
+	});
+
+	test('the shell renders and does not open', async () => {
+		// The other direction the boot can drift. The shell holds everything that
+		// exists because the store is open, and the open itself must not follow it
+		// down: a shell that opened would still build, still start, and still pass
+		// every test above, because it is not an ancestor of the callback.
+		expect(await Bun.file(join(appRoot, SHELL)).text()).not.toContain(
+			'epicenter.open',
+		);
 	});
 });

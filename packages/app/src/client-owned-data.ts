@@ -16,7 +16,11 @@
  * trusted app (ADR-0334), so both leaves reach the same store the same way.
  */
 
-import { type AuthClient, accountOf } from '@epicenter/auth';
+import {
+	type AccountSnapshot,
+	type AuthClient,
+	accountOf,
+} from '@epicenter/auth';
 import {
 	eraseGenerations,
 	type OpenedDatabase,
@@ -33,7 +37,6 @@ import { attachStoreSync, type SyncConnection } from '@epicenter/data/sync';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { EpicenterDataOptions } from './index.js';
 
 const log = createLogger('app');
 
@@ -83,11 +86,21 @@ const EpicenterDataBackgroundError = defineErrors({
 export async function openReplica<TDefinition extends DataDefinition>({
 	appId,
 	definition,
-	account,
-}: EpicenterDataOptions<TDefinition> & { appId: string }): Promise<
+	account: address,
+}: {
+	appId: string;
+	definition: TDefinition;
+	/**
+	 * The account, read at one instant rather than the live client.
+	 *
+	 * The caller snapshots with `accountOf`, so the address this opens is the
+	 * one the caller decided on, even if the client signs in as somebody else
+	 * while this is still queued behind a release.
+	 */
+	account: AccountSnapshot;
+}): Promise<
 	Result<OpenedDatabase<TDefinition>, StoreError | DataDefinitionParseError>
 > {
-	const address = accountOf(account);
 	const resolved = await resolveGeneration(definition, {
 		appId,
 		account: address,

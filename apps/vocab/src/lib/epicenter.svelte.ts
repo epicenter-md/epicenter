@@ -25,9 +25,8 @@
 
 import { createEpicenter } from '@epicenter/app';
 import { APPS } from '@epicenter/constants/apps';
-import { fromEpicenter } from '@epicenter/svelte';
+import { authClient } from '$lib/auth';
 import { vocabDefinition } from '$lib/data';
-import { authClient } from '$lib/platform/auth';
 
 /**
  * The handle, module-private, because `close` is on it.
@@ -36,19 +35,17 @@ import { authClient } from '$lib/platform/auth';
  * one is the hot reload below. What the application imports is the session,
  * which has no close on it at all.
  */
-const handle = createEpicenter({
+export const epicenter = createEpicenter({
 	appId: APPS.VOCAB.id,
 	definition: vocabDefinition,
 	account: authClient,
 });
-
-export const epicenter = fromEpicenter(handle);
 
 // The disposer RETURNS the close, because Vite awaits it: the replacement
 // module must not ask for the Web Lock while this document is still letting go
 // of it. Construction is inert, so the replacement acquires nothing until the
 // page calls `open`.
 if (import.meta.hot) {
-	import.meta.hot.dispose(() => handle.close());
+	import.meta.hot.dispose(() => epicenter.close());
 	import.meta.hot.accept(() => import.meta.hot?.invalidate());
 }

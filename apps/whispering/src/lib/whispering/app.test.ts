@@ -202,24 +202,23 @@ async function openWhispering(auth: AuthClient) {
 		definition: whisperingDefinition,
 		account: auth,
 	});
-	const opened = await handle.open();
-	return { handle, opened };
+	const session = handle.open();
+	return { handle, session, opened: await session.opened };
 }
 
 test('a signed-out account opens nothing at all', async () => {
 	// It used to open a device document and never dial. An authority mints every
 	// generation (ADR-0336), so there is no such document to fall back to and the
-	// open refuses instead. It refuses as a `Result` and a `failed` state rather
-	// than by throwing: the layout reads auth before it ever gets here and
-	// renders the sign-in gate, so nobody meets this, and a refusal that arrives
-	// as a state is one a surface can render.
+	// open refuses instead. It refuses as a `Result` rather than by throwing: the
+	// layout reads auth before it ever gets here and renders the sign-in gate, so
+	// nobody meets this, and a refusal that arrives as a value is one a surface
+	// can render.
 	await resetStorage();
 	const { handle, opened } = await openWhispering(
 		createFakeAuth({ status: 'signed-out' }),
 	);
 
 	expect(opened.error).not.toBeNull();
-	expect(handle.state.status).toBe('failed');
 	expect(await indexedDB.databases()).toEqual([]);
 	await handle.close();
 });

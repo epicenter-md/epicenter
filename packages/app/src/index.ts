@@ -22,6 +22,7 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
+import { type AccountSnapshot, accountOf } from '@epicenter/auth';
 import { isAppId } from '@epicenter/constants/app-id';
 import type { ReplicaData } from '@epicenter/data';
 import type { OpenedDatabase, StoreError } from '@epicenter/data/browser';
@@ -113,157 +114,85 @@ export type DataOpenError =
 	| DataSessionError;
 
 /**
- * Where one data session is: four states, and the data rides on `ready`.
+ * One open of one replica, and the two things that end it.
  *
- * ONE property rather than a `status` beside a `data`, and that is not taste.
- * TypeScript narrows a discriminated union and cannot correlate two
- * properties, so a flat pair would leave `data` optional at every read site
- * and "you cannot read the store before it is open" would stop being a rule
- * the compiler keeps.
+ * A value the caller owns, not a state the handle publishes. `open()` hands one
+ * back synchronously and every state a surface used to switch on is a branch of
+ * `opened`: pending is `{#await}`, refused is its `error`, ready is its `data`.
+ * There is no `closed` state, because a caller holding this is holding the
+ * session that has it.
  *
- * **`closed` is the whole of "this session holds nothing".** It is where a
- * fresh handle starts and where `close` returns it, because those are the same
- * fact: no lock, no connection, no document. Nothing distinguishes them for
- * any caller, so nothing here does either.
- *
- * **There is no `already-open` state.** An ownership conflict is one of the
- * refusals `open` can answer with, and it arrives as `failed` carrying
- * `StoreError.AlreadyOpen`. Promoting it would put one failure in the state
- * machine and the other six in an error, so a surface would switch on
- * `status` and then switch on `name` anyway; Honeycrisp's boot node already
- * does the second switch, and it does it in one place.
- *
- * **`data` is the typed application data and nothing else.** It carries no
- * `open`, no `close`, no `erase`, and no disposal: those belong to the session
- * that acquired the lock, the socket, and the listener together, and a store
- * that could free one of the three would leave a connection dialling against a
- * document whose every verb throws (ADR-0340).
+ * **A session answers for the principal that created it.** `open()` reads the
+ * account once, at the call, so a client that signs in as somebody else while
+ * this was opening does not move the address this opened.
  */
-export type EpicenterState<TDefinition extends DataDefinition> =
-	| { readonly status: 'closed' }
-	| { readonly status: 'opening' }
-	| { readonly status: 'ready'; readonly data: ReplicaData<TDefinition> }
-	| { readonly status: 'failed'; readonly error: DataOpenError };
+export type DataSession<TDefinition extends DataDefinition> = {
+	/**
+	 * What this open answered, settled once.
+	 *
+	 * It resolves a `Result` and never rejects. `close()` ends what the open
+	 * acquired; it does not retract what the open answered, so a surface still
+	 * rendering the resolved branch is not told a different story on its way
+	 * out.
+	 */
+	readonly opened: Promise<Result<ReplicaData<TDefinition>, DataOpenError>>;
+	/**
+	 * Release the lock, the socket, and the page-hide listener together
+	 * (ADR-0340).
+	 *
+	 * Idempotent, and a no-op once the handle has superseded this session: the
+	 * tree creates a keyed child before it destroys the one it replaces, so the
+	 * old child's cleanup lands after the new child has already opened. It
+	 * resolves when the address is free, which is what lets a caller await a
+	 * close and then open without meeting its own lock.
+	 */
+	close(): Promise<void>;
+	/**
+	 * Close this session and erase the copy it was opened for.
+	 *
+	 * Every generation this account holds through this application, because a
+	 * person forgetting their copy means all of it: erasing only the newest
+	 * would leave the number below it to be opened next boot.
+	 *
+	 * **A failure does not reopen.** Closing is what the deletion needs rather
+	 * than the deletion itself, so a refused erase leaves the copy on the device
+	 * and leaves the handle holding nothing. Reopening is the caller's move, and
+	 * it is the same call a retry makes.
+	 */
+	erase(): Promise<Result<void, StoreError>>;
+};
 
 /**
- * One application's Epicenter: five nouns, and verbs under the noun they
- * belong to.
- *
- * `openSqlite` and `deleteSqlite` were two verbs sharing a suffix, which is a
- * noun that had not been written down.
+ * One application's handle: the account it acts as, and the verb that opens it.
  *
  * **Construction is inert and opening is a verb.** `createEpicenter` claims no
  * Web Lock, touches no IndexedDB, and makes no round trip; `open` does all
- * three, and `state` is how a surface watches it. `data` used to be a lazy
- * getter whose READ started the open, which put substantial asynchronous
- * resource acquisition behind property syntax: an application could not say
- * when it happened, a surface could not retry it, and a `{ ...epicenter }`
- * anywhere claimed a lock. Sync attaches inside `open`, because the account is
- * here.
+ * three plus dialling sync and attaching the flush-on-hide listener.
  *
- * `[TDefinition] extends [never]` fails DOWNWARD: omitting the definition
- * yields the smaller type rather than the larger, so a handle with no store
- * cannot be read as one that has it.
+ * **The handle serializes sessions, because the tree cannot.** Svelte creates
+ * the branch for a new key before it destroys the old one, so a keyed child
+ * that opens at init runs before its predecessor's cleanup closes. Every
+ * acquire and release the handle performs against its one address goes through
+ * one queue, which is what makes tree order irrelevant.
  */
 export type Epicenter<TDefinition extends DataDefinition> = {
 	readonly appId: string;
-	readonly account: AuthClient;
 	/**
-	 * Where this session is, right now. Reading it acquires nothing.
+	 * Open this application's store as a replica of the account, syncing.
 	 *
-	 * A snapshot, not a subscription: `onStateChange` is how a caller hears
-	 * about the next one, and `@epicenter/svelte` is what turns the pair
-	 * into a rune. Reading this from a framework that has neither is a
-	 * plain property read that answers `closed` until something opens.
+	 * Synchronous, and it supersedes whatever session the handle was holding:
+	 * that one is closed first, and this one's open runs after the release, so
+	 * it meets a free address rather than its own lock.
 	 */
-	readonly state: EpicenterState<TDefinition>;
+	open(): DataSession<TDefinition>;
 	/**
-	 * Open this application's store as a replica of `account`, syncing.
+	 * Close whichever session the handle is holding.
 	 *
-	 * **This is the only thing that acquires.** It claims the Web Lock,
-	 * opens IndexedDB, hydrates the document, dials sync, and attaches the
-	 * flush-on-hide listener. An application calls it once, from its root,
-	 * after authentication is ready.
-	 *
-	 * Deterministic under repetition, and each case is a different answer
-	 * rather than the same one three times. While `opening`, every caller
-	 * joins the one attempt. While `ready`, it resolves the open store and
-	 * acquires nothing. While `failed`, it RETRIES: `AlreadyOpen` is
-	 * repaired by the other window closing and `GenerationUnreachable` by
-	 * the network returning, and neither of those is a repair a person can
-	 * perform if the answer is memoized. While `closed` after a close, it
-	 * opens again.
-	 *
-	 * It resolves a `Result`, and the error is the store's own rather than
-	 * `DeviceError.StorageFailed` wrapping it. An application's boot node
-	 * switches on the failure's `name` to choose between a retry and an
-	 * erase; wrapping hid that name under `cause`, so every arm became the
-	 * fallback and both repairs disappeared.
-	 */
-	open(): Promise<Result<ReplicaData<TDefinition>, DataOpenError>>;
-	/**
-	 * Hear about the next state, and stop hearing about it.
-	 *
-	 * The current state is not replayed: a caller already has it from
-	 * `state`, and replaying it would make a subscriber that renders on
-	 * every call render once for a transition that did not happen.
-	 */
-	onStateChange(
-		listener: (state: EpicenterState<TDefinition>) => void,
-	): () => void;
-	/**
-	 * Erase this account's copy on this device, and nothing at the
-	 * authority.
-	 *
-	 * `replica` because that is exactly what it deletes, and it is the word
-	 * a developer reads unsoftened. It takes every generation this account
-	 * holds through this application: erasing only the newest would leave
-	 * the number below it to be opened next boot.
-	 *
-	 * **It closes the session first, so it succeeds from every state.**
-	 * Erasing takes the same Web Lock an open holds, and this handle is the
-	 * one thing that can let that lock go, so requiring a caller to close
-	 * first would be a two-step verb whose first step only this object can
-	 * perform. A person invokes this from an account surface while their
-	 * data is open, which is the whole live path.
-	 *
-	 * **A failure rolls the close back.** A session that was serving data,
-	 * or acquiring it, and whose erase did not happen is REOPENING when
-	 * this resolves: the state is `opening` and settles to `ready` on its
-	 * own. What it must never be is `closed`, which is the one state
-	 * nothing leaves by itself and no boot node offers a button for. The
-	 * close is a means, not the act, and it is not kept when the act fails.
-	 *
-	 * The caller reports the error through a surface that OUTLIVES the
-	 * shell, because the close already unmounted the one that invoked this.
-	 * That is why an application's confirmation dialog and toaster are
-	 * mounted above its boot node rather than inside it.
-	 *
-	 * `AlreadyOpen` is still reachable and still means what it says: ANOTHER
-	 * window of this application holds the same address, and closing it is
-	 * the repair.
-	 */
-	eraseReplica(): Promise<Result<void, StoreError>>;
-	/**
-	 * Release everything `open` acquired: the socket, the page-hide
-	 * listener, and the document holding the Web Lock.
-	 *
-	 * Idempotent, and it returns the session to `closed`, which is the same
-	 * `closed` a fresh handle starts in. It is not terminal, and that is a
-	 * decision rather than a new feature: terminal was a property of the
-	 * memoized getter this replaces, and keeping it would need a fifth
-	 * state that only a hot reload and a test could ever observe, to refuse
-	 * a call neither of them makes.
-	 *
-	 * A close that lands while an open is in flight ends what that open
-	 * acquired and publishes nothing for it, so the session never reports
-	 * `ready` for a store nobody can reach.
-	 *
-	 * An application does not call this. The page is the lifetime
-	 * (ADR-0088), and the two callers that want a lifetime shorter than a
-	 * document are a hot reload, which replaces the module that built the
-	 * handle and must release its claim before the replacement opens, and a
-	 * test.
+	 * An application does not call this; a component closes the session it owns.
+	 * The caller this exists for is a hot reload, which replaces the module that
+	 * built the handle and has to release its claim before the replacement
+	 * opens, with no reference to the session in hand. A handle holding nothing
+	 * closes without complaint.
 	 */
 	close(): Promise<void>;
 };
@@ -280,158 +209,143 @@ export function createEpicenter<const TDefinition extends DataDefinition>({
 	}
 
 	/**
-	 * The session, held in locals and nothing else.
+	 * What the handle knows: which session owns the address, and the order
+	 * everything it does to that address happens in.
 	 *
-	 * `held` is what `open` acquired: the store AND the closer for all three
-	 * things opening took (ADR-0340). `current` is the one in-flight open every
-	 * concurrent caller joins, tagged with the epoch it belongs to. `epoch` is
-	 * bumped by `close`, so an open that lands after one recognises that the
-	 * session it was opening for is gone, ends what it acquired, and publishes
-	 * nothing. `closing` is the in-flight close, so a second one joins the first
-	 * rather than resolving while the lock is still being let go.
-	 *
-	 * **Two rules keep the four of them honest.** `current` is cleared by the
-	 * attempt that set it, and only AFTER that attempt has finished releasing;
-	 * `close` never clears it, because clearing it early lets a second `open`
-	 * ask for a Web Lock the first one has not let go of yet and meet a
-	 * conflict with no other window in it.
+	 * `live` is the session the handle is holding, or nothing. `queue` is the
+	 * chain every acquire and release joins, so a release always finishes before
+	 * the next acquire starts. It never rejects: a step that throws is a step
+	 * whose own session already heard about it.
 	 */
-	let held: OpenedDatabase<TDefinition> | undefined;
-	let current:
-		| {
-				readonly epoch: number;
-				readonly attempt: Promise<
-					Result<ReplicaData<TDefinition>, DataOpenError>
-				>;
-		  }
-		| undefined;
-	let closing: Promise<void> | undefined;
-	let epoch = 0;
-	let state: EpicenterState<TDefinition> = { status: 'closed' };
-	const listeners = new Set<(state: EpicenterState<TDefinition>) => void>();
+	let live: SessionRecord<TDefinition> | undefined;
+	let queue: Promise<void> = Promise.resolve();
 
-	function publish(next: EpicenterState<TDefinition>): void {
-		state = next;
-		// A copy, because a listener is allowed to unsubscribe itself while it
-		// is being told.
-		for (const listener of [...listeners]) listener(next);
+	function enqueue(step: () => Promise<void>): Promise<void> {
+		const ran = queue.then(step);
+		queue = ran.catch(() => undefined);
+		return ran;
 	}
 
-	const open = (): Promise<Result<ReplicaData<TDefinition>, DataOpenError>> => {
-		// An open asked for during a close is asking for the session AFTER it.
-		// Joining the in-flight attempt would hand it the one the close is
-		// ending, which resolves `SessionClosed`; starting a second one now would
-		// race the lock the close is still letting go of.
-		if (closing !== undefined) return closing.then(open);
-		if (current !== undefined) return current.attempt;
-		if (held !== undefined) return Promise.resolve(Ok(held.store));
-		const mine = epoch;
-		const attempt = (async (): Promise<
-			Result<ReplicaData<TDefinition>, DataOpenError>
-		> => {
-			// Contained rather than propagated. `openReplica` resolves a `Result`
-			// and contains its own throws, and a promise that breaks that anyway
-			// would otherwise leave `current` set forever: every later `open`
-			// would return the same rejection and `close` would rethrow it, which
-			// is a session with no way out of `opening`.
-			const opened = await openReplica({ appId, definition, account }).catch(
-				(cause: unknown) => DataSessionError.OpenerThrew({ cause }),
-			);
-			if (opened.error !== null) {
-				current = undefined;
-				// A close that raced this has already published `closed`, and a
-				// failure that arrives afterwards is about a session nobody is
-				// watching any more.
-				if (mine === epoch) publish({ status: 'failed', error: opened.error });
-				return Err(opened.error);
-			}
-			if (mine !== epoch) {
-				// Closed while this was opening. What it acquired is released here,
-				// because the close had nothing to release when it ran, and
-				// `current` stays set until the release is done so the next `open`
-				// cannot race the lock on its way out.
-				await opened.data.close();
-				current = undefined;
-				return DataSessionError.SessionClosed();
-			}
-			held = opened.data;
-			current = undefined;
-			publish({ status: 'ready', data: opened.data.store });
-			return Ok(opened.data.store);
-		})();
-		// Set BEFORE anything is published, so a listener that calls `open` while
-		// being told about `opening` joins this attempt rather than starting a
-		// second one against the same address.
-		current = { epoch: mine, attempt };
-		publish({ status: 'opening' });
-		return attempt;
-	};
+	/**
+	 * Take the address away from whatever holds it, and schedule its release.
+	 *
+	 * Marking the record retired is synchronous, so an open still in flight sees
+	 * it the moment it resumes and gives back what it acquired instead of
+	 * publishing a store nobody can reach.
+	 */
+	function retire(): void {
+		const previous = live;
+		live = undefined;
+		if (previous === undefined || previous.retired) return;
+		previous.retired = true;
+		void enqueue(async () => {
+			const acquired = previous.acquired;
+			previous.acquired = undefined;
+			await acquired?.close();
+		});
+	}
 
-	const close = (): Promise<void> =>
-		// Memoized while it runs, so a second caller awaits the same release
-		// rather than finding `held` already cleared and reporting `closed` over
-		// a lock the first one is still letting go of. Cleared afterwards,
-		// because a closed session opens again.
-		(closing ??= (async () => {
-			try {
-				epoch += 1;
-				// Awaited before anything is released, so a close during an open
-				// ends what that open acquires rather than returning while it is
-				// still acquiring it. The open's own settle sees the stale epoch,
-				// closes itself, and clears `current`, which is why nothing is
-				// read off this.
-				const inFlight = current;
-				if (inFlight !== undefined) await inFlight.attempt;
-				const acquired = held;
-				held = undefined;
-				if (acquired !== undefined) await acquired.close();
-				if (state.status !== 'closed') publish({ status: 'closed' });
-			} finally {
-				closing = undefined;
+	/** Wait for everything already scheduled against the address to settle. */
+	const settled = () => enqueue(async () => undefined);
+
+	const open = (): DataSession<TDefinition> => {
+		// Read at the call, so this session answers for this principal even if
+		// the client moves while the open is still queued behind a release.
+		// Contained, because `open` is synchronous and a caller assigning its
+		// result cannot catch: a client too broken to state an address fails this
+		// session rather than the statement that asked for one.
+		let address: AccountSnapshot | undefined;
+		let readFailure: unknown;
+		try {
+			address = accountOf(account);
+		} catch (cause) {
+			readFailure = cause;
+		}
+
+		let publish!: (
+			outcome: Result<ReplicaData<TDefinition>, DataOpenError>,
+		) => void;
+		const opened = new Promise<Result<ReplicaData<TDefinition>, DataOpenError>>(
+			(resolve) => {
+				publish = resolve;
+			},
+		);
+		const record: SessionRecord<TDefinition> = {
+			acquired: undefined,
+			retired: false,
+		};
+
+		retire();
+		live = record;
+
+		void enqueue(async () => {
+			if (record.retired) {
+				publish(DataSessionError.SessionClosed());
+				return;
 			}
-		})());
+			if (address === undefined) {
+				if (live === record) live = undefined;
+				publish(DataSessionError.OpenerThrew({ cause: readFailure }));
+				return;
+			}
+			// Contained rather than propagated. `openReplica` resolves a `Result`
+			// and contains its own throws; a promise that breaks that anyway must
+			// not leave this session pending forever, because a surface awaiting
+			// `opened` would never leave its loading branch.
+			const outcome = await openReplica({
+				appId,
+				definition,
+				account: address,
+			}).catch((cause: unknown) => DataSessionError.OpenerThrew({ cause }));
+
+			if (outcome.error !== null) {
+				if (live === record) live = undefined;
+				publish(Err(outcome.error));
+				return;
+			}
+			if (record.retired) {
+				// Superseded while this was acquiring. Release what it took here,
+				// because the retire that ran had nothing to release yet.
+				await outcome.data.close();
+				publish(DataSessionError.SessionClosed());
+				return;
+			}
+			record.acquired = outcome.data;
+			publish(Ok(outcome.data.store));
+		});
+
+		return Object.freeze({
+			opened,
+			close: () => {
+				if (live === record) retire();
+				// A superseded session was retired by the open that replaced it, so
+				// this awaits the queue rather than closing again. That is also what
+				// makes a second close wait for the first one's release instead of
+				// resolving over a lock still being let go.
+				return settled();
+			},
+			erase: async () => {
+				if (live === record) retire();
+				await settled();
+				return eraseReplicaOf({ appId, definition, account });
+			},
+		});
+	};
 
 	return Object.freeze({
 		appId,
-		account,
-		get state() {
-			return state;
-		},
 		open,
-		onStateChange: (listener: (state: EpicenterState<TDefinition>) => void) => {
-			listeners.add(listener);
-			return () => {
-				listeners.delete(listener);
-			};
+		close: () => {
+			retire();
+			return settled();
 		},
-		// Closed first, because erasing takes the Web Lock this session is holding
-		// and this handle is the only thing that can release it. `close` is
-		// idempotent and returns the session to `closed`, which is where a
-		// successful erase leaves it: there is nothing on this device to reopen.
-		//
-		// **A failed erase rolls the session back.** Closing is not the deletion,
-		// it is what the deletion needs, so a session that was serving data before
-		// an erase that did not happen has to be serving it again afterwards.
-		// Without this the handle publishes `closed` and stops: the surface that
-		// invoked this unmounts with it, the failure is reported to nobody, and
-		// the person is left on a screen with no data and no button. Reopening is
-		// the same call a retry would make, and it takes the lock straight back
-		// because nothing else claimed it in between.
-		//
-		// **Every state but `closed` is rolled back**, rather than `ready` alone.
-		// `closed` is the one where declining is right: nothing was serving data,
-		// and a test or a hot reload that closed deliberately should stay closed.
-		// `opening` and `failed` were both sessions somebody was looking at, and
-		// this verb is forwarded at the top level of `fromEpicenter` precisely so
-		// it can be called from anywhere, so the guarantee has to be the
-		// unconditional one the boot nodes state.
-		eraseReplica: async () => {
-			const wasOpen = state.status !== 'closed';
-			await close();
-			const erased = await eraseReplicaOf({ appId, definition, account });
-			if (erased.error !== null && wasOpen) void open();
-			return erased;
-		},
-		close,
-	}) as Epicenter<TDefinition>;
+	});
 }
+
+/** What the handle tracks about one session, which no caller sees. */
+type SessionRecord<TDefinition extends DataDefinition> = {
+	/** What the open acquired, once it has. */
+	acquired: OpenedDatabase<TDefinition> | undefined;
+	/** Whether the handle has taken this session's turn away. */
+	retired: boolean;
+};

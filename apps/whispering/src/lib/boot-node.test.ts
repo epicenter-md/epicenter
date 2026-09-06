@@ -35,7 +35,17 @@ const callback = join(routes, 'auth/callback/+page.svelte');
 
 /** The application's one session module, as a route would import it. */
 const SESSION_MODULE = '$lib/epicenter';
-/** The one node that is allowed to open, and is not an ancestor of the callback. */
+/**
+ * The one component that opens, which the boot node mounts under its gate.
+ *
+ * The open moved off the boot node when a session became a value the tree owns
+ * (ADR-0350), so a boot that drifted upward would now import a component rather
+ * than call `epicenter.open` itself. That is why the assertions below forbid an
+ * ancestor from naming EITHER: greping one string would pass over the drift.
+ */
+const SESSION_COMPONENT =
+	'src/routes/(app)/_components/RecordingsSession.svelte';
+/** The one node that is allowed to gate, and is not an ancestor of the callback. */
 const BOOT_NODE = 'src/routes/(app)/+layout.svelte';
 /** What the boot node mounts once the store is open, which must not open it. */
 const SHELL = 'src/routes/(app)/_components/WhisperingShell.svelte';
@@ -75,10 +85,12 @@ describe('the callback opens nothing', () => {
 				layout: relative(appRoot, layout),
 				imports: source.includes(SESSION_MODULE),
 				opens: source.includes('epicenter.open'),
+				mounts: source.includes(SESSION_COMPONENT.split('/').pop() ?? ''),
 			}).toEqual({
 				layout: relative(appRoot, layout),
 				imports: false,
 				opens: false,
+				mounts: false,
 			});
 		}
 	});
@@ -97,8 +109,15 @@ describe('the callback opens nothing', () => {
 		// which is the pair that says where the boundary is rather than that one
 		// file happens to be quiet.
 		const bootNode = join(appRoot, BOOT_NODE);
-		expect(await Bun.file(bootNode).text()).toContain('epicenter.open');
+		expect(await Bun.file(bootNode).text()).toContain(
+			SESSION_COMPONENT.split('/').pop(),
+		);
 		expect(ancestorLayouts(callback)).not.toContain(bootNode);
+
+		// The positive half is on the component that actually opens.
+		expect(await Bun.file(join(appRoot, SESSION_COMPONENT)).text()).toContain(
+			'epicenter.open',
+		);
 	});
 
 	test('the shell renders and does not open', async () => {
