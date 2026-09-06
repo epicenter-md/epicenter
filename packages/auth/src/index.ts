@@ -1,3 +1,4 @@
+export { type AccountSnapshot, accountOf } from './account-of.js';
 export type {
 	AuthClient,
 	AuthFetch,

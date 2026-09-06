@@ -16,8 +16,7 @@
  * trusted app (ADR-0334), so both leaves reach the same store the same way.
  */
 
-import type { AuthClient } from '@epicenter/auth';
-import type { DatabaseAccount } from '@epicenter/data';
+import { type AuthClient, accountOf } from '@epicenter/auth';
 import {
 	eraseGenerations,
 	type OpenedDatabase,
@@ -37,43 +36,6 @@ import { Ok, type Result } from 'wellcrafted/result';
 import type { EpicenterDataOptions } from './index.js';
 
 const log = createLogger('app');
-
-/**
- * The principal half of an address, as the auth client states it.
- *
- * Taken from `AuthClient` rather than from `@epicenter/principal`, so this
- * package depends on the client it already holds rather than on the identity
- * package behind it.
- */
-type PrincipalId = Extract<
-	AuthClient['state'],
-	{ principalId: unknown }
->['principalId'];
-
-/**
- * The account half of an address, from the client an application handed over.
- *
- * Two shapes for one fact: `@epicenter/data` states its account as a
- * three-member port so that file stays free of the auth package, and an
- * `AuthClient` carries the same three facts under its own names. This is the
- * one line between them, and it used to be written out in every application
- * that opened a store.
- *
- * **A signed-out client states no principal, and that fact is handed to the
- * opener rather than thrown here.** The address builder refuses an account
- * naming no principal before anything is claimed or created, so the refusal a
- * caller sees comes from the one place that decides it.
- */
-function addressOf(account: AuthClient): DatabaseAccount {
-	return {
-		baseURL: account.connection.baseURL,
-		principalId:
-			account.state.status === 'signed-out'
-				? ('' as PrincipalId)
-				: account.state.principalId,
-		fetch: (input, init) => account.fetch(input, init),
-	};
-}
 
 /**
  * A dial that failed for a reason time might repair, which nobody is holding a
@@ -125,7 +87,7 @@ export async function openReplica<TDefinition extends DataDefinition>({
 }: EpicenterDataOptions<TDefinition> & { appId: string }): Promise<
 	Result<OpenedDatabase<TDefinition>, StoreError | DataDefinitionParseError>
 > {
-	const address = addressOf(account);
+	const address = accountOf(account);
 	const resolved = await resolveGeneration(definition, {
 		appId,
 		account: address,
@@ -157,7 +119,7 @@ export async function openReplica<TDefinition extends DataDefinition>({
 	try {
 		connection = attachStoreSync({
 			store: opened.data.store,
-			transport: account,
+			transport: address,
 			onTransportError: (cause) =>
 				log.warn(EpicenterDataBackgroundError.SyncTransportFailed({ cause })),
 		});
@@ -217,7 +179,7 @@ export async function eraseReplicaOf({
 }): Promise<Result<void, StoreError>> {
 	const erased = await eraseGenerations({
 		appId,
-		principalId: addressOf(account).principalId,
+		principalId: accountOf(account).principalId,
 		dataId: definition.id,
 	});
 	return erased.error !== null ? erased : Ok(undefined);

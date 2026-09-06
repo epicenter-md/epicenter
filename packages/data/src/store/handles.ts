@@ -21,6 +21,7 @@ import type {
 	TableDeclaration,
 } from '@epicenter/data/definition';
 import type { PrincipalId } from '@epicenter/principal';
+import type { SocketTransport } from '@epicenter/sync/transport';
 import type * as Y from '@y/y';
 import type { Result } from 'wellcrafted/result';
 
@@ -663,24 +664,25 @@ export type SyncCapability = {
  * is three facts read at one instant, which is what lets a session answer for
  * the principal that opened it even if the client moves underneath.
  *
- * No adapter-free claim belongs here, in either direction. An `AuthClient` does
- * not satisfy this, because it keeps its principal under `state` and the
- * function reading it out is the caller's. This does not satisfy `AuthClient`
- * either, and it satisfies `SocketTransport` in `@epicenter/sync/transport`
- * least of all, having no `openWebSocket`. What DOES satisfy `SocketTransport`
- * structurally is the client, which is why `attachStoreSync` can take one
- * whole; borrowing that rationale for this type is the mistake this comment has
- * now made twice.
+ * It carries both ways this device reaches its authority, and that is the whole
+ * of it: `fetch` for a generation it does not hold, which is an HTTP request
+ * (ADR-0292), and `openWebSocket` for the updates that follow, which is a
+ * socket. Nothing else opening a replica needs a second object, so nothing else
+ * takes one: `attachStoreSync` reads the transport off this rather than being
+ * handed a client.
  *
- * Keeping it a value also keeps this file free of the auth package, which is
+ * An `AuthClient` does not satisfy it. A client keeps its principal under
+ * `state`, so a snapshot has to read it out, and `accountOf` in
+ * `@epicenter/auth` is the one function that does. Keeping that translation on
+ * the auth side is what lets this file stay free of the auth package, which is
  * load-bearing rather than tidy: `createAccountStore` opens a store with no
- * account at all, and a Durable Object is one of its callers. `fetch` is here
- * and not in `attach` because opening a generation this device does not hold is
- * an HTTP request, not a socket (ADR-0292).
+ * account at all, and a Durable Object is one of its callers.
  */
 export type DatabaseAccount = {
 	readonly baseURL: string;
 	readonly principalId: PrincipalId;
 	/** A credentialed fetch, waiting on machine work but never on a human. */
 	fetch(input: string | URL, init?: RequestInit): Promise<Response>;
+	/** A credentialed dial, which the sync driver repeats for the store's life. */
+	openWebSocket: SocketTransport['openWebSocket'];
 };

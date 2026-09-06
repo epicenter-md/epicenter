@@ -90,6 +90,18 @@ const GEN = 1;
 /** The application every test here opens as, unless it is testing the segment. */
 const APP = 'so.epicenter.browsertest';
 
+/**
+ * The dial half of an account, for tests that never dial.
+ *
+ * `openDatabase` and `resolveGeneration` reach the authority over `fetch`
+ * only; the socket belongs to `attachStoreSync`, which these tests do not
+ * attach. Throwing rather than stubbing a socket keeps that true: a test that
+ * starts dialling fails here rather than passing over a fake.
+ */
+const neverDials: DatabaseAccount['openWebSocket'] = () => {
+	throw new Error('this test opens a store and never dials');
+};
+
 const storeAddress = (
 	dataId: string,
 	generation = GEN,
@@ -123,6 +135,7 @@ function accountFor(
 				headers: { 'epicenter-log-position': String(served.position) },
 			});
 		},
+		openWebSocket: neverDials,
 	};
 }
 
@@ -339,6 +352,7 @@ describe('one address per application, data id, and generation (ADR-0324)', () =
 			baseURL: CLOUD,
 			principalId: ALICE,
 			fetch: async () => new Response(null, { status: 503 }),
+			openWebSocket: neverDials,
 		};
 
 		const refused = expectErr(
@@ -397,6 +411,7 @@ describe('which generation to open (ADR-0292, ADR-0293)', () => {
 					headers: { 'content-type': 'application/json' },
 				});
 			},
+			openWebSocket: neverDials,
 		};
 	}
 
@@ -411,6 +426,7 @@ describe('which generation to open (ADR-0292, ADR-0293)', () => {
 			fetch: async () => {
 				throw new Error('a cached generation asks nobody');
 			},
+			openWebSocket: neverDials,
 		};
 		const resolved = expectOk(
 			await resolveGeneration(database, { appId: APP, account }),
@@ -511,6 +527,7 @@ describe('a replica belongs to the account in its address', () => {
 					baseURL: CLOUD,
 					principalId: asPrincipalId(''),
 					fetch: async () => new Response(null, { status: 404 }),
+					openWebSocket: neverDials,
 				},
 			}),
 		);
@@ -532,6 +549,7 @@ describe('a replica belongs to the account in its address', () => {
 					baseURL: CLOUD,
 					principalId: asPrincipalId('alice/../bob'),
 					fetch: async () => new Response(null, { status: 404 }),
+					openWebSocket: neverDials,
 				},
 			}),
 		);
@@ -554,6 +572,7 @@ describe('a replica belongs to the account in its address', () => {
 					new Response(JSON.stringify({ generation, position: 0 }), {
 						headers: { 'content-type': 'application/json' },
 					}),
+				openWebSocket: neverDials,
 			};
 			await createGeneration(database, { appId: APP, account });
 			const opened = expectOk(
