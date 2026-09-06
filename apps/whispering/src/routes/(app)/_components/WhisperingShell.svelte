@@ -23,6 +23,7 @@
 	`VocabShell`, which both do this inline. Now there is one.
 -->
 <script lang="ts">
+	import { PersistenceNotice } from '@epicenter/app-shell/persistence-notice';
 	import { fromData } from '@epicenter/svelte';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -91,6 +92,8 @@
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
 </script>
+
+<PersistenceNotice persistence={data.persistence} />
 
 <QueryClientProvider client={session.queryClient}>
 	<!-- Uses UI package defaults (300ms delay, 150ms skip) -->

@@ -1,8 +1,9 @@
 # 0351. Local data removal is an explicit sign-out choice
 
-- **Status:** Proposed
+- **Status:** Accepted at its decision, amended at its mechanism.
 - **Date:** 2026-09-05
-- **Unbuilt:** an application exit coordinator with two sign-out actions, durable interrupted-removal recovery, and complete account-scoped removal across supported runtimes.
+- **Amended 2026-09-06, and most of the machinery below is withdrawn.** The two exits shipped, and the confirmation says what this record asked it to say. What did not ship, and will not: the exit coordinator, the durable removal-intent record, the boot gate that refuses every open of a removed account, the recovery screen, and the app/principal exclusion boundary. All of them defended against a half-deleted replica, and that state is not dangerous. A generation is one whole IndexedDB database, so an interrupted removal leaves complete generations rather than a torn one, and ADR-0281 already ruled on exactly that: a stale replica is not dangerous, it is somewhere else. Deleting oldest first makes the survivor the newest, which is what the person was looking at, and removal is idempotent, so the retry is the same call. What carries the shared-device privacy this record wanted is ordering, not a record: capture the principal, close, clear the credential, THEN delete, so a crash mid-delete leaves the next person at a sign-in door.
+- **Built** for `apps/honeycrisp` and `apps/vocab`. Whispering abstains because its audio is not scoped by principal (ADR-0349), and no desktop build qualifies because none can reach an authority at all.
 
 ## Context
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PersistenceNotice } from '@epicenter/app-shell/persistence-notice';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import { fromData } from '@epicenter/svelte';
@@ -43,6 +44,8 @@
 	/* svelte-ignore state_referenced_locally */
 	const folder = openWorkingCopy?.(data);
 </script>
+
+<PersistenceNotice persistence={data.persistence} />
 
 <svelte:window
 	onkeydown={(e) => {

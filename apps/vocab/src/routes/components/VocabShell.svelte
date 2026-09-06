@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PersistenceNotice } from '@epicenter/app-shell/persistence-notice';
 	import { createAgentChatState } from '@epicenter/app-shell/agent-chat';
 	import { Button } from '@epicenter/ui/button';
 	import * as Sidebar from '@epicenter/ui/sidebar';
@@ -82,6 +83,8 @@
 		);
 	}
 </script>
+
+<PersistenceNotice persistence={data.persistence} />
 
 <Sidebar.Provider>
 	<VocabSidebar

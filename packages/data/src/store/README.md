@@ -56,10 +56,15 @@ waits a second after being nudged before asking what is owed and a flush is a
 microtask. It costs exactly one thing: a device whose storage is refusing
 writes stops syncing until storage recovers.
 
-That cost is currently paid in silence. `persistence.get()` reports `blocked`,
-and no application reads it, so a device with refused writes keeps accepting
-edits, sends none of them, and says nothing. The store is doing what it decided
-to do; the surface that would make it visible does not exist yet.
+That cost is paid out loud. `persistence.get()` reports `blocked`, and
+`PersistenceNotice` in `@epicenter/app-shell` renders it: every application
+mounts it in its shell, where the opened store already is. A person is told that
+changes are not being saved on this device and that closing the window loses
+them, and the notice offers `flush()` as one retry.
+
+Only `blocked` is shown. `pending` is the microtask between accepting an edit
+and confirming it, so rendering it would flicker on every keystroke and say
+nothing.
 
 ## The one column you have to understand
 
