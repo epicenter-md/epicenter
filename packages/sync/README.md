@@ -68,7 +68,9 @@ new WebSocket(address.url, [...address.protocols, bearerSubprotocol(token)]);
 A `SocketTransport` (`@epicenter/sync/transport`) is the one contract for that
 last step. `AuthClient` implements it, `attachStoreSync` consumes it, and no
 consumer redeclares it: a transport that took a URL without its subprotocols
-once shipped a replica the server refused on every upgrade.
+once shipped a replica the server refused on every upgrade. `protocols` is a
+non-empty tuple for the same reason, one step further on: an upgrade offering
+nothing is refused exactly like an upgrade offering only a bearer.
 
 One path (`/api/store/v1/sync`), and the addressing lives in the query: a
 replica says which application `dataId` it is syncing and how far through the

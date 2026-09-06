@@ -49,11 +49,20 @@ redeclares it.** It lives in `packages/sync/src/transport.ts`, exported at the
 subpath `@epicenter/sync/transport`:
 
 ```ts
-type WebSocketAddress = { url: string; protocols: readonly string[] };
+type WebSocketAddress = {
+	url: string;
+	protocols: readonly [string, ...string[]];
+};
 type SocketTransport = {
 	openWebSocket(address: WebSocketAddress): Promise<WebSocket>;
 };
 ```
+
+`protocols` is non-empty by TYPE. Bundling the list with the URL is what stops
+a caller from dropping it; requiring a first entry is what stops an empty one
+from reproducing the same refusal by a different route. An upgrade offering no
+protocols is answered with the same 400 a page cannot see, so `[]` is not a
+weaker dial, it is the bug again.
 
 `OpenWebSocketDenial`, `SyncRefusal`, and `isOpenWebSocketDenial` move beside
 them, because they are the failure half of the same contract. Their shape is

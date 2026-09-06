@@ -16,7 +16,7 @@
 
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
-import { bearerSubprotocol } from '@epicenter/sync';
+import { bearerSubprotocol, MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 // PersistedAuth and OAuthTokenGrant are intentionally not on the public root:
 // they are the credential-shaped cell and grant, internal to auth core.
@@ -936,7 +936,7 @@ test('openWebSocket refuses with `signed-out` when signed out', async () => {
 	await expect(
 		auth.openWebSocket({
 			url: 'ws://localhost:8787/sync',
-			protocols: [],
+			protocols: [MAIN_SUBPROTOCOL],
 		}),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
@@ -967,7 +967,7 @@ test('openWebSocket refuses with `reauth-required` after /api/session rejects th
 	await expect(
 		auth.openWebSocket({
 			url: 'ws://localhost:8787/sync',
-			protocols: [],
+			protocols: [MAIN_SUBPROTOCOL],
 		}),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
@@ -998,7 +998,7 @@ test('a stale grant that cannot REACH the token endpoint refuses as unavailable 
 	await expect(
 		auth.openWebSocket({
 			url: 'ws://localhost:8787/sync',
-			protocols: [],
+			protocols: [MAIN_SUBPROTOCOL],
 		}),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
@@ -1058,7 +1058,7 @@ test('openWebSocket refuses with `auth-unavailable` when /api/session is unreach
 	await expect(
 		auth.openWebSocket({
 			url: 'ws://localhost:8787/sync',
-			protocols: [],
+			protocols: [MAIN_SUBPROTOCOL],
 		}),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',

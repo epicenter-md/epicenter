@@ -16,6 +16,7 @@
 
 import { expect, test } from 'bun:test';
 import { asPrincipalId } from '@epicenter/principal';
+import { MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import { type AuthFetch, isCallbackAuthClient } from './auth-contract.ts';
 import {
 	createDesktopBrokerAuth,
@@ -130,7 +131,10 @@ test('openWebSocket refuses because a window holds no credential', async () => {
 	});
 
 	expect(
-		auth.openWebSocket({ url: 'wss://api.epicenter.so/rooms', protocols: [] }),
+		auth.openWebSocket({
+			url: 'wss://api.epicenter.so/rooms',
+			protocols: [MAIN_SUBPROTOCOL],
+		}),
 	).rejects.toMatchObject({
 		name: 'OpenWebSocketDenied',
 		code: 'no-credential-model',

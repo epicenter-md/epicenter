@@ -14,10 +14,17 @@
  * `STORE_SYNC_ROUTE.address` builds it, an `openWebSocket` implementation
  * appends `bearerSubprotocol(token)` to `protocols`, and the server reads the
  * main subprotocol and the bearer back out of the one header.
+ *
+ * `protocols` is non-empty by TYPE, because an upgrade offering no protocols is
+ * refused with a 400 the page cannot see. The list is what let a dial go wrong
+ * silently once already: a lossy one-parameter port dropped it, nothing
+ * complained, and the app looked signed in while syncing nothing. Bundling it
+ * with the URL is what closed that; requiring a first entry is what stops the
+ * empty list from reopening it.
  */
 export type WebSocketAddress = {
 	url: string;
-	protocols: readonly string[];
+	protocols: readonly [string, ...string[]];
 };
 
 /** How a host reaches its authority over a socket. */
