@@ -10,7 +10,7 @@ import {
 	type KeyBinding,
 } from '$lib/utils/key-binding';
 import type { WhisperingApp } from '$lib/whispering/app';
-import { createShortcuts } from './shortcuts.shared';
+import { createShortcuts } from './shared';
 import type { Shortcuts } from './types';
 
 /**

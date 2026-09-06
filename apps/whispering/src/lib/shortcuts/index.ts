@@ -1,7 +1,7 @@
 import { createSystemShortcuts } from '#platform/system-shortcuts';
 import { commands } from '$lib/commands';
 import type { WhisperingApp } from '$lib/whispering/app';
-import { createFocusedShortcuts } from './focused-shortcuts';
+import { createFocusedShortcuts } from './focused';
 import { createReachRouter } from './reach-router';
 
 /**
