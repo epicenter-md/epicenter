@@ -152,14 +152,28 @@ export type DataSession<TDefinition extends DataDefinition> = {
 	 *
 	 * Every generation this account holds through this application, because a
 	 * person forgetting their copy means all of it: erasing only the newest
-	 * would leave the number below it to be opened next boot.
+	 * would leave the number below it to be opened next boot. Oldest first, so
+	 * an interruption leaves the newest rather than a number nobody chose.
+	 *
+	 * `afterClose` runs between the release and the first delete, and it exists
+	 * for one caller: the destructive exit, which clears the credential there.
+	 * That order is what makes an interrupted removal safe on a shared device,
+	 * and it has to be here because only the session knows when the close is
+	 * done.
+	 *
+	 * It THROWS to abort, and that throw leaves this verb, which is the one way
+	 * this promise rejects. Nothing is deleted by a step that did not finish, and
+	 * the surface that invoked the exit already catches: it has to, because the
+	 * close unmounted whatever rendered the button.
 	 *
 	 * **A failure does not reopen.** Closing is what the deletion needs rather
 	 * than the deletion itself, so a refused erase leaves the copy on the device
 	 * and leaves the handle holding nothing. Reopening is the caller's move, and
 	 * it is the same call a retry makes.
 	 */
-	erase(): Promise<Result<void, StoreError>>;
+	erase(options?: {
+		afterClose?: () => Promise<void>;
+	}): Promise<Result<void, StoreError>>;
 };
 
 /**
@@ -324,10 +338,18 @@ export function createEpicenter<const TDefinition extends DataDefinition>({
 				// resolving over a lock still being let go.
 				return settled();
 			},
-			erase: async () => {
+			erase: async ({ afterClose } = {}) => {
+				// Captured before the close, and spent after it. `afterClose` is
+				// where the credential is cleared, so a client read later would
+				// name nobody; this session already knows who it was opened for,
+				// and that is the principal whose copy goes.
+				const { principalId } = accountOf(account);
 				if (live === record) retire();
 				await settled();
-				return eraseReplicaOf({ appId, definition, account });
+				// Throws out of `erase` on failure, which aborts before anything is
+				// deleted. Removal is idempotent, so a retry is the same call.
+				await afterClose?.();
+				return eraseReplicaOf({ appId, definition, principalId });
 			},
 		});
 	};

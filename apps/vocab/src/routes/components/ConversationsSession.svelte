@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { CannotOpenScreen } from '@epicenter/app-shell/boot-screens';
+	import { auth } from '$lib/auth';
 	import { Loading } from '@epicenter/ui/loading';
 	import { epicenter } from '$lib/epicenter.svelte.js';
 	import VocabShell from './VocabShell.svelte';
@@ -15,10 +16,25 @@
 	let session = $state.raw(epicenter.open());
 	$effect(() => () => void session.close());
 
-	/** Erase this account's copy, then open a fresh one. */
-	async function forgetDevice() {
-		const erased = await session.erase();
-		session = epicenter.open();
+	/**
+	 * Sign out, and remove this account's copy from this device.
+	 *
+	 * The ORDER is the design. The session captures the principal, closes so the
+	 * erase can take the lock, clears the credential in `afterClose`, and only
+	 * then deletes. Clearing before deleting is what makes an interrupted removal
+	 * safe on a shared device: the next person meets a sign-in door rather than
+	 * the owner's conversations.
+	 *
+	 * **It does not reopen.** A failed removal leaves the copy that is still
+	 * there, and reopening it would show a person data they asked to be rid of.
+	 */
+	async function removeLocalData() {
+		const erased = await session.erase({
+			afterClose: async () => {
+				const out = await auth.signOut();
+				if (out.error !== null) throw out.error;
+			},
+		});
 		if (erased.error !== null) throw erased.error;
 	}
 </script>
@@ -34,6 +50,6 @@
 			retry={() => (session = epicenter.open())}
 		/>
 	{:else}
-		<VocabShell {data} {forgetDevice} />
+		<VocabShell {data} {removeLocalData} />
 	{/if}
 {/await}

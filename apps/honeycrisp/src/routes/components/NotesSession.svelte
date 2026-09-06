@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { CannotOpenScreen } from '@epicenter/app-shell/boot-screens';
+	import { auth } from '#platform/auth';
 	import { Loading } from '@epicenter/ui/loading';
 	import { epicenter } from '$lib/epicenter.svelte.js';
 	import StoreShell from './StoreShell.svelte';
@@ -20,16 +21,27 @@
 	$effect(() => () => void session.close());
 
 	/**
-	 * Erase this account's copy, then open a fresh one.
+	 * Sign out, and remove this account's copy from this device.
 	 *
-	 * A success bootstraps an empty replica from the account; a failure leaves
-	 * the copy that is still there and reopens it. Either way the reopen is this
-	 * component's move rather than the handle's, because the handle cannot swap
-	 * a value a component owns.
+	 * The ORDER is the design. Capture the principal while a client still names
+	 * one, close the session so the erase can take the lock, clear the credential,
+	 * then delete. Clearing before deleting is what makes an interrupted removal
+	 * safe on a shared device: the next person meets a sign-in door rather than
+	 * the owner's notes, and the owner signing back in sees what is left and
+	 * removes again.
+	 *
+	 * **It does not reopen.** A failed removal leaves the copy that is still
+	 * there, and reopening it would be this component deciding that a person who
+	 * asked for their data to be gone should be shown it again. The popover
+	 * reloads on success and reports the failure otherwise.
 	 */
-	async function forgetDevice() {
-		const erased = await session.erase();
-		session = epicenter.open();
+	async function removeLocalData() {
+		const erased = await session.erase({
+			afterClose: async () => {
+				const out = await auth.signOut();
+				if (out.error !== null) throw out.error;
+			},
+		});
 		if (erased.error !== null) throw erased.error;
 	}
 </script>
@@ -45,6 +57,6 @@
 			retry={() => (session = epicenter.open())}
 		/>
 	{:else}
-		<StoreShell {data} {forgetDevice} />
+		<StoreShell {data} {removeLocalData} />
 	{/if}
 {/await}

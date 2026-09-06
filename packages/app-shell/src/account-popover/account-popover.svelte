@@ -55,21 +55,24 @@
 		 */
 		disabledReason?: string;
 		/**
-		 * If provided, exposes a Forget this device button. The callback is the
-		 * destructive primitive that clears this account's replica on this device.
-		 * The popover confirms, awaits the callback, then reloads the page; reload
-		 * after wipe is universal in this context so the component owns it rather
-		 * than asking every caller to remember.
+		 * If provided, exposes "Sign out and remove local data".
 		 *
-		 * **Pass it only when the store is all of this account's local data.** The
-		 * copy below promises that everything synced is safe and everything local
-		 * is gone, and an application that also keeps account data outside the
-		 * store would be making the second half of that promise falsely.
+		 * The callback owns the ORDER, because only it can: capture the principal,
+		 * close the session, clear the credential, then delete. Clearing before
+		 * deleting is what makes an interrupted removal safe on a shared device.
+		 * The next person meets a sign-in door rather than the owner's notes, and
+		 * the owner, signing back in, sees what is left and removes again.
 		 *
-		 * Throw to report a failure; the popover catches it and shows it. A
-		 * handle's `eraseReplica` answers a `Result`, so the application unwraps it.
+		 * **Pass it only when this application's replica is all of this account's
+		 * local data.** The copy below promises that everything online is safe and
+		 * everything local is gone. Whispering withholds it because its audio is
+		 * not scoped by principal yet, so the second half would be false.
+		 *
+		 * Throw to report a failure; the popover catches it and shows it. There is
+		 * no recovery screen and no removal record: removal is idempotent, so a
+		 * retry is the same call and it finishes the job.
 		 */
-		onForgetDevice?: () => void | Promise<void>;
+		onRemoveLocalData?: () => void | Promise<void>;
 		/** Optional replacement for the compact account icon trigger. */
 		trigger?: Snippet<[{ props: Record<string, unknown> }]>;
 	};
@@ -77,13 +80,13 @@
 	let {
 		auth,
 		syncNoun,
-		onForgetDevice,
+		onRemoveLocalData,
 		disabledReason,
 		trigger,
 	}: AccountPopoverProps = $props();
 
 	let popoverOpen = $state(false);
-	let forgettingDevice = $state(false);
+	let removing = $state(false);
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
 	// A page-reloading account change (sign in/out, forget device) is unsafe right
 	// now; the reason is shown and those actions are disabled. Reconnect is safe
@@ -149,29 +152,29 @@
 		return undefined;
 	});
 
-	function forgetDevice() {
-		if (!onForgetDevice) return;
+	function removeLocalData() {
+		if (!onRemoveLocalData) return;
 		popoverOpen = false;
 		confirmationDialog.open({
-			title: 'Forget this device?',
-			// What it does and what it does not, in that order. The account keeps
-			// everything that reached it, so the only loss is work this device never
-			// managed to send, and a person deciding this should be told which half
-			// is which.
-			description:
-				'This deletes this account’s data on this device. Anything already synced to your account stays there; anything not yet synced is gone.',
-			confirm: { text: 'Forget device', variant: 'destructive' },
+			title: 'Sign out and remove local data?',
+			// What survives, what does not, and what this never touches, in that
+			// order. The account keeps everything that reached it, so the only loss
+			// is work this device never managed to send, and a person deciding this
+			// should be told which half is which. Do not call it a cache: the thing
+			// being removed may be the only copy.
+			description: `This signs you out and removes this account’s ${syncNoun} from this device. Anything already synced to your account stays there; anything not yet synced is gone. Files you exported and folders you chose are untouched.`,
+			confirm: { text: 'Sign out and remove', variant: 'destructive' },
 			onConfirm: async () => {
-				forgettingDevice = true;
+				removing = true;
 				try {
-					await onForgetDevice();
+					await onRemoveLocalData();
 					window.location.reload();
 				} catch (error) {
-					toast.error('Failed to forget this device', {
+					toast.error('Could not remove this device’s data', {
 						description: extractErrorMessage(error),
 					});
 				} finally {
-					forgettingDevice = false;
+					removing = false;
 				}
 			},
 		});
@@ -226,21 +229,21 @@
 						Sign out
 					</Button>
 				</div>
-				{#if onForgetDevice}
+				{#if onRemoveLocalData}
 					<div class="border-t pt-3">
 						<Button
 							variant="ghost-destructive"
 							size="sm"
 							class="w-full justify-start"
-							onclick={forgetDevice}
-							disabled={forgettingDevice || accountLocked}
+							onclick={removeLocalData}
+							disabled={removing || accountLocked}
 						>
-							{#if forgettingDevice}
+							{#if removing}
 								<Spinner class="size-3.5" />
 							{:else}
 								<DatabaseZap class="size-3.5" />
 							{/if}
-							Forget this device
+							Sign out and remove local data
 						</Button>
 					</div>
 				{/if}

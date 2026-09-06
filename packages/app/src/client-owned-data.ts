@@ -16,11 +16,7 @@
  * trusted app (ADR-0334), so both leaves reach the same store the same way.
  */
 
-import {
-	type AccountSnapshot,
-	type AuthClient,
-	accountOf,
-} from '@epicenter/auth';
+import type { AccountSnapshot } from '@epicenter/auth';
 import {
 	eraseGenerations,
 	type OpenedDatabase,
@@ -34,6 +30,7 @@ import type {
 } from '@epicenter/data/definition';
 import { persistOnHide } from '@epicenter/data/flush-on-hide';
 import { attachStoreSync, type SyncConnection } from '@epicenter/data/sync';
+import type { PrincipalId } from '@epicenter/principal';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
@@ -168,31 +165,33 @@ export async function openReplica<TDefinition extends DataDefinition>({
 /**
  * Erase this account's copy of this definition on this device.
  *
- * Scoped to the account the client is signed in as, because the principal is a
- * segment of the address: forgetting one person's copy on a shared device
- * leaves the other person's alone, and there is no reachable way to erase
- * somebody else's.
+ * It takes a principal rather than a client, and that is the whole reason this
+ * signature changed. The destructive exit clears the credential BEFORE it
+ * deletes, so that a crash between the two leaves the next person at this
+ * device meeting a sign-in door rather than the owner's notes. A live client
+ * read after that point would name nobody and refuse, so the caller captures
+ * the principal while it still can and spends it here.
+ *
+ * Scoped to that principal, because the principal is a segment of the address:
+ * forgetting one person's copy on a shared device leaves the other person's
+ * alone, and there is no reachable way to erase somebody else's.
  *
  * Every generation rather than one, because a person forgetting their copy
  * means all of it: erasing only the newest would leave the number below it to
  * be opened next boot.
- *
- * A signed-out client names no principal and is refused here the same way it is
- * refused at open, by the address builder, rather than being allowed to erase
- * something it cannot name.
  */
 export async function eraseReplicaOf({
 	appId,
 	definition,
-	account,
+	principalId,
 }: {
 	appId: string;
 	definition: DataDefinition;
-	account: AuthClient;
+	principalId: PrincipalId;
 }): Promise<Result<void, StoreError>> {
 	const erased = await eraseGenerations({
 		appId,
-		principalId: accountOf(account).principalId,
+		principalId,
 		dataId: definition.id,
 	});
 	return erased.error !== null ? erased : Ok(undefined);

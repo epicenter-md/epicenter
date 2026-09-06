@@ -110,7 +110,7 @@ describe('the callback opens nothing', () => {
 		// file happens to be quiet.
 		const bootNode = join(appRoot, BOOT_NODE);
 		expect(await Bun.file(bootNode).text()).toContain(
-			SESSION_COMPONENT.split('/').pop(),
+			SESSION_COMPONENT.split('/').pop() ?? '',
 		);
 		expect(ancestorLayouts(callback)).not.toContain(bootNode);
 

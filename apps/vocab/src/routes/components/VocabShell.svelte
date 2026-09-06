@@ -26,10 +26,10 @@
 	// `data` and never asks which one it is.
 	let {
 		data: opened,
-		forgetDevice,
+		removeLocalData,
 	}: {
 		data: ReplicaData<typeof vocabDefinition>;
-		forgetDevice: () => Promise<void>;
+		removeLocalData: () => Promise<void>;
 	} = $props();
 
 	// `fromData` runs here rather than above, because this mounts exactly once
@@ -85,7 +85,7 @@
 
 <Sidebar.Provider>
 	<VocabSidebar
-		{forgetDevice}
+		{removeLocalData}
 		conversations={chat.conversations}
 		activeConversationId={chat.activeConversationId}
 		onCreate={() =>

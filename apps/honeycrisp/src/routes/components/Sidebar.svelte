@@ -33,13 +33,13 @@
 	let {
 		syncStatus,
 		folder,
-		forgetDevice,
+		removeLocalData,
 	}: {
 		syncStatus: () => SyncConnectionStatus | undefined;
 		/** The `~/Epicenter` folder, or nothing in a build with no filesystem. */
 		folder: WorkingCopy | undefined;
 		/** Erase this account's copy and reopen, which only the session can do. */
-		forgetDevice: () => Promise<void>;
+		removeLocalData: () => Promise<void>;
 	} = $props();
 
 	const honeycrisp = getHoneycrisp();
@@ -93,14 +93,14 @@
 				<AccountPopover
 					{auth}
 					syncNoun="notes"
-					onForgetDevice={async () => {
+					onRemoveLocalData={async () => {
 						// Honeycrisp keeps no account data outside the store: no blobs and no
 						// app-owned SQLite. The working copy is the person's own folder of
 						// notes, deliberately outside the store (ADR-0337), and is left
 						// alone: deleting somebody's own directory is not what this button
 						// says it does. Erasing the replica is the rest of it, and the
 						// session owns it, because erasing swaps the session.
-						await forgetDevice();
+						await removeLocalData();
 					}}
 				/>
 				<Sidebar.Trigger />

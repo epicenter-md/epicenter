@@ -17,7 +17,7 @@
 		onCreate,
 		onSwitch,
 		onPractice,
-		forgetDevice,
+		removeLocalData,
 	}: {
 		conversations: ConversationHandle[];
 		activeConversationId: ConversationId | null;
@@ -25,7 +25,7 @@
 		onSwitch: (conversationId: ConversationId) => void;
 		onPractice: (entryTexts: string[]) => void;
 		/** Erase this account's copy and reopen, which only the session can do. */
-		forgetDevice: () => Promise<void>;
+		removeLocalData: () => Promise<void>;
 	} = $props();
 </script>
 
@@ -43,10 +43,10 @@
 					disabledReason={dictation.status !== 'idle'
 						? 'Finish dictating to change your account'
 						: undefined}
-					onForgetDevice={async () => {
+					onRemoveLocalData={async () => {
 						// Vocab keeps no account data outside the store, so erasing the
 						// replica is the whole of what forgetting this device means.
-						await forgetDevice();
+						await removeLocalData();
 					}}
 				/>
 			</div>

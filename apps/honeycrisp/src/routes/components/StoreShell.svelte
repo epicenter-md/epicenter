@@ -18,8 +18,8 @@
 	// mounts exactly once per opened store and the adaptation is per store.
 	let {
 		data: opened,
-		forgetDevice,
-	}: { data: HoneycrispData; forgetDevice: () => Promise<void> } = $props();
+		removeLocalData,
+	}: { data: HoneycrispData; removeLocalData: () => Promise<void> } = $props();
 
 	/* svelte-ignore state_referenced_locally */
 	const data = fromData(opened);
@@ -60,7 +60,7 @@
 />
 
 <SidebarProvider>
-	<HoneycrispSidebar {syncStatus} {folder} {forgetDevice} />
+	<HoneycrispSidebar {syncStatus} {folder} {removeLocalData} />
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">

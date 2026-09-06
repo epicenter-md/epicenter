@@ -1057,11 +1057,19 @@ async function listGenerations(
  * itself and sign-out deletes nothing. A person decides that this account's
  * copy on this device should be gone, and this is what they invoked.
  *
- * **Every generation is claimed before any is deleted, so this is all or
- * nothing.** IndexedDB blocks a delete on a live connection, and half an erase
- * is the one outcome nobody can act on: the person is told it failed while
- * some of their notes are already gone. A generation another window holds open
- * answers `AlreadyOpen`, which names the repair, and nothing is deleted.
+ * **Every generation is claimed before any is deleted, and then they go oldest
+ * first.** The claim is what makes a refusal cost nothing: a generation another
+ * window holds open answers `AlreadyOpen`, which names the repair, and nothing
+ * is deleted. The order is what makes an interrupted delete legible. Deleting
+ * is not atomic across databases, so a crash between two of them leaves the
+ * rest; going oldest first means what survives is the newest, which is what the
+ * person was looking at. That is not damage. A device holding some generations
+ * and not others is the ordinary state of a device (ADR-0281): a stale replica
+ * is not dangerous, it is somewhere else, and the next open resolves the newest
+ * one held exactly as it always does.
+ *
+ * So there is no removal-intent record and no recovery screen. Retrying is the
+ * same call, it is idempotent, and it finishes the job.
  *
  * It reaches only this storage generation's names. A record written under an
  * older address is not addressed by this prefix and is not deleted: stranded
@@ -1097,7 +1105,15 @@ export async function eraseGenerations({
 	}
 
 	try {
-		for (const name of names) {
+		// Oldest first, so an interrupted erase leaves the newest generation
+		// rather than a number nobody chose. `heldGenerationNames` answers in no
+		// order, and the remainder after the prefix is the number by grammar.
+		const oldestFirst = [...names].sort(
+			(left, right) =>
+				Number(left.slice(located.data.length)) -
+				Number(right.slice(located.data.length)),
+		);
+		for (const name of oldestFirst) {
 			const { error } = await tryAsync({
 				try: () => deleteIndexedDb(name),
 				catch: (cause) => StoreError.StorageFailed({ cause }),
