@@ -22,27 +22,52 @@
  * the API) so it does not get its own APPS entry; its dev port lives inline in
  * `apps/api/ui/vite.config.ts`.
  */
+import {
+	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
+	EPICENTER_VOCAB_OAUTH_CLIENT_ID,
+	EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
+} from '#oauth-clients';
+
 export const PRODUCTION_API_URL = 'https://api.epicenter.so';
 
 export const APPS = {
 	API: { port: 8787, url: PRODUCTION_API_URL },
 	SH: { port: 5173, url: 'https://epicenter.sh' },
-	WHISPERING: { port: 1420, url: 'https://whispering.epicenter.so' },
-	HONEYCRISP: { port: 5175, url: 'https://honeycrisp.epicenter.so' },
-	VOCAB: { port: 8888, url: 'https://vocab.epicenter.so' },
+	WHISPERING: {
+		port: 1420,
+		url: 'https://whispering.epicenter.so',
+		id: 'so.epicenter.whispering',
+		oauthClientId: EPICENTER_WHISPERING_OAUTH_CLIENT_ID,
+	},
+	HONEYCRISP: {
+		port: 5175,
+		url: 'https://honeycrisp.epicenter.so',
+		id: 'so.epicenter.honeycrisp',
+		oauthClientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
+	},
+	VOCAB: {
+		port: 8888,
+		url: 'https://vocab.epicenter.so',
+		id: 'so.epicenter.vocab',
+		oauthClientId: EPICENTER_VOCAB_OAUTH_CLIENT_ID,
+	},
 } as const;
 
 /**
  * A key into {@link APPS}, which is not an app id.
  *
  * `AppKey` rather than `AppId`, because the two name different things and the
- * old name claimed the wrong one. These are catalog keys for a URL table
- * (`API`, `SH`, `WHISPERING`), and two of them are not applications with an id
- * at all: `API` is the hosted server and `SH` is the marketing site. An app id
- * is the reverse-domain string an application stores under
- * (`so.epicenter.vocab`), validated by `isAppId` in `#app-id` and spent by
- * `createEpicenter` and `createHostedBrowserRedirectAuth`. A reader who met
- * `AppId` here and grepped for it found the wrong concept.
+ * old name claimed the wrong one. These are catalog keys, and two of them are
+ * not applications with an id at all: `API` is the hosted server and `SH` is the
+ * marketing site, so neither carries `id` or `oauthClientId`. An app id is the
+ * reverse-domain string an application stores under (`so.epicenter.vocab`),
+ * validated by `isAppId` in `#app-id` and spent by `createEpicenter` and
+ * `createHostedBrowserRedirectAuth`. A reader who met `AppId` here and grepped
+ * for it found the wrong concept.
+ *
+ * The three application rows carry both, so one row is everything a build needs
+ * to name itself. `apps/local-mail` is deliberately absent: it has no hosted
+ * origin, so it keeps its id beside its storage.
  */
 export type AppKey = keyof typeof APPS;
 

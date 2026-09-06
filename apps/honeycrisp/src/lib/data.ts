@@ -1,5 +1,5 @@
+import { APPS } from '@epicenter/constants/apps';
 import { field } from '@epicenter/data/definition';
-import { APP_ID } from './app-id.js';
 /**
  * Honeycrisp's inert data definition.
  *
@@ -95,7 +95,7 @@ const noteMarkdown: ContentCodec = {
 };
 
 export const honeycrispDefinition = defineData({
-	id: APP_ID,
+	id: APPS.HONEYCRISP.id,
 	title: 'Honeycrisp',
 	kv: {},
 	tables: {

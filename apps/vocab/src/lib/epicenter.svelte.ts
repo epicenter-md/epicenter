@@ -24,8 +24,8 @@
  */
 
 import { createEpicenter } from '@epicenter/app';
+import { APPS } from '@epicenter/constants/apps';
 import { fromEpicenter } from '@epicenter/svelte';
-import { APP_ID } from '$lib/app-id';
 import { vocabDefinition } from '$lib/data';
 import { authClient } from '$lib/platform/auth';
 
@@ -37,7 +37,7 @@ import { authClient } from '$lib/platform/auth';
  * which has no close on it at all.
  */
 const handle = createEpicenter({
-	appId: APP_ID,
+	appId: APPS.VOCAB.id,
 	definition: vocabDefinition,
 	account: authClient,
 });

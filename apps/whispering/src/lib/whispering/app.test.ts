@@ -39,9 +39,9 @@ import { expect, test } from 'bun:test';
 import { createEpicenter } from '@epicenter/app';
 import type { AuthClient } from '@epicenter/auth';
 import type { BlobStore } from '@epicenter/blobs';
+import { APPS } from '@epicenter/constants/apps';
 import { encodeFrame } from '@epicenter/data/sync';
 import { Ok } from 'wellcrafted/result';
-import { APP_ID } from '../app-id';
 import { whisperingDefinition } from '../data';
 import { createWhisperingApp } from './app';
 
@@ -198,7 +198,7 @@ function announcingAuth(principalId: string): AuthClient {
  */
 async function openWhispering(auth: AuthClient) {
 	const handle = createEpicenter({
-		appId: APP_ID,
+		appId: APPS.WHISPERING.id,
 		definition: whisperingDefinition,
 		account: auth,
 	});

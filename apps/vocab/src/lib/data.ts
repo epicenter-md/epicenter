@@ -1,5 +1,5 @@
+import { APPS } from '@epicenter/constants/apps';
 import { field } from '@epicenter/data/definition';
-import { APP_ID } from './app-id.js';
 /**
  * Vocab's inert workspace declaration: the workspace id it owns, its tables, and its device-local
  * values. Isomorphic: no IndexedDB, WebSockets, Svelte state, or browser APIs.
@@ -120,7 +120,7 @@ const entriesTable = defineTable({
  * screen renders is a fact about this screen, not portable work (ADR-0233).
  */
 export const vocabDefinition = defineData({
-	id: APP_ID,
+	id: APPS.VOCAB.id,
 	title: 'Vocab',
 	kv: {
 		/** Readings render by default. */

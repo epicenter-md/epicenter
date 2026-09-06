@@ -25,9 +25,9 @@
  */
 
 import { createEpicenter } from '@epicenter/app';
+import { APPS } from '@epicenter/constants/apps';
 import { fromEpicenter } from '@epicenter/svelte';
 import { authClient } from '#platform/auth';
-import { APP_ID } from './app-id';
 import { whisperingDefinition } from './data';
 
 /**
@@ -40,7 +40,7 @@ import { whisperingDefinition } from './data';
  * no close on it at all.
  */
 const handle = createEpicenter({
-	appId: APP_ID,
+	appId: APPS.WHISPERING.id,
 	definition: whisperingDefinition,
 	account: authClient,
 });

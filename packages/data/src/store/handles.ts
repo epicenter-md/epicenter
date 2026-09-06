@@ -665,9 +665,9 @@ export type SyncCapability = {
  *
  * So it does NOT satisfy `AuthClient` structurally and no adapter-free claim
  * belongs here: a client keeps its principal under `state`, and the one
- * function that reads it out is the caller's. `StoreSocketTransport` in
- * `sync/attach.ts` IS satisfied structurally, which is the neighbouring
- * rationale this comment used to borrow by mistake.
+ * function that reads it out is the caller's. `SocketTransport` in
+ * `@epicenter/sync/transport` IS satisfied structurally, which is the
+ * neighbouring rationale this comment used to borrow by mistake.
  *
  * Keeping it a value also keeps this file free of the auth package, which is
  * load-bearing rather than tidy: `createAccountStore` opens a store with no
