@@ -663,11 +663,14 @@ export type SyncCapability = {
  * is three facts read at one instant, which is what lets a session answer for
  * the principal that opened it even if the client moves underneath.
  *
- * So it does NOT satisfy `AuthClient` structurally and no adapter-free claim
- * belongs here: a client keeps its principal under `state`, and the one
- * function that reads it out is the caller's. `SocketTransport` in
- * `@epicenter/sync/transport` IS satisfied structurally, which is the
- * neighbouring rationale this comment used to borrow by mistake.
+ * No adapter-free claim belongs here, in either direction. An `AuthClient` does
+ * not satisfy this, because it keeps its principal under `state` and the
+ * function reading it out is the caller's. This does not satisfy `AuthClient`
+ * either, and it satisfies `SocketTransport` in `@epicenter/sync/transport`
+ * least of all, having no `openWebSocket`. What DOES satisfy `SocketTransport`
+ * structurally is the client, which is why `attachStoreSync` can take one
+ * whole; borrowing that rationale for this type is the mistake this comment has
+ * now made twice.
  *
  * Keeping it a value also keeps this file free of the auth package, which is
  * load-bearing rather than tidy: `createAccountStore` opens a store with no
