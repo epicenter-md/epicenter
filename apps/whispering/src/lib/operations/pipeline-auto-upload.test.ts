@@ -4,8 +4,8 @@
  * Verifies the intentionally small automatic policy at the row-creation seam.
  *
  * Key behaviors:
- * - An enabled setting attempts the same upload operation exactly once
- * - A disabled setting performs no upload
+ * - An enabled setting uploads the new row once, then kicks the reconciler once
+ * - A disabled setting performs no upload and no kick
  * - Upload remains best-effort and does not block transcription
  * - History failure warns only after usable text is delivered
  */
@@ -17,6 +17,12 @@ import type { RecordingId } from '$lib/data';
 let autoUpload = true;
 let willPolish = false;
 const uploadAudio = mock(async () => Ok(undefined));
+const kick = mock(async () => ({
+	uploaded: 0,
+	absent: 0,
+	failed: 0,
+	aborted: false,
+}));
 const deliverTranscriptionResult = mock(async () => ({
 	outcome: { reach: 'output' } as const,
 	notice: { title: 'done' },
@@ -80,6 +86,7 @@ const app = {
 			return { ...fields, id: 'recording-1' as RecordingId };
 		},
 		uploadAudio,
+		backup: { kick },
 		update: mock(async () => Ok(undefined)),
 	},
 } as unknown as WhisperingApp;
@@ -91,15 +98,16 @@ afterEach(() => {
 	polishedHistoryError = null;
 });
 
-test('auto-upload attempts once for each new row only when enabled', async () => {
+test('auto-upload sends the new row, then kicks the reconciler, only when enabled', async () => {
 	await processRecordingPipeline(app, {
 		audioBlobId: generateBlobId(),
 		durationMs: 100,
 		deliverySource: 'import',
 	});
-	await Promise.resolve();
+	await new Promise((settle) => setTimeout(settle, 0));
 	expect(uploadAudio).toHaveBeenCalledTimes(1);
 	expect(uploadAudio).toHaveBeenLastCalledWith('recording-1');
+	expect(kick).toHaveBeenCalledTimes(1);
 
 	autoUpload = false;
 	await processRecordingPipeline(app, {
@@ -107,8 +115,9 @@ test('auto-upload attempts once for each new row only when enabled', async () =>
 		durationMs: 100,
 		deliverySource: 'import',
 	});
-	await Promise.resolve();
+	await new Promise((settle) => setTimeout(settle, 0));
 	expect(uploadAudio).toHaveBeenCalledTimes(1);
+	expect(kick).toHaveBeenCalledTimes(1);
 });
 
 test('history failure warns after delivering the usable transcription', async () => {

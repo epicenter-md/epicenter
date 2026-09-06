@@ -48,6 +48,14 @@ export function createRecordings({
 		uploadAudio: recordings.uploadAudio,
 		downloadAudio: recordings.downloadAudio,
 		removeLocalAudio: recordings.removeLocalAudio,
+		backup: {
+			get pending() {
+				invalidate();
+				return recordings.backup.pending;
+			},
+			survey: recordings.backup.survey,
+			kick: recordings.backup.kick,
+		},
 		subscribe: recordings.subscribe,
 	};
 }

@@ -7,6 +7,7 @@
 	import { listenForLocalShortcuts } from '../_app-effects/listen-for-local-shortcuts';
 	import { logAppStarted } from '../_app-effects/log-app-started';
 	import { notifyDictationFailures } from '../_app-effects/notify-dictation-failures.svelte';
+	import { reconcileBackups } from '../_app-effects/reconcile-backups';
 	import { synchronizeAutoPasteIntent } from '../_app-effects/synchronize-auto-paste-intent.svelte';
 	import { synchronizeShortcuts } from '../_app-effects/synchronize-shortcuts';
 
@@ -17,6 +18,7 @@
 	// scoped to this component through $effect cleanup or onMount unmount.
 	const app = getWhisperingApp();
 	claimUnscopedAudio(app, useQueryClient());
+	reconcileBackups(app);
 	exposeDebugCommands(app);
 	logAppStarted(app);
 	listenForLocalShortcuts(app);

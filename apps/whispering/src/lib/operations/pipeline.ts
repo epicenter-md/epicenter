@@ -1,5 +1,6 @@
 import type { BlobId } from '@epicenter/blobs';
 import { InstantString } from '@epicenter/data/field';
+import { createLogger } from 'wellcrafted/logger';
 import {
 	deliverTranscriptionResult,
 	type TranscriptionSource,
@@ -12,6 +13,8 @@ import { report } from '$lib/report';
 import { dictationLifecycle } from '$lib/state/dictation-lifecycle.svelte';
 import { polishHud } from '$lib/state/polish-hud.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
+
+const log = createLogger('whispering/pipeline');
 
 /**
  * Argument shape for the pipeline. The recorder produces a
@@ -47,8 +50,9 @@ export async function processRecordingPipeline(
 	const isDictation = deliverySource === 'recording';
 	if (isDictation) dictationLifecycle.markTranscribing();
 
-	// Row creation owns row/blob consistency: on failure it removes the
-	// already-committed audio and rethrows, so a lost row never strands bytes.
+	// Row creation owns row/blob consistency: if the row cannot be written,
+	// `create` releases the already-committed audio and throws, so a lost row
+	// never strands bytes.
 	const recording = app.recordings.create({
 		audioBlobId,
 		title: '',
@@ -62,20 +66,15 @@ export async function processRecordingPipeline(
 	});
 
 	if (app.settings.get('recordingAutoUpload')) {
-		// One new row earns one best-effort attempt. Manual upload calls the same
-		// workflow; there is no history scan, queue, persisted failure, or retry.
+		// The new row first, so it does not wait behind older failures, then one
+		// kick of the reconciler for whatever else this device still owes. No
+		// toast on failure: the rows are the queue, and the recordings page says
+		// how many are waiting, which is a surface that does not scroll away.
 		void app.recordings
 			.uploadAudio(recording.id)
-			.then(({ error }) => {
-				if (error !== null) {
-					report.info({
-						title: 'Recording kept on this device',
-						description: error.message,
-					});
-				}
-			})
-			.catch((cause) => {
-				report.error({ title: 'Automatic upload failed', cause });
+			.then(() => app.recordings.backup.kick())
+			.catch((cause: unknown) => {
+				log.warn(new Error('Backup after recording threw', { cause }));
 			});
 	}
 

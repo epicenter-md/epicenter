@@ -45,7 +45,7 @@ boundary.
   `BlobNotFound`, `RemoteBlobNotFound`, and `BlobAlreadyExists`. Operational
   failures (`BlobStoreFailed`, `BlobRemoteFailed`) are separate variants
   carrying `cause`.
-- Remote operations are one-shot and explicit. There is no background sync, no eager download, no retry queue, and no persisted failure state.
+- Remote operations are one-shot and explicit. There is no background sync, no eager download, no retry queue, and no persisted failure state. An application that wants every blob kept reconciles from its own rows, which already record what was uploaded (Whispering's `uploadedAt`), and calls these verbs; nothing here remembers a failure for it.
 - A remote download is idempotent. If the immutable id already exists in the
   canonical local store, the remote implementation consumes that collision as
   success because the requested local state is already present.
