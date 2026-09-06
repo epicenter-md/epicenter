@@ -13,9 +13,9 @@
  * party whose answer could mean anything, and a seam with one implementation
  * is not a seam.
  *
- * **This leaf builds a binding, not a handle.** Nothing about an epicenter
- * varies by runtime; the trusted owner's files and keychain do. So the leaf is
- * what varies, an application composes it, and one `createEpicenter` in
+ * **This leaf builds storage, not a data session.** Nothing about a session
+ * varies by runtime; the trusted owner's files and keychain do. So this is what
+ * an application selects per build, while one `createEpicenter` in
  * `@epicenter/app` serves every build.
  *
  * **SQLite is a Bun-owned file.** The owner maps `(appId, name)` to a path
@@ -32,6 +32,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import {
 	AppError,
 	type AppStorage,
+	appIdOrThrow,
 	SecretError,
 	type SecretStore,
 } from './index.js';
@@ -60,8 +61,8 @@ export function createDesktopAppStorage({
 	...options
 }: CreateDesktopAppStorageOptions & { appId: string }): AppStorage {
 	const request = createOwnerRequest(options);
+	appIdOrThrow(appId);
 	return {
-		appId,
 		sqlite: Object.freeze({
 			open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 			delete: (name) =>

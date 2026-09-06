@@ -9,9 +9,9 @@
  * not IndexedDB, and not encrypted in the page, because a key the page can
  * derive is a key anything in the origin can derive.
  *
- * **This leaf builds a binding, not a handle.** Nothing about an epicenter
- * varies by runtime; a Bun-owned file and a keychain do. So the leaf is what
- * varies, an application composes it, and one `createEpicenter` in
+ * **This leaf builds storage, not a data session.** Nothing about a session
+ * varies by runtime; an OPFS file and a keychain do. So this is what an
+ * application selects per build, while one `createEpicenter` in
  * `@epicenter/app` serves every build.
  *
  * The runtime is still the import path, never a runtime test: a WebView cannot
@@ -22,7 +22,7 @@
 
 import { Ok } from 'wellcrafted/result';
 import { createBrowserSqliteTransport } from './browser-sqlite.js';
-import type { AppStorage, SecretStore } from './index.js';
+import { type AppStorage, appIdOrThrow, type SecretStore } from './index.js';
 import { createOwnedSqlite, unwrap } from './owner.js';
 
 /**
@@ -43,8 +43,8 @@ export function createBrowserAppStorage({
 	appId: string;
 }): AppStorage {
 	const request = createBrowserSqliteTransport();
+	appIdOrThrow(appId);
 	return {
-		appId,
 		sqlite: Object.freeze({
 			open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 			delete: (name) =>

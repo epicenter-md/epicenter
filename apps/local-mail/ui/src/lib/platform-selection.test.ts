@@ -53,6 +53,24 @@ describe('platform seams', () => {
 			}
 		}
 	});
+
+	test('each leaf reaches one runtime, not both', async () => {
+		// A leaf that imported both subpaths would pull the OPFS worker into the
+		// desktop bundle and the host transport into the web one, which is the
+		// bundle cost the two packages exist to keep apart.
+		for (const condition of ['default', 'epicenter-host']) {
+			const source = await leafSource('#platform/app-storage', condition);
+			expect({
+				condition,
+				browser: source.includes('@epicenter/app-storage/browser'),
+				desktop: source.includes('@epicenter/app-storage/desktop'),
+			}).toEqual({
+				condition,
+				browser: condition === 'default',
+				desktop: condition === 'epicenter-host',
+			});
+		}
+	});
 });
 
 describe('the runtime is the import path', () => {
@@ -67,15 +85,21 @@ describe('the runtime is the import path', () => {
 		).toContain("from '@epicenter/app-storage/desktop'");
 	});
 
-	test('the seam holds the storage and nothing composed from it', async () => {
-		// The seam holds only what varies. A leaf that composed the data session
-		// would be the application's one `epicenter` defined twice.
+	test('each leaf reaches one runtime, not both', async () => {
+		// A leaf that imported both subpaths would pull the OPFS worker into the
+		// desktop bundle and the host transport into the web one, which is the
+		// bundle cost the two packages exist to keep apart.
 		for (const condition of ['default', 'epicenter-host']) {
 			const source = await leafSource('#platform/app-storage', condition);
 			expect({
 				condition,
-				composes: source.includes('createEpicenter'),
-			}).toEqual({ condition, composes: false });
+				browser: source.includes('@epicenter/app-storage/browser'),
+				desktop: source.includes('@epicenter/app-storage/desktop'),
+			}).toEqual({
+				condition,
+				browser: condition === 'default',
+				desktop: condition === 'epicenter-host',
+			});
 		}
 	});
 });

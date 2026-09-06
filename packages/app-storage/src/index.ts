@@ -24,6 +24,7 @@
  * it to.
  */
 
+import { isAppId } from '@epicenter/constants/app-id';
 import type { SqliteRow, SqliteValue } from '@epicenter/sqlite';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
@@ -102,6 +103,20 @@ export function databaseName(value: string): DatabaseName {
 	return value;
 }
 
+/**
+ * Narrow one application id, on the same terms as {@link databaseName}.
+ *
+ * Both constructors call it, so a bad id is refused where it is supplied
+ * rather than accepted here and refused later by the host, which would report
+ * it as a rejected request against an application that never existed.
+ */
+export function appIdOrThrow(value: string): string {
+	if (!isAppId(value)) {
+		throw new Error(AppError.InvalidAppId({ appId: value }).error.message);
+	}
+	return value;
+}
+
 /** Mint one secret label, on the same terms as {@link databaseName}. */
 export function secretLabel(value: string): SecretLabel {
 	if (!isSecretLabel(value)) {
@@ -154,10 +169,10 @@ export type SecretStore = {
  * One application's device-owned storage: named SQLite files, and secrets.
  *
  * Both runtime constructors answer this, so an application annotates against
- * it once and its two platform leaves cannot drift. `appId` is on it because
- * the value scopes every file name and every keychain entry underneath, and a
- * caller that wants to log which application it is holding should not have to
- * keep the string beside the object.
+ * it once and its two platform leaves cannot drift. The application id is an
+ * input to the constructor rather than a member here: it scopes every file
+ * name and every keychain entry underneath, and nothing reading this object
+ * needs to be told which application it belongs to.
  *
  * There is no `list` on either half, for the same reason: the application's own
  * rows are the only thing that knows a name exists. A name that was never
@@ -165,7 +180,6 @@ export type SecretStore = {
  * it is.
  */
 export type AppStorage = {
-	readonly appId: string;
 	readonly sqlite: {
 		open(name: DatabaseName): Promise<Result<AppSqliteDatabase, AppError>>;
 		/** Delete one file this application named, closing the owner's handle (ADR-0321). */

@@ -75,7 +75,6 @@
 		"@epicenter/recorder": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@mistralai/mistralai": "^1.9.18",
-		"@sqlite.org/sqlite-wasm": "catalog:",
 		"@standard-schema/spec": "catalog:",
 		"@tanstack/svelte-query": "catalog:",
 		"@tanstack/svelte-table": "catalog:",

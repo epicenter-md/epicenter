@@ -84,7 +84,6 @@ package does not depend on `@epicenter/app`.
 // apps/<app>/src/lib/epicenter.svelte.ts, one file for every build
 import { createEpicenter } from '@epicenter/app';
 import { fromEpicenter } from '@epicenter/svelte';
-import { binding } from '#platform/binding';
 
 export const notes = fromEpicenter(
 	createEpicenter({ appId, definition, account: auth, binding }),

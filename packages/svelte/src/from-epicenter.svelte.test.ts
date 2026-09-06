@@ -133,25 +133,19 @@ test('the rest of the handle comes across, and reading it opens nothing', () => 
 	const full = Object.defineProperties(
 		{
 			appId: 'so.epicenter.notes',
-			sqlite: { open: async () => Ok('opened') },
-			secrets: { get: async () => Ok(null) },
 			close: async () => undefined,
 		},
 		Object.getOwnPropertyDescriptors(held.epicenter),
 	);
 	const epicenter = fromEpicenter(full as never) as unknown as {
 		appId: string;
-		sqlite: { open(): Promise<unknown> };
-		secrets: { get(): Promise<unknown> };
 		close?: unknown;
 		onStateChange?: unknown;
 		eraseReplica?: unknown;
 	};
 
-	// One `epicenter`, not a session beside unrelated storage exports.
+	// Plain members come across untouched, and reading one acquires nothing.
 	expect(epicenter.appId).toBe('so.epicenter.notes');
-	expect(typeof epicenter.sqlite.open).toBe('function');
-	expect(typeof epicenter.secrets.get).toBe('function');
 
 	// Ending the store is the module local's, and the raw subscription is
 	// consumed rather than offered as a second way to watch what the rune

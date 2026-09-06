@@ -16,9 +16,8 @@ Design authority: [ADR-0339](../../docs/adr/0339-an-application-creates-one-epic
 import { epicenter } from '$lib/epicenter.svelte.js';
 ```
 
-`#platform/binding` holds the only thing that varies, which is who owns the
-SQLite files and the keychain. Honeycrisp uses neither, and still takes the
-owner its platform actually has.
+Honeycrisp opens no SQLite file and keeps no secret, so it declares no storage
+seam. What varies by build is auth, and whether there is a folder.
 
 `definition` and `account` arrive together in that one file, which IS the store: an authority
 mints every generation (ADR-0336), so there is no accountless notebook.
@@ -137,13 +136,11 @@ after showing the paths once for the folder rather than once per file.
 
 **They differ in nothing that concerns data.** Every build opens the same
 client-owned store through the same handle and owns it; the desktop host serves
-the bundle and brokers the credential and owns none of it (ADR-0226). What
-`#platform/binding` selects is the runtime the handle's SQLite and secrets are
-built over, which Honeycrisp uses neither of.
+the bundle and brokers the credential and owns none of it (ADR-0226).
 There used to be a platform seam where the hosted build reached the host's
 shared `epicenter.sqlite3`, and ADR-0226 refused it.
 
-What remains behind `#platform/*` is auth and instance only: how a build gets a
+What remains behind `#platform/*` is auth and the folder only: how a build gets a
 bearer, not where its data lives. `src/lib/platform-selection.test.ts` reads the
 declarations and names a broken seam. `typecheck` runs all three conditions;
 only the default one is checked by an editor.
@@ -183,9 +180,8 @@ only the default one is checked by an editor.
   chose that number and no link carries it. When importing a replica ships, an
   import ends in a document reload and a device holding an older number is told
   a newer one exists (ADR-0281); neither is a route parameter.
-- Do not add a `#platform/*` seam for data. `#platform/binding` selects the
-  RUNTIME the handle is built over, which is a keychain and a Bun-owned file;
-  every build opens its own store either way, and a seam over the data is the
+- Do not add a `#platform/*` seam for data. Every build opens its own store the
+  same way, so a seam over the data is the
   thing ADR-0226 refused.
 - Do not compose the handle inside a platform leaf. The seam holds the binding
   and nothing built from it, so the application's one `epicenter` is defined

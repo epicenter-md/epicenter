@@ -27,7 +27,6 @@ vocabDefinition
 src/
   lib/
     platform/auth.ts       # OAuth auth client
-    platform/binding.ts    # who owns this build's SQLite files and secrets
     epicenter.svelte.ts    # the one handle: createEpicenter + fromEpicenter
     state/
       dictation.svelte.ts              # dictation state and interruption handling

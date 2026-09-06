@@ -17,11 +17,11 @@ import { searchForWorkspaceRoot, type UserConfig } from 'vite';
  * `new URL('./x.worker.ts', import.meta.url)` resolves to a `/@fs/` URL under
  * the monorepo root, which SvelteKit's list answers 403 to.
  *
- * **The last three are what `@epicenter/app`'s browser leaf costs**, and they
- * are here rather than in each app because every workspace app composes that
- * leaf and none of them chose this. Its SQLite owner is a dedicated worker over
- * `@sqlite.org/sqlite-wasm`, because OPFS synchronous access handles exist only
- * in a worker context, so:
+ * **The last three are what `@epicenter/app-storage`'s browser leaf costs.**
+ * Only `apps/local-mail/ui` composes it, so they belong in that app's config
+ * rather than here; they stay until that move is made. Its SQLite owner is a
+ * dedicated worker over `@sqlite.org/sqlite-wasm`, because OPFS synchronous
+ * access handles exist only in a worker context, so:
  *
  * - `optimizeDeps.exclude` keeps the package unbundled. It resolves
  *   `sqlite3.wasm` relative to its own module URL, and pre-bundling rewrites
@@ -43,11 +43,13 @@ export function workspaceAppViteConfig(app: { port: number }): UserConfig {
 		// across app configs. Keep the cast here, the one place every workspace
 		// app's plugins come from, instead of leaking the workaround into each app.
 		plugins: [sveltekit(), tailwindcss()] as UserConfig['plugins'],
-		// One CRDT instance per app, or two documents that cannot see each
-		// other's updates and say nothing about it. This named `yjs` until the
-		// store moved to `@y/y`, after which it deduped a package no workspace
-		// member depends on; a typecheck cannot see either mistake.
-		resolve: { dedupe: ['@y/y'] },
+		// No `resolve.dedupe` here. It named `yjs` for a long time, which no
+		// workspace member depends on since the store moved to `@y/y`, so it was
+		// inert. Retargeting it at `@y/y` is worse than inert: `dedupe` resolves
+		// from the app root, and an app that reaches the CRDT only through
+		// `@epicenter/data` does not declare it, so Rollup fails the production
+		// build with an unresolved import. One install is what actually keeps
+		// CRDT identity, and the lockfile is where that is enforced.
 		server: {
 			port: app.port,
 			strictPort: true,

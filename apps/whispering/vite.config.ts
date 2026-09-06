@@ -33,9 +33,8 @@ export default defineConfig(
 		// .mjs that Vite's dep optimizer can't pre-bundle (it 404s on
 		// .vite/deps/ort-wasm-simd-threaded.mjs). Keep that package and its wasm
 		// subpath native, but still prebundle vad-web so Vite converts its
-		// CommonJS entry to ESM for browser dev mode. `@sqlite.org/sqlite-wasm`
-		// is excluded by the base config, which owns everything the browser
-		// storage worker costs; `mergeConfig` concatenates these with those.
+		// CommonJS entry to ESM for browser dev mode. `mergeConfig` concatenates
+		// this with whatever the base config excludes.
 		optimizeDeps: { exclude: ['onnxruntime-web', 'onnxruntime-web/wasm'] },
 		resolve: {
 			// Build-time platform DI over the `#platform/*` subpaths (package.json
