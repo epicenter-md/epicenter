@@ -9,7 +9,11 @@
  */
 
 import { expect, test } from 'bun:test';
-import type { AppSqliteDatabase, Epicenter, SecretStore } from '@epicenter/app';
+import type {
+	AppSqliteDatabase,
+	AppStorage,
+	SecretStore,
+} from '@epicenter/app-storage';
 import { Ok } from 'wellcrafted/result';
 import {
 	createMailApp,
@@ -98,13 +102,13 @@ async function openApp(options: { refuse?: 'put' | 'delete' } = {}) {
 	}
 
 	const { secrets, held } = secretStore(options);
-	const epicenter = {
+	const appStorage = {
 		appId: LOCAL_MAIL_APP_ID,
 		secrets,
-	} as unknown as Epicenter;
+	} as unknown as AppStorage;
 
 	const app = createMailApp({
-		epicenter,
+		appStorage,
 		storage: {
 			local,
 			mail,

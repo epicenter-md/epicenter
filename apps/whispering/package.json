@@ -9,10 +9,6 @@
 			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",
 			"default": "./src/lib/platform/auth.browser.ts"
 		},
-		"#platform/binding": {
-			"epicenter-host": "./src/lib/platform/binding.epicenter-host.ts",
-			"default": "./src/lib/platform/binding.browser.ts"
-		},
 		"#platform/blobs": {
 			"epicenter-host": "./src/lib/services/blobs/index.epicenter-host.ts",
 			"default": "./src/lib/services/blobs/index.browser.ts"

@@ -37,7 +37,6 @@ import { expect, test } from 'bun:test';
 );
 
 import { createEpicenter } from '@epicenter/app';
-import { createBrowserBinding } from '@epicenter/app/browser';
 import type { AuthClient } from '@epicenter/auth';
 import type { BlobStore } from '@epicenter/blobs';
 import { encodeFrame } from '@epicenter/data/sync';
@@ -202,7 +201,6 @@ async function openWhispering(auth: AuthClient) {
 		appId: APP_ID,
 		definition: whisperingDefinition,
 		account: auth,
-		binding: createBrowserBinding(),
 	});
 	const opened = await handle.open();
 	return { handle, opened };

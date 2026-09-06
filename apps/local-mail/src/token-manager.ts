@@ -1,7 +1,7 @@
 /**
  * The live access token for one connected account.
  *
- * What is stored and what is held apart deliberately. `epicenter.secrets` holds
+ * What is stored and what is held apart deliberately. `appStorage.secrets` holds
  * the refresh token and nothing else (ADR-0310): it is the only part worth
  * keeping, it is the only part that cannot be re-derived, and it is the only
  * part a keychain should be asked to hold. The access token lives in this
@@ -13,7 +13,7 @@
  * by attempting the refresh and reading `invalid_grant` back.
  */
 
-import type { SecretLabel, SecretStore } from '@epicenter/app';
+import type { SecretLabel, SecretStore } from '@epicenter/app-storage';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { GmailClientIdentity, MailConfig } from './config.ts';
 import { OAuthError, refreshAccess } from './oauth.ts';

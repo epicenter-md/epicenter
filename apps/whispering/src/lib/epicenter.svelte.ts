@@ -14,10 +14,9 @@
  * this module owns.
  *
  * **This file is not a platform leaf, and there is one of it.** Nothing about
- * an epicenter varies by runtime: the store is client-owned in every build
+ * a data session varies by runtime: the store is client-owned in every build
  * (ADR-0226, ADR-0227), the definition is one file, and the account is already
- * selected next door. What varies is a Bun-owned file and a keychain, which is
- * what `#platform/binding` holds.
+ * selected next door.
  *
  * **Nothing opens when this module is evaluated.** What opens the store is
  * `epicenter.open()`, called once by `(app)/+layout.svelte` after auth is read.
@@ -28,7 +27,6 @@
 import { createEpicenter } from '@epicenter/app';
 import { fromEpicenter } from '@epicenter/svelte';
 import { authClient } from '#platform/auth';
-import { binding } from '#platform/binding';
 import { APP_ID } from './app-id';
 import { whisperingDefinition } from './data';
 
@@ -45,7 +43,6 @@ const handle = createEpicenter({
 	appId: APP_ID,
 	definition: whisperingDefinition,
 	account: authClient,
-	binding,
 });
 
 export const epicenter = fromEpicenter(handle);

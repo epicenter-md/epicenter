@@ -9,7 +9,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { type SecretStore, secretLabel } from '@epicenter/app';
+import { type SecretStore, secretLabel } from '@epicenter/app-storage';
 import { Ok } from 'wellcrafted/result';
 import { DEFAULT_MAIL_CONFIG, type MailConfig } from './config.ts';
 import { createTokenManager } from './token-manager.ts';

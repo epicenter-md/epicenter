@@ -15,6 +15,7 @@ import {
 	isSupportedLanguage,
 	type SupportedLanguage,
 } from '$lib/constants/languages';
+import type { RecordingId } from '$lib/data';
 import { logAnalyticsEvent } from '$lib/operations/analytics';
 import {
 	recordTranscriptionOutcome,
@@ -33,7 +34,6 @@ import {
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { type SecretKey, secrets } from '$lib/state/secrets.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
-import type { RecordingId } from '$lib/data';
 
 const log = createLogger('whispering/transcribe');
 

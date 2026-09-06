@@ -1,5 +1,5 @@
 /**
- * The Bun-owned Epicenter origin: trusted SPA documents, Home APIs, and the
+ * The Bun-owned AppStorage origin: trusted SPA documents, Home APIs, and the
  * Home session WebSocket. The launch credential can only mint short-lived
  * browser sessions at the bootstrap route; it never appears in a URL or
  * durable browser storage.
@@ -7,7 +7,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { AgentToolDefinition } from '@epicenter/agent';
-import { answerAppStorage } from '@epicenter/app/owner';
+import { answerAppStorage } from '@epicenter/app-storage/owner';
 import {
 	APP_STORAGE_PATH,
 	type AppStorageRequest,
@@ -15,7 +15,7 @@ import {
 	isDatabaseName,
 	isSecretLabel,
 	type SqliteStatement,
-} from '@epicenter/app/protocol';
+} from '@epicenter/app-storage/protocol';
 import { getProfileVia } from '@epicenter/auth';
 import { type BlobId, type BlobRemote, parseBlobId } from '@epicenter/blobs';
 import type { BunBlobStore } from '@epicenter/blobs/bun';
@@ -106,8 +106,8 @@ const MAX_BROWSER_SESSIONS = 32;
  * happened: whether the account connected is decided in the Mail window, which
  * is where the person is about to look.
  */
-const MAIL_CALLBACK_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Local Mail</title></head><body><p>Google has answered. You can close this tab and return to Epicenter.</p></body></html>`;
-const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>Epicenter</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
+const MAIL_CALLBACK_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Local Mail</title></head><body><p>Google has answered. You can close this tab and return to AppStorage.</p></body></html>`;
+const SESSION_SHELL = `<!doctype html><html><head><meta charset="utf-8"><title>AppStorage</title><script>window.__EPICENTER_SESSION_READY__.then(() => window.location.reload())</script></head><body></body></html>`;
 
 export function createHomeServer({
 	host,
@@ -121,7 +121,7 @@ export function createHomeServer({
 	appSecrets,
 }: HomeServerOptions) {
 	if (launchToken === '') {
-		throw new Error('Epicenter refuses to serve without a launch token.');
+		throw new Error('AppStorage refuses to serve without a launch token.');
 	}
 	// Resolved once, here, rather than per request. `epicenterFolderRoot` reads
 	// the environment and refuses a relative override by throwing, and a
@@ -378,7 +378,7 @@ export function createHomeServer({
 	);
 
 	/**
-	 * One database's working copy in `~/Epicenter` (ADR-0337).
+	 * One database's working copy in `~/AppStorage` (ADR-0337).
 	 *
 	 * `PUT` is `pull`'s half: the application says what its store holds and the
 	 * host replaces the folder with it. `GET` is `push`'s, and what `pull` reads
@@ -701,7 +701,7 @@ function validateOrigin(origin: string): URL {
 	try {
 		url = new URL(origin);
 	} catch {
-		throw new Error(`Invalid Epicenter origin: ${origin}`);
+		throw new Error(`Invalid AppStorage origin: ${origin}`);
 	}
 	if (
 		url.origin !== origin ||
@@ -712,7 +712,7 @@ function validateOrigin(origin: string): URL {
 		url.password !== ''
 	) {
 		throw new Error(
-			'Epicenter origin must be exact http://127.0.0.1:<port> without credentials or a path.',
+			'AppStorage origin must be exact http://127.0.0.1:<port> without credentials or a path.',
 		);
 	}
 	return url;
@@ -859,7 +859,7 @@ function contentSecurityPolicy(
 		// `'wasm-unsafe-eval'` permits WebAssembly compilation and nothing else:
 		// it does not restore `eval` or `new Function`, which is why it exists
 		// separately from `'unsafe-eval'`. Voice activity detection runs
-		// onnxruntime in this WebView over assets Epicenter itself ships, so
+		// onnxruntime in this WebView over assets AppStorage itself ships, so
 		// WebAssembly is a first-party capability of the app window rather than
 		// something a policy is being bent to tolerate. Without it the browser
 		// refuses the compile and the recording trigger dies mid-boot.

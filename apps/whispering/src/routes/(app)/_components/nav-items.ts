@@ -27,8 +27,7 @@ export const NAV_ITEMS = [
 		label: 'Home',
 		href: resolve('/'),
 		icon: HomeIcon,
-		isActive: (pathname) =>
-			pathname === base || pathname === resolve('/'),
+		isActive: (pathname) => pathname === base || pathname === resolve('/'),
 	},
 	{
 		label: 'Recordings',

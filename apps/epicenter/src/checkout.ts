@@ -220,19 +220,21 @@ async function listCheckoutFiles(absoluteFolder: string): Promise<string[]> {
 	} catch {
 		return [];
 	}
-	return entries
-		.filter((entry) => entry.isFile())
-		.map((entry) =>
-			relative(absoluteFolder, join(entry.parentPath, entry.name)).split(sep),
-		)
-		.map((segments) => segments.join('/'))
-		.filter(isCheckoutPath)
-		// Sorted, so the digest below is a function of what the folder holds and
-		// not of the order a filesystem happened to walk it. The application
-		// sorts its plan for the same reason: a folder read twice has to be the
-		// same folder, or a write prepared against one reading is refused
-		// against an identical one.
-		.sort();
+	return (
+		entries
+			.filter((entry) => entry.isFile())
+			.map((entry) =>
+				relative(absoluteFolder, join(entry.parentPath, entry.name)).split(sep),
+			)
+			.map((segments) => segments.join('/'))
+			.filter(isCheckoutPath)
+			// Sorted, so the digest below is a function of what the folder holds and
+			// not of the order a filesystem happened to walk it. The application
+			// sorts its plan for the same reason: a folder read twice has to be the
+			// same folder, or a write prepared against one reading is refused
+			// against an identical one.
+			.sort()
+	);
 }
 
 /**

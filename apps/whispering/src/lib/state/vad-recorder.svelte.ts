@@ -6,8 +6,8 @@ import {
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys, resultQueryOptions } from 'wellcrafted/query';
 import { Ok } from 'wellcrafted/result';
-import type { VadState } from '$lib/constants/audio';
 import { base } from '$app/paths';
+import type { VadState } from '$lib/constants/audio';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 const VadRecorderError = defineErrors({

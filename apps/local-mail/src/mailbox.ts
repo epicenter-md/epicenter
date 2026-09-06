@@ -19,7 +19,7 @@
  * inbox page immediately and the page still come back full.
  */
 
-import type { AppSqliteDatabase } from '@epicenter/app';
+import type { AppSqliteDatabase } from '@epicenter/app-storage';
 import { type Statement, sqliteHandle } from './handle.ts';
 import type { LabelIntent } from './intent-store.ts';
 import {

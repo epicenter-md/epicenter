@@ -28,7 +28,6 @@ import { fromEpicenter } from '@epicenter/svelte';
 import { APP_ID } from '$lib/app-id';
 import { vocabDefinition } from '$lib/data';
 import { authClient } from '$lib/platform/auth';
-import { binding } from '$lib/platform/binding';
 
 /**
  * The handle, module-private, because `close` is on it.
@@ -41,7 +40,6 @@ const handle = createEpicenter({
 	appId: APP_ID,
 	definition: vocabDefinition,
 	account: authClient,
-	binding,
 });
 
 export const epicenter = fromEpicenter(handle);

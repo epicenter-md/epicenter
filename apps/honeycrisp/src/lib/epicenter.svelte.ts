@@ -6,12 +6,11 @@
  * store rendered as a boot (ADR-0339, ADR-0340).
  *
  * **This file is not a platform leaf, and there is one of it.** Nothing about
- * an epicenter varies by runtime: the store is client-owned in every build
+ * a data session varies by runtime: the store is client-owned in every build
  * (ADR-0226, ADR-0227), the definition is one file, and the account is already
- * selected next door. What varies is a Bun-owned file and a keychain, so that
- * is what `#platform/binding` selects and all that it holds. The wiring, the
- * singleton, and the one call that ends it live here, in one copy, where they
- * cannot drift between two leaves that differ on an import line.
+ * selected next door. The wiring, the singleton, and the one call that ends it
+ * live here, in one copy, where they cannot drift between two leaves that
+ * differ on an import line.
  *
  * `definition` and `account` arrive together, which is the store: an authority
  * mints every generation (ADR-0336), so there is no accountless notebook. The
@@ -28,7 +27,6 @@
 import { createEpicenter } from '@epicenter/app';
 import { fromEpicenter } from '@epicenter/svelte';
 import { authClient } from '#platform/auth';
-import { binding } from '#platform/binding';
 import { APP_ID } from '$lib/app-id';
 import { honeycrispDefinition } from '$lib/data';
 
@@ -44,7 +42,6 @@ const handle = createEpicenter({
 	appId: APP_ID,
 	definition: honeycrispDefinition,
 	account: authClient,
-	binding,
 });
 
 export const epicenter = fromEpicenter(handle);

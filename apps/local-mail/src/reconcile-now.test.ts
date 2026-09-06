@@ -12,7 +12,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import type { Epicenter } from '@epicenter/app';
+import type { AppStorage } from '@epicenter/app-storage';
 import {
 	createMailApp,
 	type MailApp,
@@ -155,10 +155,10 @@ async function openApp(): Promise<{
 	};
 	const forgotten: string[] = [];
 	const app = createMailApp({
-		epicenter: {
+		appStorage: {
 			appId: LOCAL_MAIL_APP_ID,
 			secrets: { delete: async () => ({ data: undefined, error: null }) },
-		} as unknown as Epicenter,
+		} as unknown as AppStorage,
 		storage: {
 			local: session.localDatabase,
 			mail: async () => session.mailboxDatabase,

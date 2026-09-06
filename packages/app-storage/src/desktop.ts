@@ -31,7 +31,7 @@
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	AppError,
-	type EpicenterBindingFactory,
+	type AppStorage,
 	SecretError,
 	type SecretStore,
 } from './index.js';
@@ -43,31 +43,26 @@ import {
 	isAppStorageResponse,
 } from './protocol.js';
 
-export type CreateDesktopBindingOptions = {
+export type CreateDesktopAppStorageOptions = {
 	/** The trusted origin that owns the files and the keychain entries. */
 	baseURL?: string;
 	fetch?: typeof globalThis.fetch;
 };
 
 /**
- * One binding over what the trusted origin owns, for whichever application
- * asks.
+ * What the trusted origin owns, scoped to one application.
  *
- * A function of `appId` rather than a built binding, because that is the shape
- * `createEpicenter` takes: the handle resolves the id and hands it over, so the
- * files and the keychain cannot be scoped to a different application than the
- * store (ADR-0339).
- *
- * The origin and the fetch are read inside the returned function rather than
- * here, so a seam leaf evaluated at module scope does not refuse a build before
- * anything asked it for a handle.
+ * The origin and the fetch are read here rather than at module scope, so a
+ * seam leaf does not refuse a build before anything asked it for storage.
  */
-export function createDesktopBinding(
-	options: CreateDesktopBindingOptions = {},
-): EpicenterBindingFactory {
-	return (appId) => {
-		const request = createOwnerRequest(options);
-		return {
+export function createDesktopAppStorage({
+	appId,
+	...options
+}: CreateDesktopAppStorageOptions & { appId: string }): AppStorage {
+	const request = createOwnerRequest(options);
+	return {
+		appId,
+		sqlite: Object.freeze({
 			open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
 			delete: (name) =>
 				unwrap(
@@ -75,8 +70,8 @@ export function createDesktopBinding(
 					'sqlite-delete',
 					() => undefined,
 				),
-			secrets: createKeychainSecrets(request, appId),
-		};
+		}),
+		secrets: Object.freeze(createKeychainSecrets(request, appId)),
 	};
 }
 
@@ -87,9 +82,9 @@ type OwnerRequest = (
 function createOwnerRequest({
 	baseURL = globalThis.location?.origin,
 	fetch: fetchImplementation = globalThis.fetch,
-}: CreateDesktopBindingOptions): OwnerRequest {
+}: CreateDesktopAppStorageOptions): OwnerRequest {
 	if (!baseURL || !fetchImplementation) {
-		throw new Error('The desktop binding needs an origin and fetch.');
+		throw new Error('Desktop app storage needs an origin and fetch.');
 	}
 	return async (message) => {
 		try {

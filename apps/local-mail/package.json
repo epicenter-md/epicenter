@@ -30,7 +30,7 @@
 		"typecheck": "tsc --noEmit && tsc --noEmit -p test-support/tsconfig.json"
 	},
 	"dependencies": {
-		"@epicenter/app": "workspace:*",
+		"@epicenter/app-storage": "workspace:*",
 		"@epicenter/data": "workspace:*",
 		"oauth4webapi": "catalog:",
 		"typebox": "catalog:",

@@ -100,7 +100,12 @@ describe('syncMailbox: FULL pull', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-07-01T00:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
@@ -110,7 +115,10 @@ describe('syncMailbox: FULL pull', () => {
 		expect(outcome.cursorAfter).toBe('1000');
 		expect((await mailbox.readCacheState()).historyId).toBe('1000');
 
-		const row = await session.row<{ id: string }>(`SELECT id FROM messages WHERE id = ?`, ['m1']);
+		const row = await session.row<{ id: string }>(
+			`SELECT id FROM messages WHERE id = ?`,
+			['m1'],
+		);
 		expect(row?.id).toBe('m1');
 		cleanup();
 	});
@@ -138,7 +146,12 @@ describe('syncMailbox: FULL pull', () => {
 		};
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-07-01T00:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
@@ -175,7 +188,12 @@ describe('syncMailbox: FULL pull', () => {
 		};
 
 		const syncing = syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-07-01T00:00:00.000Z'),
+			},
 			{ forceFull: true },
 		);
 		while (highWater < 8) await Bun.sleep(1);
@@ -214,7 +232,12 @@ describe('syncMailbox: FULL pull', () => {
 		};
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-07-01T00:00:00.000Z'),
+			},
 			{ forceFull: true },
 		);
 
@@ -242,7 +265,12 @@ describe('syncMailbox: FULL pull', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-07-01T00:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-07-01T00:00:00.000Z'),
+			},
 			{ forceFull: true },
 		);
 
@@ -250,10 +278,20 @@ describe('syncMailbox: FULL pull', () => {
 		expect(outcome.messagesUpserted).toBe(1);
 		expect(outcome.messagesDeleted).toBe(1);
 		expect(
-			(await session.row<{ n: number }>(`SELECT count(*) AS n FROM messages WHERE id = 'stale'`, []))?.n,
+			(
+				await session.row<{ n: number }>(
+					`SELECT count(*) AS n FROM messages WHERE id = 'stale'`,
+					[],
+				)
+			)?.n,
 		).toBe(0);
 		expect(
-			(await session.row<{ n: number }>(`SELECT count(*) AS n FROM messages WHERE id = 'kept'`, []))?.n,
+			(
+				await session.row<{ n: number }>(
+					`SELECT count(*) AS n FROM messages WHERE id = 'kept'`,
+					[],
+				)
+			)?.n,
 		).toBe(1);
 		cleanup();
 	});
@@ -298,14 +336,22 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
 		expect(outcome.mode).toBe('INCREMENTAL');
 		expect(outcome.messagesUpserted).toBe(1);
 		expect(outcome.cursorAfter).toBe('501');
-		const row = await session.row<{ id: string }>(`SELECT id FROM messages WHERE id = ?`, ['new-msg']);
+		const row = await session.row<{ id: string }>(
+			`SELECT id FROM messages WHERE id = ?`,
+			['new-msg'],
+		);
 		expect(row?.id).toBe('new-msg');
 		cleanup();
 	});
@@ -344,14 +390,22 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
 		expect(outcome.failure).toBeNull();
 		expect(outcome.cursorAfter).toBe('502');
 		expect(client.calls.listLabels()).toBe(1);
-		const label = await session.row<{ name: string }>(`SELECT name FROM labels WHERE id = ?`, ['Label_1']);
+		const label = await session.row<{ name: string }>(
+			`SELECT name FROM labels WHERE id = ?`,
+			['Label_1'],
+		);
 		expect(label?.name).toBe('Work');
 		cleanup();
 	});
@@ -397,13 +451,21 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
 		expect(outcome.failure).toBeNull();
 		expect(client.calls.listLabels()).toBe(1);
-		const label = await session.row<{ name: string }>(`SELECT name FROM labels WHERE id = ?`, ['IMPORTANT']);
+		const label = await session.row<{ name: string }>(
+			`SELECT name FROM labels WHERE id = ?`,
+			['IMPORTANT'],
+		);
 		expect(label?.name).toBe('IMPORTANT');
 		cleanup();
 	});
@@ -440,11 +502,21 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const first = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 		const second = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:01:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:01:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
@@ -540,14 +612,22 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
 		expect(outcome.failure).toBeNull();
 		expect(outcome.labelsPatched).toBe(1);
 		expect(client.calls.getMessage()).toBe(0);
-		const row = await session.row<{ label_ids: string }>(`SELECT label_ids FROM messages WHERE id = ?`, ['existing']);
+		const row = await session.row<{ label_ids: string }>(
+			`SELECT label_ids FROM messages WHERE id = ?`,
+			['existing'],
+		);
 		expect(JSON.parse(row?.label_ids ?? '[]')).toEqual(['INBOX', 'IMPORTANT']);
 		cleanup();
 	});
@@ -585,7 +665,12 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
@@ -630,7 +715,12 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
@@ -672,7 +762,12 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
@@ -680,7 +775,10 @@ describe('syncMailbox: INCREMENTAL', () => {
 		expect(client.calls.getMessage()).toBe(1);
 		expect(outcome.messagesUpserted).toBe(1);
 		expect(outcome.cursorAfter).toBe('504');
-		const row = await session.row<{ subject: string | null }>(`SELECT subject FROM messages WHERE id = ?`, ['untrashed']);
+		const row = await session.row<{ subject: string | null }>(
+			`SELECT subject FROM messages WHERE id = ?`,
+			['untrashed'],
+		);
 		expect(row?.subject).toBe('Subject untrashed');
 		cleanup();
 	});
@@ -715,14 +813,22 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
 		expect(outcome.failure).toBeNull();
 		expect(client.calls.getMessage()).toBe(1);
 		expect(outcome.cursorAfter).toBe('504');
-		const row = await session.row<{ n: number }>(`SELECT count(*) AS n FROM messages WHERE id = 'gone'`, []);
+		const row = await session.row<{ n: number }>(
+			`SELECT count(*) AS n FROM messages WHERE id = 'gone'`,
+			[],
+		);
 		expect(row?.n).toBe(0);
 		cleanup();
 	});
@@ -750,12 +856,20 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
 		expect(outcome.messagesDeleted).toBe(1);
-		const row = await session.row<{ n: number }>(`SELECT count(*) AS n FROM messages WHERE id = 'existing'`, []);
+		const row = await session.row<{ n: number }>(
+			`SELECT count(*) AS n FROM messages WHERE id = 'existing'`,
+			[],
+		);
 		expect(row?.n).toBe(0);
 		cleanup();
 	});
@@ -771,7 +885,12 @@ describe('syncMailbox: INCREMENTAL', () => {
 		});
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 
@@ -798,7 +917,12 @@ describe('syncMailbox: INCREMENTAL', () => {
 		};
 
 		const outcome = await syncMailbox(
-			{ mailbox, client, config, now: () => Date.parse('2026-06-30T01:00:00.000Z') },
+			{
+				mailbox,
+				client,
+				config,
+				now: () => Date.parse('2026-06-30T01:00:00.000Z'),
+			},
 			{ forceFull: false },
 		);
 

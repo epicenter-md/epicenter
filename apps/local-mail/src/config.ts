@@ -2,7 +2,7 @@
  * Local Mail's own configuration: Gmail's endpoints and its polling shape.
  *
  * There is no `dataDir` here any more, and no path, file, or environment read
- * that resolves one. Storage is `epicenter.sqlite` and `epicenter.secrets`;
+ * that resolves one. Storage is `appStorage.sqlite` and `appStorage.secrets`;
  * where either of those lands is the runtime's business
  * and the application never learns it.
  *
@@ -51,7 +51,7 @@ export const DEFAULT_MAIL_CONFIG: MailConfig = {
  *
  * Application-owned configuration, not an account secret: it identifies Local
  * Mail to Google and is the same for every account a person connects, while
- * `epicenter.secrets` holds the per-account refresh token and nothing else
+ * `appStorage.secrets` holds the per-account refresh token and nothing else
  * (ADR-0310). A packaged release compiles in its own identity; a source build
  * supplies one.
  *

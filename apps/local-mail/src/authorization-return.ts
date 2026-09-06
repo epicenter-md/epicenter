@@ -18,7 +18,7 @@
  * Neither path carries a credential. The host holds an opaque URL for one
  * collection and reads nothing out of it; the code is redeemed in the window
  * that holds the verifier, and the refresh token goes straight to
- * `epicenter.secrets` from there (ADR-0310).
+ * `appStorage.secrets` from there (ADR-0310).
  */
 
 /** Google's redirect target, relative to the base this build is served under. */

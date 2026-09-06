@@ -1,5 +1,5 @@
 /**
- * Bun-owned routes on the one trusted Epicenter origin.
+ * Bun-owned routes on the one trusted AppStorage origin.
  *
  * The built-in route table is deliberately closed and compiled. Rust can mirror
  * the IDs and paths without discovering or loading an application registry, and
@@ -9,7 +9,7 @@
  * SPA reaches domain code.
  */
 
-import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
+import { APP_STORAGE_PATH } from '@epicenter/app-storage/protocol';
 import { LOCAL_BLOB_PATH } from '@epicenter/blobs/webview';
 import { CHECKOUT_PATH } from '@epicenter/data/artifact/checkout';
 import {
@@ -61,7 +61,7 @@ export const LOCAL_BLOB_ROUTE = {
 	pattern: `${LOCAL_BLOB_PATH}/:blobId`,
 } as const;
 /**
- * One database's working copy in `~/Epicenter` (ADR-0337).
+ * One database's working copy in `~/AppStorage` (ADR-0337).
  *
  * `PUT` replaces the folder with the checkout in the body; `GET` hands back
  * what the folder holds. Both carry their files in an NDJSON body, so there is

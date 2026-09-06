@@ -3,8 +3,8 @@
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { AppError, type AppSqliteDatabase } from '@epicenter/app';
-import type { AppSqliteOwner } from '@epicenter/app/owner';
+import { AppError, type AppSqliteDatabase } from '@epicenter/app-storage';
+import type { AppSqliteOwner } from '@epicenter/app-storage/owner';
 import { appDataDir, isAppId } from '@epicenter/constants/app-data';
 import type { SqliteValue } from '@epicenter/sqlite';
 import { Ok, type Result } from 'wellcrafted/result';

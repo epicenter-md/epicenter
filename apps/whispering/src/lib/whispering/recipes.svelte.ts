@@ -15,8 +15,8 @@
  * of order. Reads are synchronous now (ADR-0215), so none of that can happen.
  */
 import type { NonconformingRow } from '@epicenter/data';
-import { BUILTIN_RECIPES } from '../state/builtin-recipes';
 import type { Recipe, WhisperingData } from '../data';
+import { BUILTIN_RECIPES } from '../state/builtin-recipes';
 
 /** The shipped recipes are read-only, so editing one writes a copy. */
 const BUILTIN_PREFIX = 'builtin:';

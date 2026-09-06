@@ -2,14 +2,14 @@
  * An `AppSqliteDatabase` over an in-memory Bun database, for tests.
  *
  * Not a second owner. The real owners are the host's Bun files and the
- * browser's OPFS database, both behind `epicenter.sqlite.open`; this exists so a
+ * browser's OPFS database, both behind `appStorage.sqlite.open`; this exists so a
  * test can exercise the statements Local Mail actually sends without standing up
  * a desktop host. It reproduces the contract that matters here: asynchronous,
  * no transaction callback, and `batch` is all or nothing.
  */
 
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
-import type { AppSqliteDatabase } from '@epicenter/app';
+import type { AppSqliteDatabase } from '@epicenter/app-storage';
 
 export function createTestAppSqlite(): AppSqliteDatabase & {
 	close(): void;

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { createDesktopBinding } from './desktop.js';
-import { createEpicenter, databaseName, secretLabel } from './index.js';
+import { createDesktopAppStorage } from './desktop.js';
+import { databaseName, secretLabel } from './index.js';
 import type { AppStorageRequest } from './protocol.js';
 
 function ownerFor(answer: (request: AppStorageRequest) => Response): {
@@ -26,21 +26,19 @@ test('statements and secrets reach the owner scoped by application', async () =>
 		}
 		return Response.json({ kind: request.kind });
 	});
-	const epicenter = createEpicenter({
+	const storage = createDesktopAppStorage({
 		appId: 'so.epicenter.test',
-		binding: createDesktopBinding({
-			baseURL: 'http://127.0.0.1:1',
-			fetch: owner.fetch,
-		}),
+		baseURL: 'http://127.0.0.1:1',
+		fetch: owner.fetch,
 	});
 
-	const sqlite = await epicenter.sqlite.open(databaseName('mail'));
+	const sqlite = await storage.sqlite.open(databaseName('mail'));
 	if (sqlite.error !== null) throw sqlite.error;
 	const rows = await sqlite.data.all('SELECT id FROM messages');
 	expect(rows.data).toEqual([{ id: 'one' }]);
 
-	await epicenter.secrets.put(secretLabel('account-1'), 'refresh');
-	const secret = await epicenter.secrets.get(secretLabel('account-1'));
+	await storage.secrets.put(secretLabel('account-1'), 'refresh');
+	const secret = await storage.secrets.get(secretLabel('account-1'));
 	expect(secret.data).toBe('refresh');
 
 	expect(owner.calls.map((call) => call.kind)).toEqual([

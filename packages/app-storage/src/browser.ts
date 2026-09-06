@@ -17,43 +17,45 @@
  * The runtime is still the import path, never a runtime test: a WebView cannot
  * be told from a tab by anything observable at runtime, so the build answers
  * it. An application that needs the owner its platform actually has reaches
- * this through its own `#platform/binding` seam.
+ * this through its own `#platform/*` seam.
  */
 
 import { Ok } from 'wellcrafted/result';
 import { createBrowserSqliteTransport } from './browser-sqlite.js';
-import type { EpicenterBindingFactory, SecretStore } from './index.js';
+import type { AppStorage, SecretStore } from './index.js';
 import { createOwnedSqlite, unwrap } from './owner.js';
 
 /**
- * One binding over what a browser tab can own, for whichever application asks.
+ * What a browser tab can own, scoped to one application.
  *
- * It answers with a function of `appId` rather than a built binding, because
- * that is the shape `createEpicenter` takes: the handle resolves the id and
- * hands it over, so the files and the keychain cannot be scoped to a different
- * application than the store (ADR-0339).
- *
- * The transport is built once, above the function, because one tab has one
- * OPFS and therefore one storage worker; the application scope is the name the
- * worker files under, exactly as it is for the Bun owner.
+ * The transport is built per call, because one tab has one OPFS and therefore
+ * one storage worker; the application scope is the name the worker files
+ * under, exactly as it is for the Bun owner.
  *
  * `open` cannot fail here, which is the same thing the desktop leaf says: it
  * resolves a name to a handle rather than a connection, and whether the file
  * can be opened at all is answered by the first statement through it. Handing
- * back a `Result` anyway keeps one binding contract across runtimes.
+ * back a `Result` anyway keeps one contract across runtimes.
  */
-export function createBrowserBinding(): EpicenterBindingFactory {
+export function createBrowserAppStorage({
+	appId,
+}: {
+	appId: string;
+}): AppStorage {
 	const request = createBrowserSqliteTransport();
-	return (appId) => ({
-		open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
-		delete: (name) =>
-			unwrap(
-				request({ kind: 'sqlite-delete', appId, name }),
-				'sqlite-delete',
-				() => undefined,
-			),
-		secrets: createTabMemorySecrets(),
-	});
+	return {
+		appId,
+		sqlite: Object.freeze({
+			open: async (name) => Ok(createOwnedSqlite(request, appId, name)),
+			delete: (name) =>
+				unwrap(
+					request({ kind: 'sqlite-delete', appId, name }),
+					'sqlite-delete',
+					() => undefined,
+				),
+		}),
+		secrets: Object.freeze(createTabMemorySecrets()),
+	};
 }
 
 /** In memory, for the life of the tab, permanently rather than provisionally. */

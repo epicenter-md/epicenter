@@ -8,7 +8,7 @@
  *
  * Neither value is a credential. The verifier proves this page started the
  * exchange; the refresh token that comes back is never written here, it goes
- * straight to `epicenter.secrets` (ADR-0310).
+ * straight to `appStorage.secrets` (ADR-0310).
  */
 
 import type { AuthorizationRequest } from '@epicenter/local-mail/oauth';

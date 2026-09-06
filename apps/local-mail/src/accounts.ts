@@ -26,7 +26,7 @@
  * decided in this file.
  */
 
-import type { Epicenter, SecretError } from '@epicenter/app';
+import type { AppStorage, SecretError } from '@epicenter/app-storage';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
@@ -91,7 +91,7 @@ export type MailApp = {
 	storage: LocalMailStorage;
 	config: MailConfig;
 	identity: GmailClientIdentity;
-	epicenter: Epicenter;
+	appStorage: AppStorage;
 	now: () => number;
 	/**
 	 * One live session per connected account, for the life of the application.
@@ -116,20 +116,20 @@ export type MailApp = {
 };
 
 export function createMailApp({
-	epicenter,
+	appStorage,
 	storage,
 	identity,
 	config = DEFAULT_MAIL_CONFIG,
 	now = () => Date.now(),
 }: {
-	epicenter: Epicenter;
+	appStorage: AppStorage;
 	storage: LocalMailStorage;
 	identity: GmailClientIdentity;
 	config?: MailConfig;
 	now?: () => number;
 }): MailApp {
 	return {
-		epicenter,
+		appStorage,
 		storage,
 		identity,
 		config,
@@ -223,7 +223,7 @@ export async function finishConnect(
 		[sub, email, connectedAt],
 	);
 
-	const kept = await app.epicenter.secrets.put(filing.secret, refreshToken);
+	const kept = await app.appStorage.secrets.put(filing.secret, refreshToken);
 	if (kept.error !== null) return kept;
 
 	const [row] = await local.all<AccountRow>(
@@ -300,7 +300,7 @@ export async function removeAccount(
 		return Err(AccountError.OwesWork({ sub, pending: owed }).error);
 	}
 
-	const forgotten = await app.epicenter.secrets.delete(
+	const forgotten = await app.appStorage.secrets.delete(
 		requireAccountFiling(sub).secret,
 	);
 	if (forgotten.error !== null) return forgotten;
@@ -346,7 +346,7 @@ export function openSession(app: MailApp, sub: string): Promise<ReconcileDeps> {
 		const tokens = createTokenManager({
 			config: app.config,
 			identity: app.identity,
-			secrets: app.epicenter.secrets,
+			secrets: app.appStorage.secrets,
 			label: requireAccountFiling(sub).secret,
 			now: app.now,
 		});

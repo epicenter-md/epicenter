@@ -1,4 +1,5 @@
 import { type Command, commands } from '$lib/commands';
+import { DEFAULT_SHORTCUT_KEYS, type WhisperingSettingValues } from '$lib/data';
 import {
 	type CommandId,
 	LocalShortcutManagerLive,
@@ -9,10 +10,6 @@ import {
 	type KeyBinding,
 } from '$lib/utils/key-binding';
 import type { WhisperingApp } from '$lib/whispering/app';
-import {
-	DEFAULT_SHORTCUT_KEYS,
-	type WhisperingSettingValues,
-} from '$lib/data';
 import { createShortcuts } from './shortcuts.shared';
 import type { Shortcuts } from './types';
 

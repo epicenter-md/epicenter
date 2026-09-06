@@ -35,7 +35,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentEngine, EngineChunk } from '@epicenter/agent';
-import { APP_STORAGE_PATH } from '@epicenter/app/protocol';
+import { APP_STORAGE_PATH } from '@epicenter/app-storage/protocol';
 import {
 	type BlobRemote,
 	BlobRemoteError,

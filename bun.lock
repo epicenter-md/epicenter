@@ -88,7 +88,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/agent": "workspace:*",
-        "@epicenter/app": "workspace:*",
+        "@epicenter/app-storage": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/blobs": "workspace:*",
         "@epicenter/client": "workspace:*",
@@ -248,7 +248,7 @@
       "name": "@epicenter/local-mail",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/app": "workspace:*",
+        "@epicenter/app-storage": "workspace:*",
         "@epicenter/data": "workspace:*",
         "oauth4webapi": "catalog:",
         "typebox": "catalog:",
@@ -263,7 +263,7 @@
       "name": "@epicenter/local-mail-ui",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/app": "workspace:*",
+        "@epicenter/app-storage": "workspace:*",
         "@epicenter/local-mail": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
         "@tauri-apps/plugin-opener": "catalog:",
@@ -585,8 +585,6 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/data": "workspace:*",
-        "@epicenter/sqlite": "workspace:*",
-        "@sqlite.org/sqlite-wasm": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -594,7 +592,6 @@
         "@epicenter/sync": "workspace:*",
         "@types/bun": "catalog:",
         "fake-indexeddb": "^6.2.5",
-        "playwright": "^1.61.1",
         "typescript": "catalog:",
         "vite": "catalog:",
       },
@@ -622,6 +619,22 @@
         "svelte": "catalog:",
         "svelte-check": "catalog:",
         "typescript": "catalog:",
+      },
+    },
+    "packages/app-storage": {
+      "name": "@epicenter/app-storage",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/constants": "workspace:*",
+        "@epicenter/sqlite": "workspace:*",
+        "@sqlite.org/sqlite-wasm": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "playwright": "^1.61.1",
+        "typescript": "catalog:",
+        "vite": "catalog:",
       },
     },
     "packages/auth": {
@@ -1210,6 +1223,8 @@
     "@epicenter/app": ["@epicenter/app@workspace:packages/app"],
 
     "@epicenter/app-shell": ["@epicenter/app-shell@workspace:packages/app-shell"],
+
+    "@epicenter/app-storage": ["@epicenter/app-storage@workspace:packages/app-storage"],
 
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
 

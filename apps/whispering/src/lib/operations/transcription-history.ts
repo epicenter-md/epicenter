@@ -7,9 +7,9 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, isErr, Ok, type Result, trySync } from 'wellcrafted/result';
+import type { RecordingId } from '$lib/data';
 import type { WhisperingApp } from '$lib/whispering/app';
 import type { Recording } from '$lib/whispering/recording';
-import type { RecordingId } from '$lib/data';
 
 const defaultLog = createLogger('whispering/transcription-history');
 

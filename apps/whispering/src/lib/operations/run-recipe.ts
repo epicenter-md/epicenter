@@ -4,10 +4,10 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { isErr, Ok, type Result } from 'wellcrafted/result';
+import type { Recipe } from '$lib/data';
 import { buildSystemPrompt } from '$lib/operations/build-system-prompt';
 import { completeWithGlobalDefault } from '$lib/operations/completion';
 import type { WhisperingApp } from '$lib/whispering/app';
-import type { Recipe } from '$lib/data';
 
 export const RunRecipeError = defineErrors({
 	InvalidInput: ({ message }: { message: string }) => ({ message }),
