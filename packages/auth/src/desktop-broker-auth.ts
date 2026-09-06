@@ -94,15 +94,30 @@ function createDesktopBroker({
  * the authority reads from the selected server. `fetch` attaches nothing:
  * a desktop window has no server transport, and the loopback-only CSP
  * refuses cloud origins exactly as it did before this client existed.
- * `openWebSocket` is denied for the same reason: desktop sync belongs to the
- * host process, not a window.
+ * `openWebSocket` is denied for the same reason, and the denial is honest about
+ * what it costs. It used to say desktop sync belongs to the host process. The
+ * host process does not sync either: nothing under `apps/epicenter/src` dials,
+ * so no process carries this build's updates to an authority. A window here
+ * cannot even open a replica, because listing or minting a generation is an
+ * HTTP request `fetch` will not make. Whoever gives the desktop a transport
+ * gives it one here, and until then this refusal is the whole story.
  */
 export function createDesktopBrokerAuth({
-	bootstrap,
+	bootstrap = readDesktopAuthBootstrap(),
 	brokerBaseURL,
 	fetch: fetchImpl = globalThis.fetch.bind(globalThis),
 }: {
-	bootstrap: DesktopAuthBootstrap;
+	/**
+	 * The serve-time snapshot, read once per WebView generation.
+	 *
+	 * Defaulted, and the default is the whole reason a leaf no longer holds it.
+	 * The read takes the element out of the DOM, so a second one finds nothing
+	 * and throws; that used to mean two seams needed one module between them,
+	 * and `#platform/instance` was the other seam. It is gone, so there is one
+	 * reader, and a default parameter evaluated once per leaf module is that
+	 * reader. A test supplies its own.
+	 */
+	bootstrap?: DesktopAuthBootstrap;
 	brokerBaseURL: string;
 	fetch?: AuthFetch;
 }): AuthClient {

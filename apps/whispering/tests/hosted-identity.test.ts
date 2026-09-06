@@ -47,14 +47,11 @@ describe('Epicenter-hosted Whispering identity', () => {
 	});
 
 	test('desktop auth uses the Bun authority instead of a window OAuth launcher', () => {
+		// The serve-time snapshot moved into `createDesktopBrokerAuth` as a
+		// defaulted argument once `#platform/instance` went and left one reader,
+		// so this leaf names the constructor and nothing else.
 		const auth = read('src/lib/platform/auth.epicenter-host.ts');
-		const bootstrap = read(
-			'src/lib/platform/desktop-auth-bootstrap.epicenter-host.ts',
-		);
 		expect(auth).toContain('createDesktopBrokerAuth');
-		// The element and its removal are `@epicenter/auth/desktop`'s, shared with
-		// every other compiled application; this build only reads the snapshot.
-		expect(bootstrap).toContain('readDesktopAuthBootstrap');
 		expect(auth).not.toContain('createHostedDeepLinkAuth');
 		expect(auth).not.toContain('keyring');
 	});
