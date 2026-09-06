@@ -7,7 +7,6 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "NODE_ENV=production vite build",
-		"build:epicenter": "bun run scripts/build-epicenter-candidate.ts",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "bun test",

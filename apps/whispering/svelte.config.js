@@ -19,9 +19,6 @@ const config = {
 			fallback: 'index.html', // SPA fallback for dynamic routes
 		}),
 		...(isEpicenterHost && { paths: { base: '/apps/whispering' } }),
-		alias: {
-			$routes: './src/routes',
-		},
 		// No `csp` block here on purpose. adapter-static prerenders every page,
 		// and SvelteKit's prerender path only ever emits the *enforcing*
 		// `<meta http-equiv="content-security-policy">` tag: `reportOnly` is

@@ -39,19 +39,17 @@ export default defineConfig(
 		optimizeDeps: { exclude: ['onnxruntime-web', 'onnxruntime-web/wasm'] },
 		resolve: {
 			// Build-time platform DI over the `#platform/*` subpaths (package.json
-			// "imports"). This build activates both conditions because both are
-			// true of it, and they answer different questions: `epicenter-host`
-			// selects the leaves whose owner is the Bun host (its replica,
-			// credential, deployment choice, blob bytes, and asset base), `tauri`
-			// the leaves that call native commands. Whispering has no build where
-			// they come apart, but Honeycrisp does, which is why they are named
-			// apart rather than collapsed (ADR-0190). The web build uses `default`
-			// (browser) for every seam, so a desktop-only file imported by shared
+			// "imports"). One condition, because one question is asked: which
+			// leaves does the Bun host own (its replica, credential, deployment
+			// choice, blob bytes, and asset base). The `.tauri.ts` leaves are
+			// plain aliases in that map rather than condition arms, so nothing
+			// ever resolved on a `tauri` condition (ADR-0347). The web build uses
+			// `default` for every seam, so a host-only file imported by shared
 			// code is unresolvable there and fails at vite build time rather than
 			// at user runtime. The `...defaultClientConditions` spread is
 			// load-bearing: custom conditions REPLACE Vite's defaults.
 			...(isEpicenterHost && {
-				conditions: ['epicenter-host', 'tauri', ...defaultClientConditions],
+				conditions: ['epicenter-host', ...defaultClientConditions],
 			}),
 		},
 	}),

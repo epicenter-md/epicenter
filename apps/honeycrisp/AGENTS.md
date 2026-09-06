@@ -133,7 +133,6 @@ after showing the paths once for the folder rather than once per file.
 | Build | Command |
 |---|---|
 | Web | `bun run build` |
-| Standalone desktop | `bun run tauri build` |
 | Epicenter-hosted | `bun run build:epicenter` |
 
 **They differ in nothing that concerns data.** Every build opens the same
@@ -168,10 +167,10 @@ only the default one is checked by an editor.
   in anything a person reads. They are the right words in this file and in
   `packages/data`, and the wrong ones in a tooltip.
 - Do not detect the host at runtime. The build already answered.
-- Do not migrate, import, or delete data belonging to another build. The
-  standalone bundle and the hosted build are two stores on one machine, and
-  nothing moves between them. Two devices converge by signing into the same
-  account, not by copying a file.
+- Do not migrate, import, or delete data belonging to another build. The web
+  build and the hosted build are two stores on one machine, and nothing moves
+  between them. Two devices converge by signing into the same account, not by
+  copying a file.
 - Do not reintroduce a second notebook. There is one store, because an
   authority mints every generation (ADR-0336); a signed-out person meets the
   sign-in screen rather than an empty local notebook, and the boot node writes

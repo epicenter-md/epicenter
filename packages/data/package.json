@@ -12,13 +12,10 @@
 		"./artifact/format": "./src/artifact/format.ts",
 		"./artifact/checkout": "./src/artifact/checkout.ts",
 		"./direct": "./src/direct.ts",
-		"./blobs": "./src/store/blobs.ts",
 		"./flush-on-hide": "./src/store/flush-on-hide.ts",
-		"./blobs/opfs": "./src/store/blobs.opfs.ts",
 		"./memory": "./src/store/memory.ts",
 		"./browser": "./src/store/browser.ts",
 		"./test-locks": "./src/store/test-locks.ts",
-		"./test-opfs": "./src/store/test-opfs.ts",
 		"./sync": "./src/sync/index.ts"
 	},
 	"files": [

@@ -14,8 +14,6 @@ export const EPICENTER_DESKTOP_OAUTH_CLIENT_ID = 'epicenter-desktop';
 export const EPICENTER_DESKTOP_TAURI_OAUTH_REDIRECT_URI =
 	'epicenter://auth/callback';
 export const EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID = 'epicenter-honeycrisp';
-export const EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI =
-	'epicenter-honeycrisp://oauth/callback';
 export const EPICENTER_WHISPERING_OAUTH_CLIENT_ID = 'epicenter-whispering';
 export const EPICENTER_VOCAB_OAUTH_CLIENT_ID = 'epicenter-vocab';
 

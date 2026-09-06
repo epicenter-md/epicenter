@@ -17,11 +17,9 @@
 import { expect, test } from 'bun:test';
 import {
 	EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
-	EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	EPICENTER_OAUTH_SCOPES,
 } from '@epicenter/constants/oauth-clients';
 import {
-	buildTrustedOAuthClients,
 	projectTrustedOAuthClientToRow,
 	type TrustedOAuthClient,
 } from '@epicenter/constants/oauth-seed';
@@ -37,7 +35,6 @@ const trustedClientFixture = {
 	redirectUris: [
 		'http://localhost:5175/auth/callback',
 		'https://honeycrisp.epicenter.so/auth/callback',
-		EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
 	],
 } as const satisfies TrustedOAuthClient;
 const redirectUri = trustedClientFixture.redirectUris[0];
@@ -122,18 +119,6 @@ test('clean JWKS table mints an ES256/P-256 signing key', async () => {
 
 	expect(response.status).toBe(200);
 	expect(key).toMatchObject({ alg: 'ES256', kty: 'EC', crv: 'P-256' });
-});
-
-test('buildTrustedOAuthClients gives Honeycrisp its Tauri deep-link callback', () => {
-	const honeycrispClient = buildTrustedOAuthClients().find(
-		(client) => client.clientId === EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
-	);
-	if (!honeycrispClient) {
-		throw new Error('Expected trusted Honeycrisp OAuth client');
-	}
-	expect(honeycrispClient.redirectUris).toContain(
-		EPICENTER_HONEYCRISP_TAURI_OAUTH_REDIRECT_URI,
-	);
 });
 
 // The hosted SPA (apps/api/ui) drives the passkey plugin through the Better

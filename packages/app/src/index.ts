@@ -21,12 +21,6 @@
  * epicenter varies, which is why the composition lives in one file per
  * application rather than once per platform leaf.
  *
- * The binding is also what the Bun host's own leaf builds
- * (`apps/epicenter/src/app-binding.ts`), with a storage root and a secrets
- * owner its test swaps. Nothing in `main.ts` composes it yet, so the host's
- * background half (ADR-0323) is a leaf and a test rather than a running
- * process.
- *
  * Runtime differences are typed failures, never branches (ADR-0181). A browser
  * build has no keychain, so its secret leaf answers from tab memory and forgets
  * everything on close; the application handles that because a `Result` obliges

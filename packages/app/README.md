@@ -65,10 +65,6 @@ scoped to a different application than the store. That mismatch is the pair
 ADR-0339 is named for, and this is what makes it unrepresentable rather than
 checked.
 
-The Bun host is the third implementation of `EpicenterBinding`
-(`apps/epicenter/src/app-binding.ts`), so an application's background half runs
-the same code against the same handle (ADR-0323).
-
 ## The surface
 
 ```ts

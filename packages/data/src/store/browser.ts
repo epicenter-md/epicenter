@@ -453,8 +453,7 @@ const STORE_GENERATION = 'v5';
 /**
  * Whether a value can be one segment of an address.
  *
- * The rule `keySegments` states for a blob key (`blobs.ts`), applied to the one
- * other place a caller's string becomes part of a durable name. A segment
+ * Applied where a caller's string becomes part of a durable name. A segment
  * holding a `/` would be read as two, and `.` or `..` are path words rather
  * than names.
  *

@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-04
-- **Unbuilt:** one line. `apps/whispering/vite.config.ts` still activates `tauri` beside `epicenter-host`; it selects nothing, and it comes out with the next edit to that file. Everything else is built: the `tauri` key is gone from every `imports` entry and every tsconfig, `#platform/base-path` is deleted, and `apps/whispering/src/lib/platform-selection.test.ts` reads the declarations.
+- **Built.** The `tauri` key is gone from every `imports` entry, every tsconfig, and every vite config; `#platform/base-path` is deleted; and `apps/whispering/src/lib/platform-selection.test.ts` reads the declarations. The last line, `apps/whispering/vite.config.ts` activating `tauri` beside `epicenter-host`, came out with the `tauri` option in `@epicenter/vite-config`.
 - **Relates:** [ADR-0190](0190-a-build-declares-which-epicenter-owns-its-data-not-which-window-it-runs-in.md) (the two conditions answer different questions), [ADR-0226](0226-a-host-serves-bundles-and-brokers-credentials-it-owns-no-application-data.md) (storage is not a seam), [ADR-0227](0227-one-runtime-a-desktop-spa-in-a-webview-over-a-client-owned-store.md) (hosted web is refused, and a native capability seam collapses to its `tauri` leaf), [ADR-0345](0345-the-root-layout-is-chrome-and-the-callback-decides-what-may-live-above-a-page.md) (the boot shape Whispering now shares with every other app)
 
 ## Context
