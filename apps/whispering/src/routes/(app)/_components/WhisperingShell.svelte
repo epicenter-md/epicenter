@@ -49,6 +49,7 @@
 
 	let {
 		data: opened,
+		removeLocalData,
 		children,
 	}: {
 		/**
@@ -59,6 +60,12 @@
 		 * built below would have gone quiet with nothing to say why.
 		 */
 		data: WhisperingAccountData;
+		/**
+		 * Sign out and remove this account's local data, owned by the session
+		 * component above because only it can sequence the close. Absent where
+		 * the platform cannot remove one account's audio and leave another's.
+		 */
+		removeLocalData?: () => Promise<void>;
 		children: Snippet;
 	} = $props();
 
@@ -111,7 +118,7 @@
 			</div>
 		{:else}
 			<Sidebar.Provider bind:open={sidebarOpen}>
-				<VerticalNav />
+				<VerticalNav {removeLocalData} />
 				<Sidebar.Inset>
 					<ContentShell>{@render children()}</ContentShell>
 				</Sidebar.Inset>

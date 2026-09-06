@@ -1,4 +1,5 @@
 import type {
+	BlobId,
 	BlobNotFound,
 	BlobRemote,
 	BlobRemoteFailed,
@@ -7,6 +8,11 @@ import type {
 	BlobStoreFailed,
 	RemoteBlobNotFound,
 } from '@epicenter/blobs';
+import type {
+	BrowserBlobStoreError,
+	UnscopedBlobClaim,
+	UnscopedBlobSummary,
+} from '@epicenter/blobs/browser';
 import { InstantString } from '@epicenter/data/field';
 import {
 	defineErrors,
@@ -29,6 +35,29 @@ export type WhisperingBlobs = {
 	local: BlobStore;
 	readonly remote: BlobRemote | null;
 	sources: BlobSources;
+	/**
+	 * What an earlier build wrote to one origin-wide store before audio was
+	 * the account's, or null where no such store ever existed. Null on
+	 * desktop: the host's directory is a different, unfinished problem.
+	 */
+	unscoped: UnscopedAudio | null;
+};
+
+/**
+ * The bytes an earlier build left in the unscoped browser store.
+ *
+ * A claim walks the ids this account's rows cite and moves their bytes into
+ * the account's store; what no row cites stays, counted and sized, until a
+ * person chooses to delete it (ADR-0349, ADR-0351).
+ */
+export type UnscopedAudio = {
+	claim(
+		ids: readonly BlobId[],
+	): Promise<
+		Result<UnscopedBlobClaim, BrowserBlobStoreError | BlobStoreFailed>
+	>;
+	summary(): Promise<Result<UnscopedBlobSummary, BrowserBlobStoreError>>;
+	delete(): Promise<Result<void, BrowserBlobStoreError>>;
 };
 
 export type RecordingAudioAvailability =

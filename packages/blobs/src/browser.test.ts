@@ -16,9 +16,14 @@ import { indexedDB } from 'fake-indexeddb';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { generateBlobId } from './blob-id.js';
 import {
+	type BlobLockManager,
 	browserBlobStoreName,
+	claimUnscopedBrowserBlobs,
 	createBrowserBlobSources,
 	createBrowserBlobStore,
+	deleteUnscopedBrowserBlobs,
+	eraseBrowserBlobStore,
+	unscopedBrowserBlobs,
 } from './browser.js';
 
 const APP_ID = 'so.epicenter.test';
@@ -329,4 +334,221 @@ test('blocked database opens reject and close a later connection', async () => {
 		new Error('Blob IndexedDB open is blocked by another connection'),
 	);
 	expect(isClosed).toBeTrue();
+});
+
+/**
+ * An in-test Web Locks manager: exclusive mode and `ifAvailable`, which is
+ * the whole of what an erase or a claim asks for. Injected rather than
+ * installed on `navigator`, so a test can hold a name and watch the refusal.
+ */
+function fakeLocks() {
+	const held = new Set<string>();
+	const locks: BlobLockManager = {
+		async request(name, _options, callback) {
+			if (held.has(name)) return callback(null);
+			held.add(name);
+			try {
+				return await callback({ name });
+			} finally {
+				held.delete(name);
+			}
+		},
+	};
+	return { held, locks };
+}
+
+async function databaseNames(): Promise<string[]> {
+	return (await indexedDB.databases())
+		.map(({ name }) => name)
+		.filter((name): name is string => name !== undefined);
+}
+
+/** Write one blob the way the pre-scoping build did: straight into `epicenter-blobs`. */
+async function seedUnscoped(id: string, text: string): Promise<void> {
+	const database = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = indexedDB.open('epicenter-blobs', 1);
+		request.onupgradeneeded = () => {
+			request.result.createObjectStore('blob-data', { keyPath: 'id' });
+			request.result.createObjectStore('blob-metadata', { keyPath: 'id' });
+		};
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error);
+	});
+	try {
+		const transaction = database.transaction(
+			['blob-data', 'blob-metadata'],
+			'readwrite',
+		);
+		const bytes = new TextEncoder().encode(text).buffer;
+		transaction.objectStore('blob-data').add({ id, bytes });
+		transaction
+			.objectStore('blob-metadata')
+			.add({ id, size: bytes.byteLength, contentType: 'audio/wav' });
+		await new Promise<void>((resolve, reject) => {
+			transaction.oncomplete = () => resolve();
+			transaction.onerror = () => reject(transaction.error);
+		});
+	} finally {
+		database.close();
+	}
+}
+
+test("erase deletes one account's database and leaves the other account's", async () => {
+	const first = setup();
+	const second = setup();
+	const id = generateBlobId();
+	expectOk(await first.blobs.put(id, new Blob(['mine'])));
+	expectOk(await second.blobs.put(id, new Blob(['theirs'])));
+
+	expectOk(
+		await eraseBrowserBlobStore({
+			...first.scope,
+			indexedDb: indexedDB,
+			locks: fakeLocks().locks,
+		}),
+	);
+
+	const names = await databaseNames();
+	expect(names).not.toContain(first.databaseName);
+	expect(names).toContain(second.databaseName);
+	expect(await expectOk(await second.blobs.get(id)).text()).toBe('theirs');
+	// Nothing recreated the database by asking about it.
+	expect(expectErr(await first.blobs.stat(id)).name).toBe('BlobNotFound');
+	expect(await databaseNames()).toContain(first.databaseName);
+});
+
+test('erase refuses rather than queues while a claim holds the store, and refuses a runtime with no locks', async () => {
+	const { scope, databaseName } = setup();
+	const { held, locks } = fakeLocks();
+	held.add(`epicenter.blobs:${databaseName}`);
+
+	expect(
+		expectErr(
+			await eraseBrowserBlobStore({ ...scope, indexedDb: indexedDB, locks }),
+		),
+	).toMatchObject({ name: 'BlobStoreHeld', database: databaseName });
+	expect(
+		expectErr(
+			await eraseBrowserBlobStore({
+				...scope,
+				indexedDb: indexedDB,
+				locks: undefined,
+			}),
+		).name,
+	).toBe('LocksUnsupported');
+});
+
+test('a claim against a browser that never had the unscoped store creates nothing', async () => {
+	const { scope } = setup();
+	await deleteUnscopedBrowserBlobs({
+		indexedDb: indexedDB,
+		locks: fakeLocks().locks,
+	});
+	const ids = [generateBlobId(), generateBlobId()];
+
+	const claim = expectOk(
+		await claimUnscopedBrowserBlobs({
+			...scope,
+			ids,
+			indexedDb: indexedDB,
+			locks: fakeLocks().locks,
+		}),
+	);
+
+	expect(claim).toEqual({
+		claimed: 0,
+		absent: 2,
+		skipped: 0,
+		unclaimed: { count: 0, bytes: 0 },
+	});
+	expect(await databaseNames()).not.toContain('epicenter-blobs');
+	expect(
+		expectOk(await unscopedBrowserBlobs({ indexedDb: indexedDB })),
+	).toEqual({ count: 0, bytes: 0 });
+});
+
+test('a claim moves the cited bytes, leaves the uncited ones counted, and is idempotent', async () => {
+	const { scope, blobs } = setup();
+	const { locks } = fakeLocks();
+	const cited = generateBlobId();
+	const alreadyScoped = generateBlobId();
+	const somebodyElses = generateBlobId();
+	const neverHere = generateBlobId();
+	await seedUnscoped(cited, 'cited bytes');
+	await seedUnscoped(alreadyScoped, 'older copy');
+	await seedUnscoped(somebodyElses, 'not yours');
+	// A duplicate left by an interrupted earlier claim: the scoped copy wins
+	// and the unscoped one is released.
+	expectOk(await blobs.put(alreadyScoped, new Blob(['older copy'])));
+
+	const first = expectOk(
+		await claimUnscopedBrowserBlobs({
+			...scope,
+			ids: [cited, alreadyScoped, neverHere],
+			indexedDb: indexedDB,
+			locks,
+		}),
+	);
+	expect(first).toEqual({
+		claimed: 2,
+		absent: 1,
+		skipped: 0,
+		unclaimed: { count: 1, bytes: 'not yours'.length },
+	});
+	expect(await expectOk(await blobs.get(cited)).text()).toBe('cited bytes');
+	expect(expectErr(await blobs.stat(somebodyElses)).name).toBe('BlobNotFound');
+	expect(await databaseNames()).toContain('epicenter-blobs');
+
+	const again = expectOk(
+		await claimUnscopedBrowserBlobs({
+			...scope,
+			ids: [cited, alreadyScoped, neverHere],
+			indexedDb: indexedDB,
+			locks,
+		}),
+	);
+	expect(again).toMatchObject({ claimed: 0, absent: 3, skipped: 0 });
+
+	// A person's explicit choice is the only thing that deletes the rest.
+	expectOk(await deleteUnscopedBrowserBlobs({ indexedDb: indexedDB, locks }));
+	expect(await databaseNames()).not.toContain('epicenter-blobs');
+});
+
+test('a claim that empties the unscoped store deletes it, and holds both locks while it runs', async () => {
+	const { scope, databaseName } = setup();
+	const { held, locks } = fakeLocks();
+	const id = generateBlobId();
+	await seedUnscoped(id, 'the last one');
+
+	const claim = expectOk(
+		await claimUnscopedBrowserBlobs({
+			...scope,
+			ids: [id],
+			indexedDb: indexedDB,
+			locks,
+		}),
+	);
+	expect(claim.unclaimed).toEqual({ count: 0, bytes: 0 });
+	expect(await databaseNames()).not.toContain('epicenter-blobs');
+
+	held.add(`epicenter.blobs:${databaseName}`);
+	await seedUnscoped(generateBlobId(), 'held');
+	expect(
+		expectErr(
+			await claimUnscopedBrowserBlobs({
+				...scope,
+				ids: [id],
+				indexedDb: indexedDB,
+				locks,
+			}),
+		).name,
+	).toBe('BlobStoreHeld');
+	held.clear();
+	held.add('epicenter.blobs:epicenter-blobs');
+	expect(
+		expectErr(await deleteUnscopedBrowserBlobs({ indexedDb: indexedDB, locks }))
+			.name,
+	).toBe('BlobStoreHeld');
+	held.clear();
+	expectOk(await deleteUnscopedBrowserBlobs({ indexedDb: indexedDB, locks }));
 });

@@ -131,7 +131,11 @@ Blobs are not in the barrel. `#platform/blobs` exports
 account's (ADR-0349): the browser leaf opens
 `epicenter/v5/<app-id>/<principal-id>/blobs`, so nothing can be built before
 the shell knows which account opened. `WhisperingShell` builds it once per
-session from the replica's own stamp and it is reached as `app.blobs`.
+session from the replica's own stamp and it is reached as `app.blobs`. The
+same leaf exports `eraseWhisperingBlobs`, which the session component runs as
+the second step of "sign out and remove local data"; the desktop leaf exports
+null there, which is what keeps that action off the desktop build until the
+host's audio directory is scoped.
 
 Runtime-selected provider services do not need to live in this barrel. The
 operation that owns dispatch may import them directly.

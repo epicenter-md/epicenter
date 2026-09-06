@@ -12,6 +12,13 @@
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 	import { recordingActive } from '$lib/state/recording-active.svelte';
 
+	let {
+		removeLocalData,
+	}: {
+		/** See `WhisperingShell`. Absent means the popover offers sign-out only. */
+		removeLocalData?: () => Promise<void>;
+	} = $props();
+
 	const sidebar = useSidebar();
 </script>
 
@@ -73,32 +80,24 @@
 		<Sidebar.Menu>
 			<!-- Account / sync (route-independent: visible on the bare home page) -->
 			<Sidebar.MenuItem>
-				<!-- No `onForgetDevice`. The button promises that forgetting this device
-			     removes this account's local data, and Whispering keeps recording
-			     audio outside the store. In the browser build that audio is now
-			     the account's own IndexedDB database,
-			     `epicenter/v5/<app-id>/<principal-id>/blobs` (ADR-0349), which an
-			     erase could delete beside the generations. The desktop build is
-			     not there yet: the host keeps one flat `<root>/blobs` behind
-			     `/api/local-blobs` for everybody who has ever signed in on this
-			     machine, keyed by nothing. Erasing the replica here would delete
-			     the recordings and leave their audio behind on desktop, and a
-			     button cannot ship for one build.
-
-			     What the browser half still needs is the erase verb for its
-			     database and a claim of the bytes an earlier build wrote to the
-			     unscoped `epicenter-blobs`. What the desktop half needs is a
-			     principal segment in the Bun store's root, an authenticated route
-			     to reach it, and the WebView adapter for that route. And
-			     `<ConfirmationDialog />` has to move too: Whispering mounts it in
-			     `GlobalDialogs` under the shell, which the erase unmounts when it
-			     closes the session, so it belongs in the root layout beside the
-			     toaster the way Honeycrisp's and Vocab's do. Until then the
-			     abstention is the honest answer, and the recordings themselves
-			     are still safe at the account. -->
+				<!-- `onRemoveLocalData` is passed only where the platform can remove
+			     one account's audio and leave another's. In the browser build the
+			     audio is the account's own IndexedDB database,
+			     `epicenter/v5/<app-id>/<principal-id>/blobs` (ADR-0349), and the
+			     session component erases it right after the generations. The
+			     desktop leaf exports no erase: the host keeps one flat
+			     `<root>/blobs` behind `/api/local-blobs` for everybody who has
+			     ever signed in on this machine, keyed by nothing, so removing the
+			     replica there would delete the recordings and leave their audio
+			     behind. What the desktop half still needs is a principal segment
+			     in the Bun store's root, an authenticated route to reach it, and
+			     the WebView adapter for that route. Until then the desktop popover
+			     offers sign-out only, and the recordings are still safe at the
+			     account. -->
 				<AccountPopover
 					{auth}
 					syncNoun="recordings"
+					onRemoveLocalData={removeLocalData}
 					disabledReason={recordingActive.current
 						? 'Stop recording to change your account'
 						: undefined}

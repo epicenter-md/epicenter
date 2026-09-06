@@ -231,7 +231,12 @@ test('settings recover application defaults, notify, and survive a reopen', asyn
 		if (opened.error !== null) throw opened.error;
 		const app = createWhisperingApp({
 			data: opened.data,
-			blobs: { local, remote: null, sources: createBrowserBlobSources(local) },
+			blobs: {
+				local,
+				remote: null,
+				sources: createBrowserBlobSources(local),
+				unscoped: null,
+			},
 		});
 
 		// Chosen by the application, applied by a read, never stored.
@@ -261,7 +266,12 @@ test('settings recover application defaults, notify, and survive a reopen', asyn
 	if (opened.error !== null) throw opened.error;
 	const reopened = createWhisperingApp({
 		data: opened.data,
-		blobs: { local, remote: null, sources: createBrowserBlobSources(local) },
+		blobs: {
+			local,
+			remote: null,
+			sources: createBrowserBlobSources(local),
+			unscoped: null,
+		},
 	});
 
 	expect(reopened.settings.get('recordingAutoUpload')).toBe(true);
@@ -280,7 +290,12 @@ test('the domains stop reading the store once they are disposed', async () => {
 	if (opened.error !== null) throw opened.error;
 	const app = createWhisperingApp({
 		data: opened.data,
-		blobs: { local, remote: null, sources: createBrowserBlobSources(local) },
+		blobs: {
+			local,
+			remote: null,
+			sources: createBrowserBlobSources(local),
+			unscoped: null,
+		},
 	});
 
 	app[Symbol.dispose]();

@@ -1,9 +1,9 @@
+import type { BrowserBlobScope } from '@epicenter/blobs/browser';
 import {
 	createWebviewBlobRemote,
 	createWebviewBlobSources,
 	createWebviewBlobStore,
 } from '@epicenter/blobs/webview';
-import type { PrincipalId } from '@epicenter/principal';
 import { authClient } from '#platform/auth';
 import type { WhisperingBlobs } from '$lib/whispering/app';
 
@@ -21,18 +21,38 @@ import type { WhisperingBlobs } from '$lib/whispering/app';
  * the caller's app and principal from the signed-in session rather than from
  * a request parameter. The signature is the browser leaf's so the shell has
  * one call to make; when the host partitions, this leaf changes and the shell
- * does not.
+ * does not. There is no unscoped store to claim from here: the flat directory
+ * IS the store, and it was never anything else.
  *
  * This module owns remote availability, and it is decided once: desktop
  * identity is immutable per process generation, so the boot auth state is the
  * whole answer. `authClient`, not `auth`, because nothing here tracks.
  */
-export function createWhisperingBlobs(_scope: {
-	appId: string;
-	principalId: PrincipalId;
-}): WhisperingBlobs {
+export function createWhisperingBlobs(
+	_scope: BrowserBlobScope,
+): WhisperingBlobs {
 	const local = createWebviewBlobStore();
 	const remote =
 		authClient.state.status === 'signed-in' ? createWebviewBlobRemote() : null;
-	return { local, remote, sources: createWebviewBlobSources(local) };
+	return {
+		local,
+		remote,
+		sources: createWebviewBlobSources(local),
+		unscoped: null,
+	};
 }
+
+/**
+ * Null: the desktop cannot yet remove one account's audio and leave
+ * another's, because the host's directory is not partitioned by principal.
+ * A null here is what keeps "sign out and remove local data" off the desktop
+ * build rather than letting it make a promise the second half of which is
+ * false (ADR-0351).
+ */
+export const eraseWhisperingBlobs:
+	| ((
+			scope: BrowserBlobScope,
+	  ) => ReturnType<
+			typeof import('@epicenter/blobs/browser').eraseBrowserBlobStore
+	  >)
+	| null = null;

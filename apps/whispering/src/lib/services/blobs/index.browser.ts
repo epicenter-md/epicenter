@@ -1,6 +1,11 @@
 import {
+	type BrowserBlobScope,
+	claimUnscopedBrowserBlobs,
 	createBrowserBlobSources,
 	createBrowserBlobStore,
+	deleteUnscopedBrowserBlobs,
+	eraseBrowserBlobStore,
+	unscopedBrowserBlobs,
 } from '@epicenter/blobs/browser';
 import {
 	createBrowserBlobRemote,
@@ -20,7 +25,8 @@ const epicenterClient = createEpicenterClient({
 
 /**
  * Browser composition: one account's IndexedDB bytes, the hosted remote copy
- * adapter over them, and object-URL sources for playback.
+ * adapter over them, object-URL sources for playback, and the claim over
+ * what an earlier build wrote unscoped.
  *
  * A factory rather than a module-level value, because the local store is the
  * account's: it lives at `epicenter/v5/<app-id>/<principal-id>/blobs`
@@ -50,5 +56,20 @@ export function createWhisperingBlobs({
 			return auth.state.status === 'signed-in' ? remote : null;
 		},
 		sources: createBrowserBlobSources(local),
+		unscoped: {
+			claim: (ids) => claimUnscopedBrowserBlobs({ appId, principalId, ids }),
+			summary: () => unscopedBrowserBlobs(),
+			delete: () => deleteUnscopedBrowserBlobs(),
+		},
 	};
 }
+
+/**
+ * Remove one account's audio from this browser: the second explicit delete
+ * of "sign out and remove local data", beside the generation erase and
+ * against the same captured principal (ADR-0349, ADR-0351). A function
+ * rather than a member of the store, because it runs after the session that
+ * held the store has closed.
+ */
+export const eraseWhisperingBlobs = (scope: BrowserBlobScope) =>
+	eraseBrowserBlobStore(scope);

@@ -102,7 +102,12 @@ async function setup({
 	for (const row of seed) expectOk(table.create(storedRow(row)));
 	const domain = createWhisperingRecordings({
 		table,
-		blobs: { local, remote, sources: createBrowserBlobSources(local) },
+		blobs: {
+			local,
+			remote,
+			sources: createBrowserBlobSources(local),
+			unscoped: null,
+		},
 	});
 	return {
 		table,

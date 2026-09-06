@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { ModeWatcher } from 'mode-watcher';
@@ -53,6 +54,12 @@
 		},
 	}}
 />
+<!-- Beside the toaster and outside the (app) group, because the one dialog
+     that must outlive the session is the destructive exit's: confirming it
+     closes the session, which unmounts everything under the shell, and a
+     dialog mounted there would be torn down under the person who is reading
+     its outcome. Same placement as Honeycrisp's and Vocab's. -->
+<ConfirmationDialog />
 <ModeWatcher defaultMode="dark" track={false} />
 <FlushEditsOnHide />
 

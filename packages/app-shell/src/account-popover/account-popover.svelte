@@ -63,10 +63,12 @@
 		 * The next person meets a sign-in door rather than the owner's notes, and
 		 * the owner, signing back in, sees what is left and removes again.
 		 *
-		 * **Pass it only when this application's replica is all of this account's
-		 * local data.** The copy below promises that everything online is safe and
-		 * everything local is gone. Whispering withholds it because its audio is
-		 * not scoped by principal yet, so the second half would be false.
+		 * **Pass it only when the callback removes all of this account's local
+		 * data.** The copy below promises that everything online is safe and
+		 * everything local is gone. Whispering's browser build passes it, with a
+		 * callback that erases the audio after the replica; its desktop build
+		 * withholds it because the host's audio is not scoped by principal, so
+		 * the second half would be false there.
 		 *
 		 * Throw to report a failure; the popover catches it and shows it. There is
 		 * no recovery screen and no removal record: removal is idempotent, so a

@@ -16,6 +16,7 @@
 	import { tauri } from '#platform/tauri';
 	import { exportRecordingsMarkdown } from '$lib/whispering/recordings-markdown-export';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
+	import UnclaimedAudio from './UnclaimedAudio.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 	import { getWhisperingApp } from '$lib/whispering/context';
 
@@ -174,5 +175,9 @@
 				snapshot: later edits in Whispering do not change the downloaded file.
 			</Field.Description>
 		</Field.Field>
+
+		{#if app.blobs.unscoped !== null}
+			<UnclaimedAudio unscoped={app.blobs.unscoped} />
+		{/if}
 	</Field.Group>
 </Field.Set>
