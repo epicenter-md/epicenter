@@ -14,10 +14,38 @@ include!("src/command_names.rs");
 fn main() {
     bake_transcribe_rpath();
     stage_transcribe_runtime();
+    bind_common_controls_v6_for_tests();
 
     let manifest = tauri_build::AppManifest::new().commands(COMMANDS);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("failed to build Epicenter's Tauri manifest");
+}
+
+/// Let the Windows test harness start at all.
+///
+/// tauri-plugin-dialog imports `TaskDialogIndirect`, which only exists in
+/// comctl32 v6. The app binary declares that side-by-side dependency through
+/// the manifest tauri-build embeds, but cargo's test executables link the
+/// same crate graph without it, so the loader binds the ancient v5.82
+/// comctl32 and every test run dies at startup with
+/// STATUS_ENTRYPOINT_NOT_FOUND before a single test runs.
+fn bind_common_controls_v6_for_tests() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    // `cargo:rustc-link-arg`, not `-tests`: the `-tests` variant only reaches
+    // `tests/` integration targets, never the lib's unit-test executable, and
+    // the unit tests are where the capability and bindings drift checks live.
+    // `/MANIFEST` (external mode) writes `<exe>.manifest` beside each linked
+    // executable, which the loader honors when nothing is embedded. The app
+    // binary keeps its tauri-build manifest: an embedded manifest wins over
+    // the external file, so this is inert there.
+    println!("cargo:rustc-link-arg=/MANIFEST");
+    println!(
+        "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' \
+         name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+         publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'"
+    );
 }
 
 /// Bake the rpaths the shared `libtranscribe` needs on Linux. Windows resolves
