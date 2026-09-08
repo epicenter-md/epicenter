@@ -15,8 +15,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type AssertDeps, assertMessageLabels } from './assert.ts';
 import type { Mailbox } from './mailbox.ts';
-import { openTestSession } from './session.test-support.ts';
 import type { GmailMessage } from './schema.ts';
+import { openTestSession } from './session.test-support.ts';
 
 const ACTED_AT = '2026-08-01T12:00:00.000Z';
 
@@ -140,7 +140,10 @@ describe('assertMessageLabels', () => {
 		// view or simply at reality, asks for INBOX off, and that has to be kept.
 		const { deps, cleanup } = await setup([message('m1', [])]);
 		try {
-			const { data } = await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
+			const { data } = await act(deps, {
+				ids: ['m1'],
+				removeLabels: ['INBOX'],
+			});
 			expect(data).toEqual({ asserted: 1 });
 			expect(await deps.intents.pending()).toMatchObject([
 				{ messageId: 'm1', labelId: 'INBOX', want: false },
@@ -176,7 +179,10 @@ describe('assertMessageLabels', () => {
 				now: () => Date.parse(ACTED_AT),
 			};
 
-			const archived = await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
+			const archived = await act(deps, {
+				ids: ['m1'],
+				removeLabels: ['INBOX'],
+			});
 			expect(archived.error).toBeNull();
 			const trashed = await act(deps, {
 				ids: ['m1'],
@@ -293,7 +299,10 @@ describe('assertMessageLabels', () => {
 	test('an id the mirror has never seen is recorded like any other', async () => {
 		const { deps, cleanup } = await setup();
 		try {
-			const { data } = await act(deps, { ids: ['ghost'], removeLabels: ['INBOX'] });
+			const { data } = await act(deps, {
+				ids: ['ghost'],
+				removeLabels: ['INBOX'],
+			});
 			expect(data).toEqual({ asserted: 1 });
 		} finally {
 			cleanup();
@@ -328,7 +337,11 @@ describe('assertMessageLabels', () => {
 			// Pretend the reconciler delivered it and the pull folded Gmail's answer,
 			// but the retirement has not happened yet. The mirror now agrees with the
 			// pending assertion, which is exactly when a cancellation rule would fire.
-			await mailbox.patchMessageLabels('m1', ['UNREAD'], '2026-08-01T12:00:01.000Z');
+			await mailbox.patchMessageLabels(
+				'm1',
+				['UNREAD'],
+				'2026-08-01T12:00:01.000Z',
+			);
 			await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
 			await act(deps, { ids: ['m1'], removeLabels: ['INBOX'] });
 
@@ -343,9 +356,9 @@ describe('assertMessageLabels', () => {
 	test('empty and oversized acts are refused', async () => {
 		const { deps, cleanup } = await setup();
 		try {
-			expect((await act(deps, { ids: [], removeLabels: ['INBOX'] })).error?.name).toBe(
-				'NoMessageIds',
-			);
+			expect(
+				(await act(deps, { ids: [], removeLabels: ['INBOX'] })).error?.name,
+			).toBe('NoMessageIds');
 			expect((await act(deps, { ids: ['m1'] })).error?.name).toBe(
 				'EmptyLabelMutation',
 			);

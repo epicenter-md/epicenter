@@ -22,8 +22,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MANIFEST_PATH } from '@epicenter/data/artifact/checkout';
 import {
-	checkoutFolderPath,
 	CheckoutPreconditionFailedError,
+	checkoutFolderPath,
 	readCheckout,
 	writeCheckout,
 } from './checkout.ts';
@@ -127,10 +127,7 @@ test("a person's own files survive a checkout, and are never handed back", async
 
 test("the store's own files are swept, and a person's are not", async () => {
 	const target = join(scratch(), APP);
-	await write(
-		target,
-		file('AGENTS.md', 'generated') + file('notes/a.md', 'a'),
-	);
+	await write(target, file('AGENTS.md', 'generated') + file('notes/a.md', 'a'));
 	writeFileSync(join(target, 'NOTES.md'), 'mine');
 
 	await write(target, file('notes/a.md', 'a'));

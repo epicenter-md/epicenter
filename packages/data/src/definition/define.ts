@@ -29,9 +29,10 @@ import type {
 
 type RejectDefault<T> = T extends { default: unknown } ? never : T;
 
-type ReservedRowKey<K extends string> = Lowercase<K> extends 'id'
-	? `'${K}' is reserved: every row already has an id and a content node`
-	: never;
+type ReservedRowKey<K extends string> =
+	Lowercase<K> extends 'id'
+		? `'${K}' is reserved: every row already has an id and a content node`
+		: never;
 
 /**
  * The value fields of one table, with a declared default refused at the field and

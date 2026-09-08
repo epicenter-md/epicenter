@@ -155,7 +155,9 @@ function check(db: Database, size: number, withContent: boolean): void {
 	};
 	if (withContent) {
 		if ((bytes.b ?? 0) < size * BODY.length)
-			throw new Error(`indexed ${bytes.b} body bytes, expected the whole corpus`);
+			throw new Error(
+				`indexed ${bytes.b} body bytes, expected the whole corpus`,
+			);
 	} else if (bytes.b !== null) {
 		throw new Error('the value index carried bodies it was not given');
 	}
