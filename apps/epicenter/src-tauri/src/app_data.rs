@@ -8,6 +8,13 @@
 //! question; until it is settled this is the second implementation of one path,
 //! and the equality is pinned by a test rather than by inspection.
 //!
+//! Mirroring the authority means mirroring its *inputs*, not just its result on
+//! one config. This resolves the platform directory and joins the shared
+//! identifier constant, exactly as the TypeScript does; it deliberately does not
+//! use Tauri's `app_data_dir()`, whose answer moves with the bundle identifier
+//! and so split dev builds away from the sidecar (see
+//! [`EPICENTER_BUNDLE_IDENTIFIER`]).
+//!
 //! The override is part of that equality and not an extra. Rust used to compute
 //! the root and pass it to the sidecar in `EPICENTER_DATA_DIR`, which meant an
 //! ambient value was overwritten and could not split the two. The sidecar now
@@ -24,13 +31,36 @@ use tauri::{AppHandle, Manager, Runtime};
 /// The one override for the one root, read by the sidecar, every CLI, and here.
 const DATA_ROOT_OVERRIDE: &str = "EPICENTER_DATA_DIR";
 
+/// Mirrors `EPICENTER_BUNDLE_IDENTIFIER` in `packages/constants/src/app-data.ts`,
+/// which is the authority on this path.
+///
+/// Deliberately a constant rather than the running bundle's identifier. Tauri's
+/// `app_data_dir()` is `data_dir()` joined with the *config's* identifier, and
+/// `tauri.dev.conf.json` overrides that identifier to `so.epicenter.dev` so the
+/// dev build is a separate application (its own window state, webview data and
+/// deep-link registration). The data root is not part of that separation: the
+/// sidecar resolves `so.epicenter` unconditionally, so a dev host built on
+/// `app_data_dir()` wrote recordings to a `blobs/` the sidecar never served and
+/// every dev dictation 404'd before it could be transcribed. Joining the shared
+/// constant keeps the two implementations equal under every config, which is the
+/// only property that matters here.
+const EPICENTER_BUNDLE_IDENTIFIER: &str = "so.epicenter";
+
 /// The root this machine's Epicenter stores everything under.
 pub fn epicenter_data_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf> {
     resolve_data_root(std::env::var_os(DATA_ROOT_OVERRIDE).as_deref(), || {
-        app.path()
-            .app_data_dir()
-            .context("resolve the Tauri application-data directory")
+        platform_root(app)
     })
+}
+
+/// The platform data directory joined with the shared bundle identifier: the
+/// same two steps, in the same order, as `epicenterDataRoot()` in TypeScript.
+fn platform_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf> {
+    Ok(app
+        .path()
+        .data_dir()
+        .context("resolve the platform application-data directory")?
+        .join(EPICENTER_BUNDLE_IDENTIFIER))
 }
 
 /// Apply the override rule to a platform root.
@@ -138,13 +168,43 @@ mod tests {
             .build(context)
             .expect("build a mock Tauri app for its path resolver");
 
-        let native = resolve_data_root(None, || {
-            app.path()
-                .app_data_dir()
-                .context("resolve the Tauri application-data directory")
-        })
-        .unwrap();
+        let native = resolve_data_root(None, || platform_root(app.handle())).unwrap();
 
         assert_eq!(native, typescript_data_root());
+    }
+
+    /// The dev bundle is a separate *application*, not a separate data root.
+    ///
+    /// `tauri.dev.conf.json` overrides the identifier to `so.epicenter.dev`. When
+    /// this resolver was built on `app_data_dir()` that override moved the root
+    /// with it, so `bun dev:epicenter` wrote recordings to
+    /// `<data>/so.epicenter.dev/blobs` while the sidecar served
+    /// `<data>/so.epicenter/blobs`, and every dev dictation failed with a 404
+    /// before it could reach transcription. The equality test above could not
+    /// catch it: it reads `tauri.conf.json`, so it only ever saw the production
+    /// identifier. This pins the property that actually matters, that no config's
+    /// identifier moves the root at all.
+    #[test]
+    fn the_dev_identifier_does_not_move_the_root() {
+        let dev_config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.dev.conf.json")).unwrap();
+        let dev_identifier = dev_config["identifier"].as_str().unwrap().to_string();
+        assert_ne!(
+            dev_identifier,
+            bundle_identifier(),
+            "this test is only meaningful while the dev config overrides the identifier"
+        );
+
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().identifier = dev_identifier;
+        let app = tauri::test::mock_builder()
+            .build(context)
+            .expect("build a mock Tauri app for its path resolver");
+
+        assert_eq!(
+            platform_root(app.handle()).unwrap(),
+            typescript_data_root(),
+            "the dev identifier must not split the recorder from the sidecar"
+        );
     }
 }

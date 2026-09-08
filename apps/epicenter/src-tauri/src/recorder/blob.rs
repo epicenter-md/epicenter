@@ -20,7 +20,12 @@
 //! partial byte stream: incomplete capture has temporary staging state and no
 //! permanent blob identity.
 
+// `File` is read-only-open territory: the `cfg(unix)` `sync_directory` below and
+// the tests' `File::create`. Windows non-test builds compile neither, so the
+// import is gated to match or it warns as unused there.
+#[cfg(any(unix, test))]
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -341,10 +346,20 @@ pub fn read_blob_samples(app: &AppHandle, id: &str) -> Result<Vec<f32>, Recorder
 ///
 /// By path rather than by handle because the writer that produced the file has
 /// already been consumed by the time it is published: `hound`'s `finalize` takes
-/// the writer by value. Opening read-only is enough, since `fsync` acts on the
-/// file the descriptor names rather than on the descriptor's access mode.
+/// the writer by value.
+///
+/// Opened for *writing* rather than reading, even though nothing is written
+/// here. `sync_all` is `FlushFileBuffers` on Windows, which the API documents as
+/// requiring a handle with write access: a read-only handle fails it with
+/// `ERROR_ACCESS_DENIED` (os error 5), which took down every native recording
+/// on Windows at the first rung of `publish`'s durability ladder. Unix `fsync`
+/// is happy either way, so one write-opened handle serves both platforms and
+/// there is no `cfg` to keep in step (unlike `sync_directory` below, where the
+/// two platforms genuinely differ).
 fn sync_file(path: &Path) -> Result<(), RecorderError> {
-    File::open(path)
+    OpenOptions::new()
+        .write(true)
+        .open(path)
         .and_then(|file| file.sync_all())
         .map_err(|error| RecorderError::failed(format!("sync {}: {error}", path.display())))
 }
