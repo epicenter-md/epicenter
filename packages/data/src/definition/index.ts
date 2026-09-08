@@ -17,10 +17,10 @@ export * from './canonical.js';
 export {
 	type Conformance,
 	type ConformanceIssue,
+	compileData,
 	DataDefinitionParseError,
 	type ParsedDataDefinition,
 	type ParsedTable,
-	compileData,
 } from './compile.js';
 export { plainText } from './content.js';
 export {

@@ -19,7 +19,9 @@ const database = defineData({
 test('trusted TypeScript definitions compile and retain their codecs', () => {
 	const result = expectOk(compileData(database));
 	expect(result.tables.get('notes')?.content).toBeDefined();
-	expect([...result.tables.get('notes')?.fields.keys() ?? []]).toEqual(['title']);
+	expect([...(result.tables.get('notes')?.fields.keys() ?? [])]).toEqual([
+		'title',
+	]);
 });
 
 test('compilation is memoized by definition identity', () => {
