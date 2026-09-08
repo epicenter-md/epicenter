@@ -98,9 +98,10 @@ describe('the runtime is the import path', () => {
 		// importing a leaf directly (ADR-0339).
 		for (const condition of ['default', 'epicenter-host']) {
 			const source = await leafSource('#platform/binding', condition);
-			expect({ condition, composes: source.includes('createEpicenter') }).toEqual(
-				{ condition, composes: false },
-			);
+			expect({
+				condition,
+				composes: source.includes('createEpicenter'),
+			}).toEqual({ condition, composes: false });
 		}
 	});
 });

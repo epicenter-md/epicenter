@@ -25,18 +25,18 @@ import {
 	type CheckoutAddress,
 	type CheckoutFile,
 	type CheckoutManifest,
+	type Confirm,
 	checkoutLine,
 	contentHash,
 	createWorkingCopy,
-	type Confirm,
-	type PullPreview,
-	type PushPreview,
 	type KeepReason,
 	MANIFEST_PATH,
 	type PlanItem,
+	type PullPreview,
 	type PushableData,
 	type PushOutcome,
 	type PushPlan,
+	type PushPreview,
 	type PushResult,
 } from './checkout.js';
 
@@ -1035,7 +1035,7 @@ describe('the preview says what a push would do (ADR-0337)', () => {
 				kind: 'admission',
 				path: 'notes/handwritten.md',
 				table: 'notes',
-				},
+			},
 		]);
 		await data[Symbol.asyncDispose]();
 	});

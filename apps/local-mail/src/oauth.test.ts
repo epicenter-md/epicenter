@@ -17,7 +17,10 @@ import {
 	refreshAccess,
 } from './oauth.ts';
 
-const IDENTITY = { clientId: 'client-id-123', clientSecret: 'client-secret-456' };
+const IDENTITY = {
+	clientId: 'client-id-123',
+	clientSecret: 'client-secret-456',
+};
 const REDIRECT = 'http://127.0.0.1:39130/apps/mail/connected';
 const NOW = () => Date.parse('2026-07-01T00:00:00.000Z');
 
@@ -102,7 +105,9 @@ test('the account is identified by Googles subject, and the address is metadata'
 			id_token: idToken({ sub: 'google-sub-1', email: 'you@example.com' }),
 		});
 	});
-	const settings = config({ tokenUrl: `http://127.0.0.1:${server.port}/token` });
+	const settings = config({
+		tokenUrl: `http://127.0.0.1:${server.port}/token`,
+	});
 	const request = await beginAuthorization({
 		config: settings,
 		identity: IDENTITY,
@@ -143,7 +148,9 @@ test('a grant with no refresh token is refused rather than stored', async () => 
 			id_token: idToken({ sub: 'google-sub-1', email: 'you@example.com' }),
 		}),
 	);
-	const settings = config({ tokenUrl: `http://127.0.0.1:${server.port}/token` });
+	const settings = config({
+		tokenUrl: `http://127.0.0.1:${server.port}/token`,
+	});
 	const request = await beginAuthorization({
 		config: settings,
 		identity: IDENTITY,

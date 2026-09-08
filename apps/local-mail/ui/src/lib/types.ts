@@ -14,6 +14,8 @@ export type MessageSummary = Awaited<
 	ReturnType<typeof mail.messages>
 >['messages'][number];
 
-export type MessageDetail = NonNullable<Awaited<ReturnType<typeof mail.message>>>;
+export type MessageDetail = NonNullable<
+	Awaited<ReturnType<typeof mail.message>>
+>;
 
 export type { ConnectedAccount } from './mail';

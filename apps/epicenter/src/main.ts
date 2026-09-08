@@ -10,8 +10,6 @@
 
 import { join } from 'node:path';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
-import { createBunAppStorage } from './app-storage.ts';
-import { createNativeAppSecrets } from './app-secrets.ts';
 import {
 	type AgentEngine,
 	createBunBlobRemote,
@@ -20,6 +18,8 @@ import {
 } from '@epicenter/client';
 import { epicenterDataRoot } from '@epicenter/constants/app-data';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { createNativeAppSecrets } from './app-secrets.ts';
+import { createBunAppStorage } from './app-storage.ts';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import {
 	createDesktopAuthAuthority,

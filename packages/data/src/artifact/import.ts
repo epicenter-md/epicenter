@@ -28,10 +28,10 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import {
 	CONTENT_FIELD,
+	compileData,
 	type DataDefinition,
 	type JsonObject,
 	type ParsedTable,
-	compileData,
 } from '../definition/index.js';
 import {
 	createDatabaseDocument,
